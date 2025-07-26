@@ -94,7 +94,7 @@
 import { ref } from "vue";
 import UniversalCard from "./components/UniversalCard/UniversalCard.vue";
 
-// 测试数据
+// 测试数据 - 保持不变
 const testData = ref({
   title: "默认标题",
   options: [
@@ -123,7 +123,7 @@ const editableFields = ref({
   optionActions: true,
 });
 
-// 事件处理函数
+// 事件处理函数 - 保持不变
 const handleAddOption = (afterId) => {
   const newId = Date.now();
   const newOption = {
@@ -134,6 +134,7 @@ const handleAddOption = (afterId) => {
     checked: false,
   };
 
+  testData.value.options = [...testData.value.options]; // 创建新数组触发响应式
   if (!afterId) {
     testData.value.options.push(newOption);
   } else {
@@ -187,6 +188,7 @@ const setShowDropdown = (value) => {
 </script>
 
 <style>
+/* 样式保持不变 */
 .app-container {
   max-width: 1000px;
   margin: 0 auto;
