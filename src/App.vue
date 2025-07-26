@@ -90,124 +90,99 @@
   </div>
 </template>
 
-<script>
+<script setup>
 import { ref } from "vue";
 import UniversalCard from "./components/UniversalCard/UniversalCard.vue";
 
-export default {
-  name: "App",
-  components: {
-    UniversalCard,
-  },
-  setup() {
-    const testData = ref({
-      title: "默认标题",
-      options: [
-        { id: 1, name: "选项1", value: "100", unit: "元", checked: false },
-        { id: 2, name: "选项2", value: "200", unit: "元", checked: false },
-      ],
-      selectOptions: [
-        { id: 1, label: "选项A" },
-        { id: 2, label: "选项B" },
-        { id: 3, label: "选项C" },
-      ],
-      selectedValue: "选项A",
-    });
+// 测试数据
+const testData = ref({
+  title: "默认标题",
+  options: [
+    { id: 1, name: "选项1", value: "100", unit: "元", checked: false },
+    { id: 2, name: "选项2", value: "200", unit: "元", checked: false },
+  ],
+  selectOptions: [
+    { id: 1, label: "选项A" },
+    { id: 2, label: "选项B" },
+    { id: 3, label: "选项C" },
+  ],
+  selectedValue: "选项A",
+});
 
-    const isTitleEditing = ref(false);
-    const isOptionsEditing = ref(false);
-    const isSelectEditing = ref(false);
-    const showDropdown = ref(false);
+const isTitleEditing = ref(false);
+const isOptionsEditing = ref(false);
+const isSelectEditing = ref(false);
+const showDropdown = ref(false);
 
-    const editableFields = ref({
-      optionName: true,
-      optionValue: true,
-      optionUnit: true,
-      select: true,
-      optionCheckbox: true,
-      optionActions: true,
-    });
+const editableFields = ref({
+  optionName: true,
+  optionValue: true,
+  optionUnit: true,
+  select: true,
+  optionCheckbox: true,
+  optionActions: true,
+});
 
-    const handleAddOption = (afterId) => {
-      const newId = Date.now();
-      const newOption = {
-        id: newId,
-        name: "新选项",
-        value: "",
-        unit: "",
-        checked: false,
-      };
+// 事件处理函数
+const handleAddOption = (afterId) => {
+  const newId = Date.now();
+  const newOption = {
+    id: newId,
+    name: "新选项",
+    value: "",
+    unit: "",
+    checked: false,
+  };
 
-      if (!afterId) {
-        testData.value.options.push(newOption);
-      } else {
-        const index = testData.value.options.findIndex((o) => o.id === afterId);
-        testData.value.options.splice(index + 1, 0, newOption);
-      }
-    };
+  if (!afterId) {
+    testData.value.options.push(newOption);
+  } else {
+    const index = testData.value.options.findIndex((o) => o.id === afterId);
+    testData.value.options.splice(index + 1, 0, newOption);
+  }
+};
 
-    const handleDeleteOption = (optionId) => {
-      testData.value.options = testData.value.options.filter(
-        (option) => option.id !== optionId
-      );
-    };
+const handleDeleteOption = (optionId) => {
+  testData.value.options = testData.value.options.filter(
+    (option) => option.id !== optionId
+  );
+};
 
-    const handleAddSelectOption = (label) => {
-      const newId = Date.now();
-      testData.value.selectOptions.push({ id: newId, label });
-    };
+const handleAddSelectOption = (label) => {
+  const newId = Date.now();
+  testData.value.selectOptions.push({ id: newId, label });
+};
 
-    const handleDeleteSelectOption = (optionId) => {
-      testData.value.selectOptions = testData.value.selectOptions.filter(
-        (option) => option.id !== optionId
-      );
-    };
+const handleDeleteSelectOption = (optionId) => {
+  testData.value.selectOptions = testData.value.selectOptions.filter(
+    (option) => option.id !== optionId
+  );
+};
 
-    const setIsTitleEditing = (value) => {
-      isTitleEditing.value = value;
-    };
+const setIsTitleEditing = (value) => {
+  isTitleEditing.value = value;
+};
 
-    const setIsOptionsEditing = (value) => {
-      isOptionsEditing.value = value;
-    };
+const setIsOptionsEditing = (value) => {
+  isOptionsEditing.value = value;
+};
 
-    const setEditableField = (field, value) => {
-      editableFields.value[field] = value;
-    };
+const setEditableField = (field, value) => {
+  editableFields.value[field] = value;
+};
 
-    const enableSelectEditing = () => {
-      isSelectEditing.value = true;
-      editableFields.value.select = true;
-    };
+const enableSelectEditing = () => {
+  isSelectEditing.value = true;
+  editableFields.value.select = true;
+};
 
-    const disableSelectEditing = () => {
-      isSelectEditing.value = false;
-      editableFields.value.select = false;
-    };
+const disableSelectEditing = () => {
+  isSelectEditing.value = false;
+  editableFields.value.select = false;
+};
 
-    const setShowDropdown = (value) => {
-      showDropdown.value = value;
-    };
-
-    return {
-      testData,
-      isTitleEditing,
-      isOptionsEditing,
-      isSelectEditing,
-      showDropdown,
-      editableFields,
-      handleAddOption,
-      handleDeleteOption,
-      handleAddSelectOption,
-      handleDeleteSelectOption,
-      setIsTitleEditing,
-      setIsOptionsEditing,
-      setEditableField,
-      enableSelectEditing,
-      disableSelectEditing,
-      setShowDropdown,
-    };
-  },
+const setShowDropdown = (value) => {
+  showDropdown.value = value;
 };
 </script>
 

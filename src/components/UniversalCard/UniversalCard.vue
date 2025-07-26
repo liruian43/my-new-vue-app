@@ -80,7 +80,7 @@
             v-model="localSelectedValue"
             @input="updateSelectedValue(localSelectedValue)"
             @click="onDropdownToggle(true)"
-            @blur="() => setTimeout(() => onDropdownToggle(false), 200)"
+            @blur="handleBlur"
             :class="[
               'select-input',
               isSelectEditing && editableFields.select ? 'editable' : '',
@@ -139,160 +139,190 @@
   </div>
 </template>
 
-<script>
-export default {
-  name: "UniversalCard",
-  props: {
-    modelValue: {
-      type: String,
-      required: true,
-    },
-    options: {
-      type: Array,
-      required: true,
-    },
-    selectedValue: {
-      type: String,
-      default: "",
-    },
-    selectOptions: {
-      type: Array,
-      default: () => [],
-    },
-    showDropdown: {
-      type: Boolean,
-      required: true,
-    },
-    isTitleEditing: {
-      type: Boolean,
-      default: false,
-    },
-    isOptionsEditing: {
-      type: Boolean,
-      default: false,
-    },
-    isSelectEditing: {
-      type: Boolean,
-      default: false,
-    },
-    editableFields: {
-      type: Object,
-      default: () => ({
-        title: true,
-        optionName: true,
-        optionValue: true,
-        optionUnit: true,
-        optionCheckbox: true,
-        select: true,
-        optionActions: true,
-      }),
-    },
-    onAddOption: {
-      type: Function,
-      required: true,
-    },
-    onDeleteOption: {
-      type: Function,
-      required: true,
-    },
-    onAddSelectOption: {
-      type: Function,
-      required: true,
-    },
-    onDeleteSelectOption: {
-      type: Function,
-      required: true,
-    },
-    onDropdownToggle: {
-      type: Function,
-      required: true,
-    },
-    onSearchTermChange: {
-      type: Function,
-      default: () => {},
-    },
+<script setup>
+import { ref, computed, watch, onMounted, defineProps, defineEmits } from "vue";
+
+// 定义 props
+const props = defineProps({
+  modelValue: {
+    type: String,
+    required: true,
   },
-  data() {
-    return {
-      localModelValue: this.modelValue,
-      localOptions: [...this.options],
-      localSelectedValue: this.selectedValue,
-    };
+  options: {
+    type: Array,
+    required: true,
   },
-  computed: {
-    filteredOptions() {
-      return this.selectOptions.filter((option) =>
-        option.label
-          .toLowerCase()
-          .includes((this.localSelectedValue || "").toLowerCase())
-      );
-    },
-    selectedOption() {
-      if (!this.localSelectedValue) return null;
-      return this.selectOptions.find(
-        (option) => option.label === this.localSelectedValue
-      );
-    },
-    canDelete() {
-      return (
-        this.isSelectEditing &&
-        this.editableFields.select &&
-        this.selectedOption !== undefined &&
-        this.selectOptions.length > 1
-      );
-    },
+  selectedValue: {
+    type: String,
+    default: "",
   },
-  watch: {
-    modelValue(newValue) {
-      this.localModelValue = newValue;
-    },
-    options(newOptions) {
-      this.localOptions = [...newOptions];
-    },
-    selectedValue(newValue) {
-      this.localSelectedValue = newValue;
-    },
+  selectOptions: {
+    type: Array,
+    default: () => [],
   },
-  methods: {
-    updateTitle(newTitle) {
-      this.localModelValue = newTitle;
-      this.$emit("update:modelValue", newTitle);
-    },
-    updateOption(optionId, changes) {
-      const index = this.localOptions.findIndex((o) => o.id === optionId);
-      if (index !== -1) {
-        this.localOptions[index] = { ...this.localOptions[index], ...changes };
-        this.$emit("update:options", [...this.localOptions]);
-      }
-    },
-    updateSelectedValue(newValue) {
-      this.localSelectedValue = newValue;
-      this.$emit("update:selectedValue", newValue);
-      this.onSearchTermChange(newValue);
-    },
-    selectOption(option) {
-      this.updateSelectedValue(option.label);
-      this.onDropdownToggle(false);
-    },
-    addSelectOption() {
-      if ((this.localSelectedValue || "").trim()) {
-        this.onAddSelectOption(this.localSelectedValue.trim());
-        this.updateSelectedValue("");
-      }
-    },
-    deleteSelectedOption() {
-      if (this.selectedOption) {
-        this.onDeleteSelectOption(this.selectedOption.id);
-        this.updateSelectedValue("");
-      }
-    },
+  showDropdown: {
+    type: Boolean,
+    required: true,
   },
-  mounted() {
-    if (this.isTitleEditing && this.$refs.titleInputRef) {
-      this.$refs.titleInputRef.focus();
-    }
+  isTitleEditing: {
+    type: Boolean,
+    default: false,
   },
+  isOptionsEditing: {
+    type: Boolean,
+    default: false,
+  },
+  isSelectEditing: {
+    type: Boolean,
+    default: false,
+  },
+  editableFields: {
+    type: Object,
+    default: () => ({
+      title: true,
+      optionName: true,
+      optionValue: true,
+      optionUnit: true,
+      optionCheckbox: true,
+      select: true,
+      optionActions: true,
+    }),
+  },
+  onAddOption: {
+    type: Function,
+    required: true,
+  },
+  onDeleteOption: {
+    type: Function,
+    required: true,
+  },
+  onAddSelectOption: {
+    type: Function,
+    required: true,
+  },
+  onDeleteSelectOption: {
+    type: Function,
+    required: true,
+  },
+  onDropdownToggle: {
+    type: Function,
+    required: true,
+  },
+  onSearchTermChange: {
+    type: Function,
+    default: () => {},
+  },
+});
+
+// 定义 emits
+const emits = defineEmits([
+  "update:modelValue",
+  "update:options",
+  "update:selectedValue",
+]);
+
+// 数据状态
+const localModelValue = ref(props.modelValue);
+const localOptions = ref([...props.options]);
+const localSelectedValue = ref(props.selectedValue);
+const titleInputRef = ref(null);
+
+// 计算属性
+const filteredOptions = computed(() => {
+  return props.selectOptions.filter((option) =>
+    option.label
+      .toLowerCase()
+      .includes((localSelectedValue.value || "").toLowerCase())
+  );
+});
+
+const selectedOption = computed(() => {
+  if (!localSelectedValue.value) return null;
+  return props.selectOptions.find(
+    (option) => option.label === localSelectedValue.value
+  );
+});
+
+const canDelete = computed(() => {
+  return (
+    props.isSelectEditing &&
+    props.editableFields.select &&
+    selectedOption.value !== undefined &&
+    props.selectOptions.length > 1
+  );
+});
+
+// 监听 props 变化
+watch(
+  () => props.modelValue,
+  (newValue) => {
+    localModelValue.value = newValue;
+  }
+);
+
+watch(
+  () => props.options,
+  (newOptions) => {
+    localOptions.value = [...newOptions];
+  }
+);
+
+watch(
+  () => props.selectedValue,
+  (newValue) => {
+    localSelectedValue.value = newValue;
+  }
+);
+
+// 方法
+const updateTitle = (newTitle) => {
+  localModelValue.value = newTitle;
+  emits("update:modelValue", newTitle);
 };
+
+const updateOption = (optionId, changes) => {
+  const index = localOptions.value.findIndex((o) => o.id === optionId);
+  if (index !== -1) {
+    localOptions.value[index] = { ...localOptions.value[index], ...changes };
+    emits("update:options", [...localOptions.value]);
+  }
+};
+
+const updateSelectedValue = (newValue) => {
+  localSelectedValue.value = newValue;
+  emits("update:selectedValue", newValue);
+  props.onSearchTermChange(newValue);
+};
+
+const selectOption = (option) => {
+  updateSelectedValue(option.label);
+  props.onDropdownToggle(false); // 直接使用 props
+};
+
+const addSelectOption = () => {
+  if ((localSelectedValue.value || "").trim()) {
+    props.onAddSelectOption(localSelectedValue.value.trim());
+    updateSelectedValue("");
+  }
+};
+
+const handleBlur = () => {
+  setTimeout(() => props.onDropdownToggle(false), 200); // 直接使用 props
+};
+
+const deleteSelectedOption = () => {
+  if (selectedOption.value) {
+    props.onDeleteSelectOption(selectedOption.value.id);
+    updateSelectedValue("");
+  }
+};
+
+// 生命周期钩子
+onMounted(() => {
+  if (props.isTitleEditing && titleInputRef.value) {
+    titleInputRef.value.focus();
+  }
+});
 </script>
 
 <style scoped>
