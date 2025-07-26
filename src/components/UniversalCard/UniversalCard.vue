@@ -382,6 +382,7 @@ onMounted(() => {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  text-align: center;
 }
 
 .card-title-input {
@@ -392,6 +393,7 @@ onMounted(() => {
   border: 1px solid #ccc;
   border-radius: 4px;
   margin-bottom: 4px;
+  text-align: center;
 }
 
 .card-content {
@@ -550,13 +552,16 @@ onMounted(() => {
 .searchable-select {
   position: relative;
   margin-top: 8px;
+  display: flex;
+  justify-content: center;
 }
 
 .select-input-container {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 4px;
-  width: 100%;
+  width: auto;
 }
 
 .select-input {
@@ -606,6 +611,8 @@ onMounted(() => {
   top: calc(100% + 4px);
   left: 0;
   right: 0;
+  margin: 0 auto;
+  width: 161px;
   max-height: 200px;
   overflow-y: auto;
   border: 1px solid #ccc;
@@ -613,7 +620,6 @@ onMounted(() => {
   background-color: white;
   z-index: 10;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
-  width: 100%;
 }
 
 .select-dropdown.editable .dropdown-option {
