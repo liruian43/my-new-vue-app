@@ -408,9 +408,6 @@ const setShowDropdown = (cardId, value) => {
   flex-wrap: wrap;
   justify-content: center;
   gap: 6px;
-  width: 100%;
-  max-width: 1200px;
-  margin: 0 auto;
 }
 
 .card-wrapper {
