@@ -1,6 +1,14 @@
 <template>
   <div class="app-container" @click="handleContainerClick">
-    <h1>通用流程模拟</h1>
+    <h1>通用卡片管理系统</h1>
+
+    <div class="management-panels">
+      <DataImportExport />
+      <TemplateManager
+        :current-card="selectedCard"
+        @template-applied="applyTemplateToCard"
+      />
+    </div>
 
     <div class="card-controls">
       <button class="test-button" @click="addCard">添加卡片</button>
@@ -107,7 +115,7 @@
 
     <div class="cards-container">
       <div
-        v-for="card in cards"
+        v-for="card in appData.cards"
         :key="card.id"
         class="card-wrapper"
         :class="{ deleting: deletingCardId === card.id }"
@@ -149,43 +157,52 @@
 <script setup>
 import { ref, computed } from "vue";
 import UniversalCard from "./components/UniversalCard/UniversalCard.vue";
+import DataImportExport from "./components/DataManagement/DataImportExport.vue";
+import TemplateManager from "./components/DataManagement/TemplateManager.vue";
+import { useDataManagement } from "./composables/useDataManagement";
 
-const cards = ref([
-  {
-    id: 1,
-    data: {
-      title: "默认标题",
-      options: [
-        { id: 1, name: "选项1", value: "100", unit: "元", checked: false },
-        { id: 2, name: "选项2", value: "200", unit: "元", checked: false },
-      ],
-      selectOptions: [
-        { id: 1, label: "选项A" },
-        { id: 2, label: "选项B" },
-        { id: 3, label: "选项C" },
-      ],
-      selectedValue: "选项A",
+// 使用本地数据管理
+const { appData } = useDataManagement();
+
+// 初始化默认数据（如果为空）
+if (appData.value.cards.length === 0) {
+  appData.value.cards = [
+    {
+      id: 1,
+      data: {
+        title: "默认标题",
+        options: [
+          { id: 1, name: "选项1", value: "100", unit: "元", checked: false },
+          { id: 2, name: "选项2", value: "200", unit: "元", checked: false },
+        ],
+        selectOptions: [
+          { id: 1, label: "选项A" },
+          { id: 2, label: "选项B" },
+          { id: 3, label: "选项C" },
+        ],
+        selectedValue: "选项A",
+      },
+      showDropdown: false,
+      isTitleEditing: false,
+      isOptionsEditing: false,
+      isSelectEditing: false,
+      editableFields: {
+        optionName: true,
+        optionValue: true,
+        optionUnit: true,
+        optionCheckbox: true,
+        optionActions: true,
+        select: true,
+      },
     },
-    showDropdown: false,
-    isTitleEditing: false,
-    isOptionsEditing: false,
-    isSelectEditing: false,
-    editableFields: {
-      optionName: true,
-      optionValue: true,
-      optionUnit: true,
-      optionCheckbox: true,
-      optionActions: true,
-      select: true,
-    },
-  },
-]);
+  ];
+}
 
 const selectedCardId = ref(null);
 const deletingCardId = ref(null);
 
 const selectedCard = computed(() => {
-  return cards.value.find((card) => card.id === selectedCardId.value);
+  return appData.value.cards.find((card) => card.id === selectedCardId.value);
 });
 
 const addCard = () => {
@@ -193,7 +210,7 @@ const addCard = () => {
   const newCard = {
     id: newId,
     data: {
-      title: `新卡片 ${cards.value.length + 1}`,
+      title: `新卡片 ${appData.value.cards.length + 1}`,
       options: [{ id: 1, name: "新选项", value: "", unit: "", checked: false }],
       selectOptions: [{ id: 1, label: "新选项" }],
       selectedValue: "",
@@ -213,12 +230,12 @@ const addCard = () => {
   };
 
   if (selectedCardId.value) {
-    const index = cards.value.findIndex(
+    const index = appData.value.cards.findIndex(
       (card) => card.id === selectedCardId.value
     );
-    cards.value.splice(index, 0, newCard);
+    appData.value.cards.splice(index, 0, newCard);
   } else {
-    cards.value.push(newCard);
+    appData.value.cards.push(newCard);
   }
 
   selectedCardId.value = newId;
@@ -241,7 +258,7 @@ const prepareDeleteCard = () => {
 };
 
 const confirmDeleteCard = (id) => {
-  cards.value = cards.value.filter((card) => card.id !== id);
+  appData.value.cards = appData.value.cards.filter((card) => card.id !== id);
   deletingCardId.value = null;
   selectedCardId.value = null;
 };
@@ -271,9 +288,8 @@ const toggleEditableField = (field) => {
   }
 };
 
-// 以下方法保持不变
 const handleAddOption = (cardId, afterId) => {
-  const cardIndex = cards.value.findIndex((c) => c.id === cardId);
+  const cardIndex = appData.value.cards.findIndex((c) => c.id === cardId);
   if (cardIndex === -1) return;
 
   const newId = Date.now();
@@ -285,7 +301,7 @@ const handleAddOption = (cardId, afterId) => {
     checked: false,
   };
 
-  const card = cards.value[cardIndex];
+  const card = appData.value.cards[cardIndex];
   const options = [...card.data.options];
 
   if (!afterId) {
@@ -301,38 +317,51 @@ const handleAddOption = (cardId, afterId) => {
 };
 
 const handleDeleteOption = (cardId, optionId) => {
-  const cardIndex = cards.value.findIndex((c) => c.id === cardId);
+  const cardIndex = appData.value.cards.findIndex((c) => c.id === cardId);
   if (cardIndex === -1) return;
 
-  const card = cards.value[cardIndex];
+  const card = appData.value.cards[cardIndex];
   card.data.options = card.data.options.filter(
     (option) => option.id !== optionId
   );
 };
 
 const handleAddSelectOption = (cardId, label) => {
-  const cardIndex = cards.value.findIndex((c) => c.id === cardId);
+  const cardIndex = appData.value.cards.findIndex((c) => c.id === cardId);
   if (cardIndex === -1) return;
 
   const newId = Date.now();
-  const card = cards.value[cardIndex];
+  const card = appData.value.cards[cardIndex];
   card.data.selectOptions = [...card.data.selectOptions, { id: newId, label }];
 };
 
 const handleDeleteSelectOption = (cardId, optionId) => {
-  const cardIndex = cards.value.findIndex((c) => c.id === cardId);
+  const cardIndex = appData.value.cards.findIndex((c) => c.id === cardId);
   if (cardIndex === -1) return;
 
-  const card = cards.value[cardIndex];
+  const card = appData.value.cards[cardIndex];
   card.data.selectOptions = card.data.selectOptions.filter(
     (option) => option.id !== optionId
   );
 };
 
 const setShowDropdown = (cardId, value) => {
-  const card = cards.value.find((c) => c.id === cardId);
+  const card = appData.value.cards.find((c) => c.id === cardId);
   if (card) {
     card.showDropdown = value;
+  }
+};
+
+const applyTemplateToCard = (templateData) => {
+  if (!selectedCardId.value) return;
+
+  const cardIndex = appData.value.cards.findIndex(
+    (c) => c.id === selectedCardId.value
+  );
+  if (cardIndex !== -1) {
+    appData.value.cards[cardIndex].data = JSON.parse(
+      JSON.stringify(templateData)
+    );
   }
 };
 </script>
@@ -344,6 +373,21 @@ const setShowDropdown = (cardId, value) => {
   display: flex;
   flex-direction: column;
   align-items: center;
+}
+
+.management-panels {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  width: 100%;
+  max-width: 1200px;
+}
+
+@media (max-width: 768px) {
+  .management-panels {
+    grid-template-columns: 1fr;
+  }
 }
 
 .card-controls {
@@ -368,6 +412,11 @@ const setShowDropdown = (cardId, value) => {
   background-color: #2196f3;
 }
 
+.test-button:disabled {
+  background-color: #cccccc;
+  cursor: not-allowed;
+}
+
 .cards-container {
   display: flex;
   flex-wrap: wrap;
@@ -387,10 +436,6 @@ const setShowDropdown = (cardId, value) => {
 .card-wrapper.deleting .universal-card {
   box-shadow: 0 0 15px rgba(255, 0, 0, 0.5);
   opacity: 0.9;
-}
-
-.card-wrapper .universal-card.selected {
-  box-shadow: 0 0 0 3px #4caf50;
 }
 
 .delete-overlay {
@@ -419,10 +464,5 @@ const setShowDropdown = (cardId, value) => {
   display: flex;
   align-items: center;
   justify-content: center;
-}
-
-.test-button:disabled {
-  background-color: #cccccc;
-  cursor: not-allowed;
 }
 </style>
