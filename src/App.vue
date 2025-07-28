@@ -1,6 +1,6 @@
 <template>
   <div class="app-container" @click="handleContainerClick">
-    <h1>通用卡片组件测试页</h1>
+    <h1>通用流程模拟</h1>
 
     <div class="card-controls">
       <button class="test-button" @click="addCard">添加卡片</button>
@@ -14,122 +14,94 @@
 
       <button
         class="test-button"
-        @click="setIsTitleEditing(true)"
+        @click="toggleTitleEditing"
         :disabled="!selectedCardId"
+        :class="{ active: selectedCard?.isTitleEditing }"
       >
-        启用标题编辑
-      </button>
-      <button
-        class="test-button"
-        @click="setIsTitleEditing(false)"
-        :disabled="!selectedCardId"
-      >
-        禁用标题编辑
+        {{ selectedCard?.isTitleEditing ? "完成标题编辑" : "编辑标题" }}
       </button>
 
       <button
         class="test-button"
-        @click="setIsOptionsEditing(true)"
+        @click="toggleOptionsEditing"
         :disabled="!selectedCardId"
+        :class="{ active: selectedCard?.isOptionsEditing }"
       >
-        启用选项编辑
-      </button>
-      <button
-        class="test-button"
-        @click="setIsOptionsEditing(false)"
-        :disabled="!selectedCardId"
-      >
-        禁用选项编辑
+        {{ selectedCard?.isOptionsEditing ? "完成选项编辑" : "编辑选项" }}
       </button>
 
       <button
         class="test-button"
-        @click="setEditableField('optionName', true)"
+        @click="toggleEditableField('optionName')"
         :disabled="!selectedCardId"
+        :class="{ active: selectedCard?.editableFields.optionName }"
       >
-        启用选项名称编辑
-      </button>
-      <button
-        class="test-button"
-        @click="setEditableField('optionName', false)"
-        :disabled="!selectedCardId"
-      >
-        禁用选项名称编辑
+        {{
+          selectedCard?.editableFields.optionName
+            ? "完成名称编辑"
+            : "编辑选项名称"
+        }}
       </button>
 
       <button
         class="test-button"
-        @click="setEditableField('optionValue', true)"
+        @click="toggleEditableField('optionValue')"
         :disabled="!selectedCardId"
+        :class="{ active: selectedCard?.editableFields.optionValue }"
       >
-        启用选项值编辑
-      </button>
-      <button
-        class="test-button"
-        @click="setEditableField('optionValue', false)"
-        :disabled="!selectedCardId"
-      >
-        禁用选项值编辑
+        {{
+          selectedCard?.editableFields.optionValue ? "完成值编辑" : "编辑选项值"
+        }}
       </button>
 
       <button
         class="test-button"
-        @click="setEditableField('optionUnit', true)"
+        @click="toggleEditableField('optionUnit')"
         :disabled="!selectedCardId"
+        :class="{ active: selectedCard?.editableFields.optionUnit }"
       >
-        启用选项单位编辑
-      </button>
-      <button
-        class="test-button"
-        @click="setEditableField('optionUnit', false)"
-        :disabled="!selectedCardId"
-      >
-        禁用选项单位编辑
+        {{
+          selectedCard?.editableFields.optionUnit
+            ? "完成单位编辑"
+            : "编辑选项单位"
+        }}
       </button>
 
       <button
         class="test-button"
-        @click="setEditableField('optionCheckbox', true)"
+        @click="toggleEditableField('optionCheckbox')"
         :disabled="!selectedCardId"
+        :class="{ active: selectedCard?.editableFields.optionCheckbox }"
       >
-        显示选项复选框
-      </button>
-      <button
-        class="test-button"
-        @click="setEditableField('optionCheckbox', false)"
-        :disabled="!selectedCardId"
-      >
-        隐藏选项复选框
+        {{
+          selectedCard?.editableFields.optionCheckbox
+            ? "隐藏选项复选框"
+            : "显示选项复选框"
+        }}
       </button>
 
       <button
         class="test-button"
-        @click="enableSelectEditing"
+        @click="toggleSelectEditing"
         :disabled="!selectedCardId"
+        :class="{ active: selectedCard?.isSelectEditing }"
       >
-        启用下拉菜单编辑
-      </button>
-      <button
-        class="test-button"
-        @click="disableSelectEditing"
-        :disabled="!selectedCardId"
-      >
-        禁用下拉菜单编辑
+        {{
+          selectedCard?.isSelectEditing ? "完成下拉菜单编辑" : "编辑下拉菜单"
+        }}
       </button>
 
       <button
         class="test-button"
-        @click="showOptionActions"
+        @click="toggleEditableField('optionActions')"
         :disabled="!selectedCardId"
+        :class="{ active: selectedCard?.editableFields.optionActions }"
       >
-        显示选项增减按钮
-      </button>
-      <button
-        class="test-button"
-        @click="hideOptionActions"
-        :disabled="!selectedCardId"
-      >
-        隐藏选项增减按钮
+        {{
+          selectedCard?.editableFields.optionActions
+            ? "隐藏选项按钮"
+            : "显示选项按钮"
+        }}
       </button>
     </div>
 
@@ -175,7 +147,7 @@
 </template>
 
 <script setup>
-import { ref } from "vue";
+import { ref, computed } from "vue";
 import UniversalCard from "./components/UniversalCard/UniversalCard.vue";
 
 const cards = ref([
@@ -211,6 +183,10 @@ const cards = ref([
 
 const selectedCardId = ref(null);
 const deletingCardId = ref(null);
+
+const selectedCard = computed(() => {
+  return cards.value.find((card) => card.id === selectedCardId.value);
+});
 
 const addCard = () => {
   const newId = Date.now();
@@ -270,44 +246,29 @@ const confirmDeleteCard = (id) => {
   selectedCardId.value = null;
 };
 
-const getSelectedCard = () => {
-  return cards.value.find((card) => card.id === selectedCardId.value);
+const toggleTitleEditing = () => {
+  if (selectedCard.value) {
+    selectedCard.value.isTitleEditing = !selectedCard.value.isTitleEditing;
+  }
 };
 
-const setIsTitleEditing = (value) => {
-  const card = getSelectedCard();
-  if (card) card.isTitleEditing = value;
+const toggleOptionsEditing = () => {
+  if (selectedCard.value) {
+    selectedCard.value.isOptionsEditing = !selectedCard.value.isOptionsEditing;
+  }
 };
 
-const setIsOptionsEditing = (value) => {
-  const card = getSelectedCard();
-  if (card) card.isOptionsEditing = value;
+const toggleSelectEditing = () => {
+  if (selectedCard.value) {
+    selectedCard.value.isSelectEditing = !selectedCard.value.isSelectEditing;
+  }
 };
 
-const setIsSelectEditing = (value) => {
-  const card = getSelectedCard();
-  if (card) card.isSelectEditing = value;
-};
-
-const setEditableField = (field, value) => {
-  const card = getSelectedCard();
-  if (card) card.editableFields[field] = value;
-};
-
-const enableSelectEditing = () => {
-  setIsSelectEditing(true);
-};
-
-const disableSelectEditing = () => {
-  setIsSelectEditing(false);
-};
-
-const showOptionActions = () => {
-  setEditableField("optionActions", true);
-};
-
-const hideOptionActions = () => {
-  setEditableField("optionActions", false);
+const toggleEditableField = (field) => {
+  if (selectedCard.value) {
+    selectedCard.value.editableFields[field] =
+      !selectedCard.value.editableFields[field];
+  }
 };
 
 // 以下方法保持不变
@@ -401,6 +362,10 @@ const setShowDropdown = (cardId, value) => {
   background-color: #4caf50;
   color: white;
   cursor: pointer;
+}
+
+.test-button.active {
+  background-color: #2196f3;
 }
 
 .cards-container {
