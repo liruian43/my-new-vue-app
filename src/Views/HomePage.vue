@@ -328,9 +328,13 @@ const navigateToDataManagement = () => {
   router.push('/data-management');
 };
 
-const handleContainerClick = () => {
-  selectedCardId.value = null;
-  deletingCardId.value = null;
+const handleContainerClick = (event) => {
+  const isButtonClick = event.target.closest('.test-button') !== null;
+  const isCardControlsClick = event.target.closest('.card-controls') !== null;
+  if (!isButtonClick && !isCardControlsClick) {
+    selectedCardId.value = null;
+    deletingCardId.value = null;
+  }
 };
 
 onMounted(() => {

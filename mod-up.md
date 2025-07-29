@@ -1,102 +1,34 @@
-src/
-├── assets/ # 静态资源目录
-│ ├── images/ # 图片资源
-│ ├── fonts/ # 字体文件
-│ └── styles/ # 全局样式文件
-│
-├── components/ # 组件目录
-│ ├── UniversalCard/ # 通用卡片组件
-│ │ └── UniversalCard.vue # 核心卡片组件，负责单个卡片的展示和交互
-│ │
-│ └── DataManagement/ # 数据管理相关组件
-│ ├── DataImportExport.vue # 数据导入导出功能组件
-│ ├── TemplateManager.vue # 模板管理功能组件
-│ └── StorageStatus.vue # 存储状态显示组件
-│
-├── composables/ # 组合式函数目录 (Vue 3 Composition API)
-│ ├── useLocalStorage.js # 封装 localStorage 操作的逻辑
-│ ├── useDataManagement.js # 核心数据管理逻辑（增删改查）
-│ └── useTemplates.js # 模板相关的业务逻辑
-│
-├── stores/ # 状态管理目录
-│ └── dataStore.js # 全局状态管理（使用 Pinia 或 Vuex）
-│
-├── utils/ # 工具函数目录
-│ ├── encryption.js # 数据加密解密工具
-│ └── dataValidator.js # 数据验证工具函数
-│
-├── App.vue # 应用根组件
-└── main.js # 应用入口文件，初始化 Vue 应用
-
-关键文件详细说明：
-components/UniversalCard/UniversalCard.vue
-
-作用：可复用的卡片组件
-
-功能：
-
-卡片内容展示
-
-支持编辑模式切换
-
-选项管理功能
-
-components/DataManagement/DataImportExport.vue
-
-作用：数据导入导出面板
-
-功能：
-
-JSON 格式数据导入
-
-数据导出为文件
-
-导入导出状态反馈
-
-composables/useDataManagement.js
-
-作用：核心数据逻辑封装
-
-功能：
-
-卡片数据 CRUD 操作
-
-数据持久化
-
-数据版本控制
-
-stores/dataStore.js
-
-作用：全局状态管理
-
-典型内容：
-
-javascript
-// 示例 Pinia store
-export const useDataStore = defineStore('data', {
-state: () => ({
-cards: [],
-lastUpdated: null
-}),
-actions: {
-// 数据操作方法
-}
-})
-utils/encryption.js
-
-作用：数据安全处理
-
-典型功能：
-
-javascript
-export function encrypt(data) {
-// 加密实现
-}
-
-export function decrypt(encryptedData) {
-// 解密实现
-}
-
+\src
+│  App.vue
+│  main.js
+│  
+├─assets
+│      logo.png
+│      
+├─components
+│  │  HelloWorld.vue
+│  │  
+│  ├─Auth
+│  │      LoginForm.vue
+│  │      
+│  ├─DataManagement
+│  │      DataManagement.vue
+│  │      
+│  ├─System
+│  │      PerformanceMonitor.vue
+│  │      
+│  └─UniversalCard
+│          UniversalCard.vue
+│          
+├─composables
+│      useAuth.js
+│      
+├─router
+│      index.js
+│      
+└─Views
+        HomePage.vue
+        
 ---
 
 升级文档（仅使用 Vue 3 及其生态系统）
