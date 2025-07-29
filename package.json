@@ -1,6 +1,6 @@
 {
   "name": "my-new-vue-app",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "scripts": {
     "serve": "vue-cli-service serve",
@@ -8,37 +8,35 @@
     "lint": "vue-cli-service lint"
   },
   "dependencies": {
-    "core-js": "^3.8.3",
     "vue": "^3.2.13",
-    "vue-router": "^4.5.1"
+    "vue-router": "^4.0.3"
   },
   "devDependencies": {
-    "@babel/core": "^7.23.9",
-    "@babel/eslint-parser": "^7.23.9",
-    "@vue/cli-plugin-babel": "~5.0.8",
     "@vue/cli-plugin-eslint": "^5.0.8",
-    "@vue/cli-service": "~5.0.8",
-    "eslint": "^8.57.1",
-    "eslint-plugin-vue": "^9.9.0",
-    "vue-eslint-parser": "^10.2.0"
+    "@vue/cli-service": "^5.0.8",
+    "eslint": "^8.32.0",
+    "eslint-plugin-vue": "^9.9.0"
   },
   "eslintConfig": {
     "root": true,
+    "env": {
+      "node": true,
+      "es2021": true,
+      "vue/setup-compiler-macros": true
+    },
     "extends": [
       "plugin:vue/vue3-essential",
       "eslint:recommended"
     ],
-    "parser": "vue-eslint-parser",
     "parserOptions": {
-      "parser": "@babel/eslint-parser",
+      "ecmaVersion": "latest",
       "sourceType": "module"
     },
-    "rules": {}
-  },
-  "browserslist": [
-    "> 1%",
-    "last 2 versions",
-    "not dead",
-    "not ie 11"
-  ]
+    "rules": {
+      "no-console": "off",
+      "no-debugger": "off",
+      "no-undef": "off",
+      "vue/multi-word-component-names": "off"
+    }
+  }
 }

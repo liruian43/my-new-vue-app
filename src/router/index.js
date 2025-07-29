@@ -1,13 +1,14 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import HomePage from '../Views/HomePage.vue'
 import DataManagement from '../components/DataManagement/DataManagement.vue'
 
 const router = createRouter({
-  history: createWebHistory(import.meta.env.BASE_URL),
+  history: createWebHistory('/'), // 直接使用根路径
   routes: [
     {
       path: '/',
       name: 'Home',
-      component: () => import('../App.vue') // 直接使用App.vue作为首页
+      component: HomePage
     },
     {
       path: '/data-management',
@@ -17,4 +18,4 @@ const router = createRouter({
   ]
 })
 
-export default router    
+export default router
