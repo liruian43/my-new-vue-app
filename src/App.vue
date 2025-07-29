@@ -2,12 +2,10 @@
   <div class="app-container" @click="handleContainerClick">
     <div class="nav-container">
       <h1>通用卡片管理系统</h1>
-      <div class="nav-buttons">
-        <button class="nav-button" @click="navigateToDataManagement">数据管理</button>
-      </div>
     </div>
 
     <div class="card-controls">
+      <button class="test-button" @click="navigateToDataManagement">数据管理</button>
       <button class="test-button" @click="addCard">添加卡片</button>
       <button
         class="test-button"
@@ -374,40 +372,9 @@ onMounted(() => {
 
 .nav-container {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
+  justify-content: center;
   width: 100%;
   margin-bottom: 20px;
-}
-
-.nav-buttons {
-  display: flex;
-  gap: 10px;
-}
-
-.nav-button {
-  padding: 8px 16px;
-  background-color: #4CAF50;
-  color: white;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 14px;
-}
-
-.management-panels {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1rem;
-  margin-bottom: 1rem;
-  width: 100%;
-  max-width: 1200px;
-}
-
-@media (max-width: 768px) {
-  .management-panels {
-    grid-template-columns: 1fr;
-  }
 }
 
 .card-controls {
@@ -416,6 +383,9 @@ onMounted(() => {
   border: 1px solid #ddd;
   border-radius: 8px;
   background-color: #f9f9f9;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
 }
 
 .test-button {
