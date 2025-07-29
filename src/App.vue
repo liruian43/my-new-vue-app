@@ -1,13 +1,10 @@
 <template>
   <div class="app-container" @click="handleContainerClick">
-    <h1>通用卡片管理系统</h1>
-
-    <div class="management-panels">
-      <DataImportExport />
-      <TemplateManager
-        :current-card="selectedCard"
-        @template-applied="applyTemplateToCard"
-      />
+    <div class="nav-container">
+      <h1>通用卡片管理系统</h1>
+      <div class="nav-buttons">
+        <button class="nav-button" @click="navigateToDataManagement">数据管理</button>
+      </div>
     </div>
 
     <div class="card-controls">
@@ -155,14 +152,14 @@
 </template>
 
 <script setup>
-import { ref, computed } from "vue";
+import { ref, computed, onMounted } from "vue";
 import UniversalCard from "./components/UniversalCard/UniversalCard.vue";
-import DataImportExport from "./components/DataManagement/DataImportExport.vue";
-import TemplateManager from "./components/DataManagement/TemplateManager.vue";
-import { useDataManagement } from "./composables/useDataManagement";
+import { useRouter } from 'vue-router'; // 新增：导入路由钩子
 
 // 使用本地数据管理
-const { appData } = useDataManagement();
+const appData = ref({
+  cards: []
+});
 
 // 初始化默认数据（如果为空）
 if (appData.value.cards.length === 0) {
@@ -200,6 +197,8 @@ if (appData.value.cards.length === 0) {
 
 const selectedCardId = ref(null);
 const deletingCardId = ref(null);
+
+const router = useRouter(); // 新增：获取路由实例
 
 const selectedCard = computed(() => {
   return appData.value.cards.find((card) => card.id === selectedCardId.value);
@@ -352,18 +351,16 @@ const setShowDropdown = (cardId, value) => {
   }
 };
 
-const applyTemplateToCard = (templateData) => {
-  if (!selectedCardId.value) return;
+// 数据管理导航方法 - 更新后
+const navigateToDataManagement = () => {
+  router.push('/data-management'); // 使用路由实例进行导航
+}
 
-  const cardIndex = appData.value.cards.findIndex(
-    (c) => c.id === selectedCardId.value
-  );
-  if (cardIndex !== -1) {
-    appData.value.cards[cardIndex].data = JSON.parse(
-      JSON.stringify(templateData)
-    );
-  }
-};
+// 生命周期钩子 - 新增
+onMounted(() => {
+  console.log('App.vue 已挂载');
+  // 可以在这里添加初始化逻辑
+})
 </script>
 
 <style>
@@ -373,6 +370,29 @@ const applyTemplateToCard = (templateData) => {
   display: flex;
   flex-direction: column;
   align-items: center;
+}
+
+.nav-container {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  margin-bottom: 20px;
+}
+
+.nav-buttons {
+  display: flex;
+  gap: 10px;
+}
+
+.nav-button {
+  padding: 8px 16px;
+  background-color: #4CAF50;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
 }
 
 .management-panels {
