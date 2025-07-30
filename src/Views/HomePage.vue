@@ -1,249 +1,259 @@
 <template>
   <div class="home-page" @click="handleContainerClick">
-    <div class="card-controls">
-      <button class="test-button" @click="navigateToDataManagement">数据管理</button>
-      <button class="test-button" @click="addCard">添加卡片</button>
-      <button
-        class="test-button"
-        @click="prepareDeleteCard"
-        :disabled="!selectedCardId"
-      >
-        删除卡片
-      </button>
-      <button
-        class="test-button"
-        @click="toggleTitleEditing"
-        :disabled="!selectedCardId"
-        :class="{ active: selectedCard?.isTitleEditing }"
-      >
-        {{ selectedCard?.isTitleEditing ? "完成标题编辑" : "编辑标题" }}
-      </button>
-      <button
-        class="test-button"
-        @click="toggleOptionsEditing"
-        :disabled="!selectedCardId"
-        :class="{ active: selectedCard?.isOptionsEditing }"
-      >
-        {{ selectedCard?.isOptionsEditing ? "完成选项编辑" : "编辑选项" }}
-      </button>
-      <button
-        class="test-button"
-        @click="toggleSelectEditing"
-        :disabled="!selectedCardId"
-        :class="{ active: selectedCard?.isSelectEditing }"
-      >
-        {{ selectedCard?.isSelectEditing ? "完成下拉菜单编辑" : "编辑下拉菜单" }}
-      </button>
-      <button
-        class="test-button"
-        @click="() => toggleEditableField('optionName')"
-        :disabled="!selectedCardId"
-        :class="{ active: selectedCard?.editableFields.optionName }"
-      >
-        {{
-          selectedCard?.editableFields.optionName ? "完成名称编辑" : "编辑选项名称"
-        }}
-      </button>
-      <button
-        class="test-button"
-        @click="() => toggleEditableField('optionValue')"
-        :disabled="!selectedCardId"
-        :class="{ active: selectedCard?.editableFields.optionValue }"
-      >
-        {{
-          selectedCard?.editableFields.optionValue ? "完成值编辑" : "编辑选项值"
-        }}
-      </button>
-      <button
-        class="test-button"
-        @click="() => toggleEditableField('optionUnit')"
-        :disabled="!selectedCardId"
-        :class="{ active: selectedCard?.editableFields.optionUnit }"
-      >
-        {{
-          selectedCard?.editableFields.optionUnit ? "完成单位编辑" : "编辑选项单位"
-        }}
-      </button>
-      <button
-        class="test-button"
-        @click="() => toggleEditableField('optionCheckbox')"
-        :disabled="!selectedCardId"
-        :class="{ active: selectedCard?.editableFields.optionCheckbox }"
-      >
-        {{
-          selectedCard?.editableFields.optionCheckbox ? "隐藏选项复选框" : "显示选项复选框"
-        }}
-      </button>
-      <button
-        class="test-button"
-        @click="() => toggleEditableField('optionActions')"
-        :disabled="!selectedCardId"
-        :class="{ active: selectedCard?.editableFields.optionActions }"
-      >
-        {{
-          selectedCard?.editableFields.optionActions ? "隐藏选项按钮" : "显示选项按钮"
-        }}
-      </button>
+    <!-- 加载状态指示 -->
+    <div v-if="loading" class="loading-overlay">
+      <div class="loading-spinner">加载中...</div>
     </div>
+    
+    <!-- 错误提示 -->
+    <div v-else-if="error" class="error-message">
+      {{ error }}
+    </div>
+    
+    <!-- 正常内容 -->
+    <div v-else>
+      <!-- 顶部控制按钮 -->
+      <div class="card-controls">
+        <button class="test-button" @click="addCard">添加卡片</button>
+        <button
+          class="test-button"
+          @click="prepareDeleteCard"
+          :disabled="!selectedCardId"
+        >
+          删除卡片
+        </button>
+        <button
+          class="test-button"
+          @click="toggleTitleEditing"
+          :disabled="!selectedCardId"
+          :class="{ active: selectedCard?.isTitleEditing }"
+        >
+          {{ selectedCard?.isTitleEditing ? "完成标题编辑" : "编辑标题" }}
+        </button>
+        <button
+          class="test-button"
+          @click="toggleOptionsEditing"
+          :disabled="!selectedCardId"
+          :class="{ active: selectedCard?.isOptionsEditing }"
+        >
+          {{ selectedCard?.isOptionsEditing ? "完成选项编辑" : "编辑选项" }}
+        </button>
+        <button
+          class="test-button"
+          @click="toggleSelectEditing"
+          :disabled="!selectedCardId"
+          :class="{ active: selectedCard?.isSelectEditing }"
+        >
+          {{ selectedCard?.isSelectEditing ? "完成下拉菜单编辑" : "编辑下拉菜单" }}
+        </button>
+        <button
+          class="test-button"
+          @click="() => toggleEditableField('optionName')"
+          :disabled="!selectedCardId"
+          :class="{ active: selectedCard?.editableFields.optionName }"
+        >
+          {{
+            selectedCard?.editableFields.optionName ? "完成名称编辑" : "编辑选项名称"
+          }}
+        </button>
+        <button
+          class="test-button"
+          @click="() => toggleEditableField('optionValue')"
+          :disabled="!selectedCardId"
+          :class="{ active: selectedCard?.editableFields.optionValue }"
+        >
+          {{
+            selectedCard?.editableFields.optionValue ? "完成值编辑" : "编辑选项值"
+          }}
+        </button>
+        <button
+          class="test-button"
+          @click="() => toggleEditableField('optionUnit')"
+          :disabled="!selectedCardId"
+          :class="{ active: selectedCard?.editableFields.optionUnit }"
+        >
+          {{
+            selectedCard?.editableFields.optionUnit ? "完成单位编辑" : "编辑选项单位"
+          }}
+        </button>
+        <button
+          class="test-button"
+          @click="() => toggleEditableField('optionCheckbox')"
+          :disabled="!selectedCardId"
+          :class="{ active: selectedCard?.editableFields.optionCheckbox }"
+        >
+          {{
+            selectedCard?.editableFields.optionCheckbox ? "隐藏选项复选框" : "显示选项复选框"
+          }}
+        </button>
+        <button
+          class="test-button"
+          @click="() => toggleEditableField('optionActions')"
+          :disabled="!selectedCardId"
+          :class="{ active: selectedCard?.editableFields.optionActions }"
+        >
+          {{
+            selectedCard?.editableFields.optionActions ? "隐藏选项按钮" : "显示选项按钮"
+          }}
+        </button>
+      </div>
 
-    <div class="cards-container">
-      <div
-        v-for="card in appData.cards"
-        :key="card.id"
-        class="card-wrapper"
-        :class="{ deleting: deletingCardId === card.id, selected: selectedCardId === card.id }"
-        @click.stop="selectCard(card.id)"
-      >
-        <UniversalCard
-          v-model:modelValue="card.data.title"
-          v-model:options="card.data.options"
-          v-model:selectedValue="card.data.selectedValue"
-          :selectOptions="card.data.selectOptions"
-          :showDropdown="card.showDropdown"
-          :isTitleEditing="card.isTitleEditing"
-          :isOptionsEditing="card.isOptionsEditing"
-          :isSelectEditing="card.isSelectEditing"
-          :editableFields="card.editableFields"
-          @add-option="(afterId) => handleAddOption(card.id, afterId)"
-          @delete-option="(optionId) => handleDeleteOption(card.id, optionId)"
-          @add-select-option="(label) => handleAddSelectOption(card.id, label)"
-          @delete-select-option="(optionId) => handleDeleteSelectOption(card.id, optionId)"
-          @dropdown-toggle="(value) => setShowDropdown(card.id, value)"
-          :class="{ selected: selectedCardId === card.id }"
-        />
+      <!-- 卡片列表 -->
+      <div class="cards-container">
+        <div
+          v-for="card in cards"
+          :key="card.id"
+          class="card-wrapper"
+          :class="{ deleting: deletingCardId === card.id, selected: selectedCardId === card.id }"
+          @click.stop="selectCard(card.id)"
+        >
+          <UniversalCard
+            v-model:modelValue="card.data.title"
+            v-model:options="card.data.options"
+            v-model:selectedValue="card.data.selectedValue"
+            :selectOptions="card.data.selectOptions"
+            :showDropdown="card.showDropdown"
+            :isTitleEditing="card.isTitleEditing"
+            :isOptionsEditing="card.isOptionsEditing"
+            :isSelectEditing="card.isSelectEditing"
+            :editableFields="card.editableFields"
+            @add-option="(afterId) => handleAddOption(card.id, afterId)"
+            @delete-option="(optionId) => handleDeleteOption(card.id, optionId)"
+            @add-select-option="(label) => handleAddSelectOption(card.id, label)"
+            @delete-select-option="(optionId) => handleDeleteSelectOption(card.id, optionId)"
+            @dropdown-toggle="(value) => setShowDropdown(card.id, value)"
+            :class="{ selected: selectedCardId === card.id }"
+          />
 
-        <div v-if="deletingCardId === card.id" class="delete-overlay">
-          <button
-            class="delete-card-button"
-            @click.stop="confirmDeleteCard(card.id)"
-          >
-            ×
-          </button>
+          <div v-if="deletingCardId === card.id" class="delete-overlay">
+            <button class="delete-card-button" @click.stop="confirmDeleteCard(card.id)">×</button>
+          </div>
         </div>
       </div>
-    </div>
 
-    <div class="data-management-section">
-      <h3 class="section-title">数据管理</h3>
-      
-      <div class="data-controls">
-        <div class="storage-type-selector">
-          <label>存储类型: </label>
-          <select v-model="selectedStorageType" @change="changeStorageType">
-            <option value="local">LocalStorage</option>
-            <option value="session">SessionStorage</option>
-            <option value="memory">内存存储</option>
-          </select>
-        </div>
+      <!-- 数据管理部分 -->
+      <div class="data-management-section">
+        <h3 class="section-title">数据管理</h3>
         
-        <div class="data-actions">
-          <button class="data-button" @click="saveAllData">保存所有数据</button>
-          <button class="data-button" @click="loadAllData">加载所有数据</button>
-          <button class="data-button" @click="exportData">导出数据</button>
-          <label class="data-button" for="file-import">
-            导入数据
-            <input id="file-import" type="file" @change="importData" accept=".json" class="file-input" />
-          </label>
-          <button class="data-button" @click="clearAllData">清空所有数据</button>
-        </div>
-      </div>
-      
-      <div class="data-viewer">
-        <div class="data-viewer-header">
-          <h4>数据查看器</h4>
-          <div class="data-viewer-controls">
-            <button class="view-mode-button" 
-                    :class="{ active: viewMode === 'tree' }"
-                    @click="viewMode = 'tree'">树状视图</button>
-            <button class="view-mode-button" 
-                    :class="{ active: viewMode === 'json' }"
-                    @click="viewMode = 'json'">JSON视图</button>
+        <div class="data-controls">
+          <div class="storage-type-selector">
+            <label>存储类型: </label>
+            <select v-model="storageType" @change="changeStorageType">
+              <option value="local">LocalStorage</option>
+              <option value="session">SessionStorage</option>
+              <option value="memory">内存存储</option>
+            </select>
+          </div>
+          
+          <div class="data-actions">
+            <button class="data-button" @click="saveAllData">保存所有数据</button>
+            <button class="data-button" @click="loadAllData">加载所有数据</button>
+            <button class="data-button" @click="exportData">导出数据</button>
+            <label class="data-button" for="file-import">
+              导入数据
+              <input id="file-import" type="file" @change="importData" accept=".json" class="file-input" />
+            </label>
+            <button class="data-button" @click="clearAllData">清空所有数据</button>
           </div>
         </div>
         
-        <div class="data-content">
-          <div v-if="viewMode === 'tree'">
-            <div class="tree-view">
-              <div class="tree-node" v-for="(card, index) in dataPreview" :key="index">
-                <div class="tree-node-header">
-                  <span class="tree-node-key">卡片 {{ card.id }}</span>
-                  <span class="tree-node-type">Object</span>
-                </div>
-                <div class="nested-node">
+        <div class="data-viewer">
+          <div class="data-viewer-header">
+            <h4>数据查看器</h4>
+            <div class="data-viewer-controls">
+              <button class="view-mode-button" 
+                      :class="{ active: viewMode === 'tree' }"
+                      @click="viewMode = 'tree'">树状视图</button>
+              <button class="view-mode-button" 
+                      :class="{ active: viewMode === 'json' }"
+                      @click="viewMode = 'json'">JSON视图</button>
+            </div>
+          </div>
+          
+          <div class="data-content">
+            <div v-if="viewMode === 'tree'">
+              <div class="tree-view">
+                <div class="tree-node" v-for="(card, index) in dataPreview" :key="index">
                   <div class="tree-node-header">
-                    <span class="tree-node-key">title</span>
-                    <span class="tree-node-type">String</span>
+                    <span class="tree-node-key">卡片 {{ card.id }}</span>
+                    <span class="tree-node-type">Object</span>
                   </div>
-                  <div class="tree-node-value">
-                    {{ card.data.title }}
-                  </div>
-                </div>
-                <div class="nested-node">
-                  <div class="tree-node-header">
-                    <span class="tree-node-key">options</span>
-                    <span class="tree-node-type">Array</span>
-                  </div>
-                  <div v-for="(option, optIndex) in card.data.options" :key="optIndex" class="nested-node">
+                  <div class="nested-node">
                     <div class="tree-node-header">
-                      <span class="tree-node-key">选项 {{ option.id }}</span>
-                      <span class="tree-node-type">Object</span>
+                      <span class="tree-node-key">title</span>
+                      <span class="tree-node-type">String</span>
                     </div>
-                    <div class="nested-node">
-                      <div class="tree-node-header">
-                        <span class="tree-node-key">name</span>
-                        <span class="tree-node-type">String</span>
-                      </div>
-                      <div class="tree-node-value">
-                        {{ option.name }}
-                      </div>
-                    </div>
-                    <div class="nested-node">
-                      <div class="tree-node-header">
-                        <span class="tree-node-key">value</span>
-                        <span class="tree-node-type">String</span>
-                      </div>
-                      <div class="tree-node-value">
-                        {{ option.value }}
-                      </div>
-                    </div>
-                    <div class="nested-node">
-                      <div class="tree-node-header">
-                        <span class="tree-node-key">unit</span>
-                        <span class="tree-node-type">String</span>
-                      </div>
-                      <div class="tree-node-value">
-                        {{ option.unit }}
-                      </div>
+                    <div class="tree-node-value">
+                      {{ card.data.title }}
                     </div>
                   </div>
-                </div>
-                <div class="nested-node">
-                  <div class="tree-node-header">
-                    <span class="tree-node-key">selectOptions</span>
-                    <span class="tree-node-type">Array</span>
-                  </div>
-                  <div v-for="(select, selIndex) in card.data.selectOptions" :key="selIndex" class="nested-node">
+                  <div class="nested-node">
                     <div class="tree-node-header">
-                      <span class="tree-node-key">下拉选项 {{ select.id }}</span>
-                      <span class="tree-node-type">Object</span>
+                      <span class="tree-node-key">options</span>
+                      <span class="tree-node-type">Array</span>
                     </div>
-                    <div class="nested-node">
+                    <div v-for="(option, optIndex) in card.data.options" :key="optIndex" class="nested-node">
                       <div class="tree-node-header">
-                        <span class="tree-node-key">label</span>
-                        <span class="tree-node-type">String</span>
+                        <span class="tree-node-key">选项 {{ option.id }}</span>
+                        <span class="tree-node-type">Object</span>
                       </div>
-                      <div class="tree-node-value">
-                        {{ select.label }}
+                      <div class="nested-node">
+                        <div class="tree-node-header">
+                          <span class="tree-node-key">name</span>
+                          <span class="tree-node-type">String</span>
+                        </div>
+                        <div class="tree-node-value">
+                          {{ option.name }}
+                        </div>
+                      </div>
+                      <div class="nested-node">
+                        <div class="tree-node-header">
+                          <span class="tree-node-key">value</span>
+                          <span class="tree-node-type">String</span>
+                        </div>
+                        <div class="tree-node-value">
+                          {{ option.value }}
+                        </div>
+                      </div>
+                      <div class="nested-node">
+                        <div class="tree-node-header">
+                          <span class="tree-node-key">unit</span>
+                          <span class="tree-node-type">String</span>
+                        </div>
+                        <div class="tree-node-value">
+                          {{ option.unit }}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="nested-node">
+                    <div class="tree-node-header">
+                      <span class="tree-node-key">selectOptions</span>
+                      <span class="tree-node-type">Array</span>
+                    </div>
+                    <div v-for="(select, selIndex) in card.data.selectOptions" :key="selIndex" class="nested-node">
+                      <div class="tree-node-header">
+                        <span class="tree-node-key">下拉选项 {{ select.id }}</span>
+                        <span class="tree-node-type">Object</span>
+                      </div>
+                      <div class="nested-node">
+                        <div class="tree-node-header">
+                          <span class="tree-node-key">label</span>
+                          <span class="tree-node-type">String</span>
+                        </div>
+                        <div class="tree-node-value">
+                          {{ select.label }}
+                        </div>
                       </div>
                     </div>
                   </div>
                 </div>
               </div>
             </div>
-          </div>
-          
-          <div v-else>
-            <pre class="json-view">{{ JSON.stringify(dataPreview, null, 2) }}</pre>
+            
+            <div v-else>
+              <pre class="json-view">{{ JSON.stringify(dataPreview, null, 2) }}</pre>
+            </div>
           </div>
         </div>
       </div>
@@ -252,211 +262,126 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch } from "vue";
-import UniversalCard from "../components/UniversalCard/UniversalCard.vue";
-import { useRouter } from "vue-router";
-import DataManager, { 
-  DATA_TYPES, 
-  LocalStorageStrategy, 
-  SessionStorageStrategy, 
-  MemoryStorage 
-} from "../components/Data/manager.js";
+import { computed, onMounted, ref } from 'vue';
+import { useCardStore } from '../components/Data/store';
+import UniversalCard from '../components/UniversalCard/UniversalCard.vue';
 
-const appData = ref({
-  cards: []
+const cardStore = useCardStore();
+const loading = ref(true);
+const error = ref(null);
+
+// 从store获取状态
+const cards = computed(() => cardStore.cards);
+const selectedCardId = computed({
+  get: () => cardStore.selectedCardId,
+  set: (value) => cardStore.selectedCardId = value
+});
+const deletingCardId = computed({
+  get: () => cardStore.deletingCardId,
+  set: (value) => cardStore.deletingCardId = value
+});
+const storageType = computed({
+  get: () => cardStore.storageType,
+  set: (value) => cardStore.changeStorageType(value)
+});
+const selectedCard = computed(() => cardStore.selectedCard);
+const dataPreview = computed(() => cardStore.dataPreview);
+const viewMode = computed({
+  get: () => cardStore.viewMode,
+  set: (value) => cardStore.setViewMode(value)
 });
 
-if (appData.value.cards.length === 0) {
-  appData.value.cards = [
-    {
-      id: 1,
-      data: {
-        title: "默认标题",
-        options: [
-          { id: 1, name: "选项1", value: "100", unit: "元", checked: false },
-          { id: 2, name: "选项2", value: "200", unit: "元", checked: false },
-        ],
-        selectOptions: [
-          { id: 1, label: "选项A" },
-          { id: 2, label: "选项B" },
-          { id: 3, label: "选项C" },
-        ],
-        selectedValue: "选项A",
-      },
-      showDropdown: false,
-      isTitleEditing: false,
-      isOptionsEditing: false,
-      isSelectEditing: false,
-      editableFields: {
-        optionName: true,
-        optionValue: true,
-        optionUnit: true,
-        optionCheckbox: true,
-        optionActions: true,
-        select: true,
-      },
-    },
-  ];
-}
-
-DataManager.registerData('cards', appData.value.cards, DATA_TYPES.ARRAY, { autoSave: true });
-
-const selectedCardId = ref(null);
-const deletingCardId = ref(null);
-const router = useRouter();
-const selectedStorageType = ref('local');
-const viewMode = ref('tree');
-
-const selectedCard = computed(() => {
-  return appData.value.cards.find((card) => card.id === selectedCardId.value);
+// 初始化
+onMounted(() => {
+  loadAllData().finally(() => {
+    loading.value = false;
+  });
 });
 
-const dataPreview = computed(() => {
-  return DataManager.getData('cards')?.value || [];
-});
-
+// 添加卡片
 const addCard = () => {
-  const newId = Date.now();
-  const newCard = {
-    id: newId,
+  cardStore.addCard({
     data: {
-      title: `新卡片 ${appData.value.cards.length + 1}`,
+      title: `新卡片 ${cards.value.length + 1}`,
       options: [{ id: 1, name: "新选项", value: "", unit: "", checked: false }],
       selectOptions: [{ id: 1, label: "新选项" }],
       selectedValue: "",
-    },
-    showDropdown: false,
-    isTitleEditing: false,
-    isOptionsEditing: false,
-    isSelectEditing: false,
-    editableFields: {
-      optionName: true,
-      optionValue: true,
-      optionUnit: true,
-      optionCheckbox: true,
-      optionActions: true,
-      select: true,
-    },
-  };
-
-  if (selectedCardId.value) {
-    const index = appData.value.cards.findIndex(
-      (card) => card.id === selectedCardId.value
-    );
-    appData.value.cards.splice(index, 0, newCard);
-  } else {
-    appData.value.cards.push(newCard);
-  }
-
-  selectedCardId.value = newId;
+    }
+  });
 };
 
+// 选择卡片
 const selectCard = (id) => {
   selectedCardId.value = id;
   deletingCardId.value = null;
 };
 
+// 准备删除卡片
 const prepareDeleteCard = () => {
   if (selectedCardId.value) {
     deletingCardId.value = selectedCardId.value;
   }
 };
 
+// 确认删除卡片
 const confirmDeleteCard = (id) => {
-  appData.value.cards = appData.value.cards.filter((card) => card.id !== id);
-  deletingCardId.value = null;
-  selectedCardId.value = null;
+  cardStore.deleteCard(id);
 };
 
+// 切换标题编辑状态
 const toggleTitleEditing = () => {
-  if (selectedCard.value) {
-    selectedCard.value.isTitleEditing = !selectedCard.value.isTitleEditing;
+  if (selectedCardId.value) {
+    cardStore.toggleTitleEditing(selectedCardId.value);
   }
 };
 
+// 切换选项编辑状态
 const toggleOptionsEditing = () => {
-  if (selectedCard.value) {
-    selectedCard.value.isOptionsEditing = !selectedCard.value.isOptionsEditing;
+  if (selectedCardId.value) {
+    cardStore.toggleOptionsEditing(selectedCardId.value);
   }
 };
 
+// 切换下拉菜单编辑状态
 const toggleSelectEditing = () => {
-  if (selectedCard.value) {
-    selectedCard.value.isSelectEditing = !selectedCard.value.isSelectEditing;
+  if (selectedCardId.value) {
+    cardStore.toggleSelectEditing(selectedCardId.value);
   }
 };
 
+// 切换可编辑字段
 const toggleEditableField = (field) => {
-  if (selectedCard.value) {
-    selectedCard.value.editableFields[field] =
-      !selectedCard.value.editableFields[field];
+  if (selectedCardId.value) {
+    cardStore.toggleEditableField(selectedCardId.value, field);
   }
 };
 
+// 添加选项
 const handleAddOption = (cardId, afterId) => {
-  const cardIndex = appData.value.cards.findIndex((c) => c.id === cardId);
-  if (cardIndex === -1) return;
-
-  const newId = Date.now();
-  const newOption = {
-    id: newId,
-    name: "新选项",
-    value: "",
-    unit: "",
-    checked: false,
-  };
-
-  const card = appData.value.cards[cardIndex];
-  const options = [...card.data.options];
-
-  if (!afterId) {
-    options.push(newOption);
-  } else {
-    const index = options.findIndex((o) => o.id === afterId);
-    if (index !== -1) {
-      options.splice(index + 1, 0, newOption);
-    }
-  }
-
-  card.data.options = options;
+  cardStore.addOption(cardId, afterId);
 };
 
+// 删除选项
 const handleDeleteOption = (cardId, optionId) => {
-  const cardIndex = appData.value.cards.findIndex((c) => c.id === cardId);
-  if (cardIndex === -1) return;
-
-  const card = appData.value.cards[cardIndex];
-  card.data.options = card.data.options.filter((option) => option.id !== optionId);
+  cardStore.deleteOption(cardId, optionId);
 };
 
+// 添加下拉选项
 const handleAddSelectOption = (cardId, label) => {
-  const cardIndex = appData.value.cards.findIndex((c) => c.id === cardId);
-  if (cardIndex === -1) return;
-
-  const newId = Date.now();
-  const card = appData.value.cards[cardIndex];
-  card.data.selectOptions = [...card.data.selectOptions, { id: newId, label }];
+  cardStore.addSelectOption(cardId, label);
 };
 
+// 删除下拉选项
 const handleDeleteSelectOption = (cardId, optionId) => {
-  const cardIndex = appData.value.cards.findIndex((c) => c.id === cardId);
-  if (cardIndex === -1) return;
-
-  const card = appData.value.cards[cardIndex];
-  card.data.selectOptions = card.data.selectOptions.filter((option) => option.id !== optionId);
+  cardStore.deleteSelectOption(cardId, optionId);
 };
 
+// 设置下拉菜单显示状态
 const setShowDropdown = (cardId, value) => {
-  const card = appData.value.cards.find((c) => c.id === cardId);
-  if (card) {
-    card.showDropdown = value;
-  }
+  cardStore.setShowDropdown(cardId, value);
 };
 
-const navigateToDataManagement = () => {
-  router.push('/data-management');
-};
-
+// 处理容器点击
 const handleContainerClick = (event) => {
   const isButtonClick = event.target.closest('.test-button') !== null;
   const isCardControlsClick = event.target.closest('.card-controls') !== null;
@@ -466,36 +391,48 @@ const handleContainerClick = (event) => {
   }
 };
 
-const saveAllData = async () => {
+// 保存所有数据
+const saveAllData = () => {
   try {
-    await DataManager.saveData('cards');
-    alert('数据已保存');
+    cardStore.saveCardsToLocal();
+    alert('数据已保存到本地存储');
   } catch (error) {
     alert('保存数据失败: ' + error.message);
   }
 };
 
+// 加载所有数据
 const loadAllData = async () => {
   try {
-    const loadedData = await DataManager.loadData('cards', DATA_TYPES.ARRAY);
-    appData.value.cards = loadedData;
-    alert('数据已加载');
-  } catch (error) {
-    alert('加载数据失败: ' + error.message);
+    await cardStore.loadCardsFromLocal();
+    alert('数据已从本地存储加载');
+    
+    // 如果没有数据，添加一个默认卡片
+    if (cards.value.length === 0) {
+      addCard();
+    }
+  } catch (err) {
+    error.value = '加载数据失败: ' + err.message;
+    alert('加载数据失败: ' + err.message);
+    console.error('加载数据失败:', err);
+    
+    // 如果加载失败，添加一个默认卡片
+    addCard();
   }
 };
 
-const exportData = async () => {
-  await DataManager.exportData('cards', 'card_data.json');
+// 导出数据
+const exportData = () => {
+  cardStore.exportData();
 };
 
+// 导入数据
 const importData = async (event) => {
   const file = event.target.files[0];
   if (!file) return;
   
   try {
-    await DataManager.importData('cards', file);
-    appData.value.cards = DataManager.getData('cards');
+    await cardStore.importData(file);
     alert('数据导入成功');
     event.target.value = '';
   } catch (error) {
@@ -503,54 +440,13 @@ const importData = async (event) => {
   }
 };
 
+// 清空所有数据
 const clearAllData = () => {
   if (confirm('确定要清空所有数据吗？此操作不可恢复！')) {
-    DataManager.deleteData('cards');
-    appData.value.cards = [];
+    cardStore.clearAllData();
     alert('数据已清空');
   }
 };
-
-const changeStorageType = () => {
-  let newStorage;
-  
-  switch (selectedStorageType.value) {
-    case 'local':
-      newStorage = new LocalStorageStrategy();
-      break;
-    case 'session':
-      newStorage = new SessionStorageStrategy();
-      break;
-    case 'memory':
-      newStorage = new MemoryStorage();
-      break;
-  }
-  
-  DataManager.storage = newStorage;
-  alert('存储类型已更改');
-};
-
-const isObjectOrArray = (value) => {
-  return value !== null && typeof value === 'object';
-};
-
-const getValueType = (value) => {
-  if (Array.isArray(value)) return 'Array';
-  if (value === null) return 'Null';
-  return typeof value;
-};
-
-const formatValue = (value) => {
-  if (value === null) return 'null';
-  if (typeof value === 'string') return `"${value}"`;
-  if (typeof value === 'object') return JSON.stringify(value);
-  return value.toString();
-};
-
-onMounted(() => {
-  console.log("HomePage.vue 已挂载");
-  loadAllData();
-});
 </script>
 
 <style>
@@ -778,4 +674,39 @@ onMounted(() => {
   padding: 10px;
   border-radius: 4px;
 }
-</style>  
+
+/* 新增的加载状态样式 */
+.loading-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(255, 255, 255, 0.8);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+
+.loading-spinner {
+  font-size: 24px;
+  color: #333;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.error-message {
+  padding: 20px;
+  background-color: #ffebee;
+  color: #b71c1c;
+  border-radius: 4px;
+  margin: 20px;
+  text-align: center;
+  font-size: 16px;
+}
+</style>

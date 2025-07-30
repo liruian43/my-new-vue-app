@@ -1,189 +1,273 @@
 // src/components/Data/store.js
 import { defineStore } from 'pinia';
-import { createApi } from './api';
+import DataManager, { 
+  LocalStorageStrategy, 
+  SessionStorageStrategy, 
+  MemoryStorageStrategy 
+} from './manager';
 
-export const useDataStore = defineStore('data', {
+// 创建数据管理器实例
+let storageStrategy;
+switch (localStorage.getItem('storageType') || 'local') {
+  case 'local':
+    storageStrategy = new LocalStorageStrategy();
+    break;
+  case 'session':
+    storageStrategy = new SessionStorageStrategy();
+    break;
+  case 'memory':
+    storageStrategy = new MemoryStorageStrategy();
+    break;
+}
+
+const dataManager = new DataManager(storageStrategy);
+
+export const useCardStore = defineStore('card', {
   state: () => ({
-    // 共享数据 (key: 资源名, value: 数据)
-    sharedData: {},
-    
-    // 独立数据 (key: 组件实例ID, value: { 资源名: 数据 })
-    instanceData: {},
-    
-    // 加载状态 (key: 操作ID, value: 布尔值)
-    loading: {},
-    
-    // 错误信息 (key: 操作ID, value: 错误对象)
-    errors: {}
+    cards: [],
+    selectedCardId: null,
+    deletingCardId: null,
+    storageType: localStorage.getItem('storageType') || 'local',
+    loading: false,
+    error: null,
+    viewMode: 'tree' // 新增：视图模式
   }),
   
   getters: {
-    // 获取共享数据
-    getSharedData: (state) => (resource) => {
-      return state.sharedData[resource] || [];
+    selectedCard(state) {
+      return state.cards.find(card => card.id === state.selectedCardId);
     },
     
-    // 获取独立数据
-    getInstanceData: (state) => (instanceId, resource) => {
-      return state.instanceData[instanceId]?.[resource] || [];
-    },
-    
-    // 检查加载状态
-    isLoading: (state) => (actionId) => {
-      return state.loading[actionId] || false;
-    },
-    
-    // 获取错误信息
-    getError: (state) => (actionId) => {
-      return state.errors[actionId];
+    dataPreview(state) {
+      return state.cards;
     }
   },
   
   actions: {
-    // 初始化组件实例
-    initInstance(instanceId) {
-      if (!this.instanceData[instanceId]) {
-        this.instanceData[instanceId] = {};
-      }
-    },
-    
-    // 销毁组件实例
-    destroyInstance(instanceId) {
-      if (this.instanceData[instanceId]) {
-        delete this.instanceData[instanceId];
-      }
-    },
-    
-    // 加载数据（支持共享或独立）
-    async fetchData(resource, options = {}) {
-      const { 
-        shared = false, 
-        instanceId = null,
-        actionId = `fetch_${resource}` 
-      } = options;
-      
-      this.loading[actionId] = true;
-      this.errors[actionId] = null;
+    // 初始化加载数据
+    initialize() {
+      this.loading = true;
+      this.error = null;
       
       try {
-        const api = createApi(resource);
-        const data = await api.getAll();
-        
-        if (shared) {
-          this.sharedData[resource] = data;
-        } else if (instanceId) {
-          if (!this.instanceData[instanceId]) {
-            this.instanceData[instanceId] = {};
-          }
-          this.instanceData[instanceId][resource] = data;
-        }
-        
-        return data;
-      } catch (error) {
-        this.errors[actionId] = error;
-        throw error;
+        // 从本地存储加载
+        this.loadCardsFromLocal();
+      } catch (localError) {
+        console.error('从本地加载失败:', localError);
+        this.error = '无法加载数据';
       } finally {
-        this.loading[actionId] = false;
+        this.loading = false;
       }
     },
     
-    // 创建数据
-    async createData(resource, data, options = {}) {
-      const { 
-        shared = false, 
-        instanceId = null,
-        actionId = `create_${resource}` 
-      } = options;
-      
-      this.loading[actionId] = true;
-      this.errors[actionId] = null;
-      
-      try {
-        const api = createApi(resource);
-        const newItem = await api.create(data);
-        
-        // 更新状态
-        if (shared && this.sharedData[resource]) {
-          this.sharedData[resource] = [...this.sharedData[resource], newItem];
-        } else if (instanceId && this.instanceData[instanceId]?.[resource]) {
-          this.instanceData[instanceId][resource] = [...this.instanceData[instanceId][resource], newItem];
+    // 从本地存储获取卡片
+    loadCardsFromLocal() {
+      const cards = dataManager.load('cards') || [];
+      this.cards = cards;
+    },
+    
+    // 保存卡片到本地存储
+    saveCardsToLocal() {
+      dataManager.save('cards', this.cards);
+    },
+    
+    // 添加新卡片
+    addCard(cardData) {
+      const newCard = {
+        id: Date.now(),
+        ...cardData,
+        showDropdown: false,
+        isTitleEditing: false,
+        isOptionsEditing: false,
+        isSelectEditing: false,
+        editableFields: {
+          optionName: true,
+          optionValue: true,
+          optionUnit: true,
+          optionCheckbox: true,
+          optionActions: true,
+          select: true
         }
-        
-        return newItem;
-      } catch (error) {
-        this.errors[actionId] = error;
-        throw error;
-      } finally {
-        this.loading[actionId] = false;
+      };
+      
+      this.cards.push(newCard);
+      this.selectedCardId = newCard.id;
+      this.saveCardsToLocal();
+    },
+    
+    // 删除卡片
+    deleteCard(id) {
+      this.cards = this.cards.filter(card => card.id !== id);
+      this.selectedCardId = null;
+      this.deletingCardId = null;
+      this.saveCardsToLocal();
+    },
+    
+    // 更新卡片
+    updateCard(updatedCard) {
+      const index = this.cards.findIndex(card => card.id === updatedCard.id);
+      if (index !== -1) {
+        this.cards[index] = updatedCard;
+        this.saveCardsToLocal();
       }
     },
     
-    // 更新数据
-    async updateData(resource, id, data, options = {}) {
-      const { 
-        shared = false, 
-        instanceId = null,
-        actionId = `update_${resource}` 
-      } = options;
+    // 切换存储类型
+    changeStorageType(type) {
+      let newStrategy;
       
-      this.loading[actionId] = true;
-      this.errors[actionId] = null;
+      switch (type) {
+        case 'local':
+          newStrategy = new LocalStorageStrategy();
+          break;
+        case 'session':
+          newStrategy = new SessionStorageStrategy();
+          break;
+        case 'memory':
+          newStrategy = new MemoryStorageStrategy();
+          break;
+        default:
+          throw new Error('不支持的存储类型');
+      }
       
-      try {
-        const api = createApi(resource);
-        const updatedItem = await api.update(id, data);
-        
-        // 更新状态
-        const updateDataList = (list) => {
-          return list.map(item => item.id === id ? updatedItem : item);
-        };
-        
-        if (shared && this.sharedData[resource]) {
-          this.sharedData[resource] = updateDataList(this.sharedData[resource]);
-        } else if (instanceId && this.instanceData[instanceId]?.[resource]) {
-          this.instanceData[instanceId][resource] = updateDataList(this.instanceData[instanceId][resource]);
-        }
-        
-        return updatedItem;
-      } catch (error) {
-        this.errors[actionId] = error;
-        throw error;
-      } finally {
-        this.loading[actionId] = false;
+      // 更新存储策略
+      dataManager.storage = newStrategy;
+      this.storageType = type;
+      localStorage.setItem('storageType', type);
+      
+      // 重新保存数据到新存储
+      this.saveCardsToLocal();
+    },
+    
+    // 导出数据
+    exportData(fileName = 'card_data.json') {
+      dataManager.exportToFile(this.cards, fileName);
+    },
+    
+    // 导入数据
+    async importData(file) {
+      const importedData = await dataManager.importFromFile(file);
+      this.cards = importedData;
+      this.saveCardsToLocal();
+    },
+    
+    // 清空所有数据
+    clearAllData() {
+      this.cards = [];
+      dataManager.delete('cards');
+      this.selectedCardId = null;
+      this.deletingCardId = null;
+    },
+    
+    // 新增：切换标题编辑状态
+    toggleTitleEditing(cardId) {
+      const cardIndex = this.cards.findIndex(c => c.id === cardId);
+      if (cardIndex !== -1) {
+        this.cards[cardIndex].isTitleEditing = !this.cards[cardIndex].isTitleEditing;
+        this.saveCardsToLocal();
       }
     },
     
-    // 删除数据
-    async deleteData(resource, id, options = {}) {
-      const { 
-        shared = false, 
-        instanceId = null,
-        actionId = `delete_${resource}` 
-      } = options;
-      
-      this.loading[actionId] = true;
-      this.errors[actionId] = null;
-      
-      try {
-        const api = createApi(resource);
-        await api.delete(id);
-        
-        // 更新状态
-        const filterDataList = (list) => {
-          return list.filter(item => item.id !== id);
-        };
-        
-        if (shared && this.sharedData[resource]) {
-          this.sharedData[resource] = filterDataList(this.sharedData[resource]);
-        } else if (instanceId && this.instanceData[instanceId]?.[resource]) {
-          this.instanceData[instanceId][resource] = filterDataList(this.instanceData[instanceId][resource]);
-        }
-      } catch (error) {
-        this.errors[actionId] = error;
-        throw error;
-      } finally {
-        this.loading[actionId] = false;
+    // 新增：切换选项编辑状态
+    toggleOptionsEditing(cardId) {
+      const cardIndex = this.cards.findIndex(c => c.id === cardId);
+      if (cardIndex !== -1) {
+        this.cards[cardIndex].isOptionsEditing = !this.cards[cardIndex].isOptionsEditing;
+        this.saveCardsToLocal();
       }
+    },
+    
+    // 新增：切换下拉菜单编辑状态
+    toggleSelectEditing(cardId) {
+      const cardIndex = this.cards.findIndex(c => c.id === cardId);
+      if (cardIndex !== -1) {
+        this.cards[cardIndex].isSelectEditing = !this.cards[cardIndex].isSelectEditing;
+        this.saveCardsToLocal();
+      }
+    },
+    
+    // 新增：切换可编辑字段
+    toggleEditableField(cardId, field) {
+      const cardIndex = this.cards.findIndex(c => c.id === cardId);
+      if (cardIndex !== -1) {
+        this.cards[cardIndex].editableFields[field] = !this.cards[cardIndex].editableFields[field];
+        this.saveCardsToLocal();
+      }
+    },
+    
+    // 新增：添加选项
+    addOption(cardId, afterId) {
+      const cardIndex = this.cards.findIndex((c) => c.id === cardId);
+      if (cardIndex === -1) return;
+
+      const newId = Date.now();
+      const newOption = {
+        id: newId,
+        name: "新选项",
+        value: "",
+        unit: "",
+        checked: false,
+      };
+
+      const card = this.cards[cardIndex];
+      const options = [...card.data.options];
+
+      if (!afterId) {
+        options.push(newOption);
+      } else {
+        const index = options.findIndex((o) => o.id === afterId);
+        if (index !== -1) {
+          options.splice(index + 1, 0, newOption);
+        }
+      }
+
+      card.data.options = options;
+      this.saveCardsToLocal();
+    },
+    
+    // 新增：删除选项
+    deleteOption(cardId, optionId) {
+      const cardIndex = this.cards.findIndex((c) => c.id === cardId);
+      if (cardIndex === -1) return;
+
+      const card = this.cards[cardIndex];
+      card.data.options = card.data.options.filter((option) => option.id !== optionId);
+      this.saveCardsToLocal();
+    },
+    
+    // 新增：添加下拉选项
+    addSelectOption(cardId, label) {
+      const cardIndex = this.cards.findIndex((c) => c.id === cardId);
+      if (cardIndex === -1) return;
+
+      const newId = Date.now();
+      const card = this.cards[cardIndex];
+      card.data.selectOptions = [...card.data.selectOptions, { id: newId, label }];
+      this.saveCardsToLocal();
+    },
+    
+    // 新增：删除下拉选项
+    deleteSelectOption(cardId, optionId) {
+      const cardIndex = this.cards.findIndex((c) => c.id === cardId);
+      if (cardIndex === -1) return;
+
+      const card = this.cards[cardIndex];
+      card.data.selectOptions = card.data.selectOptions.filter((option) => option.id !== optionId);
+      this.saveCardsToLocal();
+    },
+    
+    // 新增：设置下拉菜单显示状态
+    setShowDropdown(cardId, value) {
+      const cardIndex = this.cards.findIndex((c) => c.id === cardId);
+      if (cardIndex === -1) return;
+
+      this.cards[cardIndex].showDropdown = value;
+      this.saveCardsToLocal();
+    },
+    
+    // 新增：设置视图模式
+    setViewMode(mode) {
+      this.viewMode = mode;
     }
   }
-});    
+});
