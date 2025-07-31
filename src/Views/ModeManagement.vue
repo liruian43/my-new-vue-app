@@ -78,55 +78,51 @@
 import { ref, computed } from 'vue';
 import { useCardStore } from '../components/Data/store';
 import { v4 as uuidv4 } from 'uuid';
+import { generateModePage, deleteModePage } from '../utils/generateModePage';
 
 const cardStore = useCardStore();
 
-// 仅保留必要的状态
 const isCreating = ref(false);
 const isDeleting = ref(false);
 const newModeName = ref('');
 const newModeWithData = ref(false);
 const selectedModeIds = ref([]);
 
-// 仅获取模式列表数据
 const modes = computed(() => cardStore.modes);
 
-// 切换创建模式状态
 const toggleCreateMode = () => {
   if (isCreating.value) {
-    // 取消创建时清空表单
     newModeName.value = '';
     newModeWithData.value = false;
   }
   isCreating.value = !isCreating.value;
-  isDeleting.value = false; // 确保删除模式关闭
+  isDeleting.value = false;
 };
 
-// 切换删除模式状态
 const toggleDeleteMode = () => {
   if (isDeleting.value) {
-    // 确认删除选中的模式
     if (selectedModeIds.value.length > 0) {
       if (confirm(`确定要删除选中的${selectedModeIds.value.length}个模式吗？`)) {
         cardStore.deleteModes(selectedModeIds.value);
+        selectedModeIds.value.forEach(modeId => {
+          deleteModePage(modeId);
+        });
       }
     }
-    // 退出删除模式时清空选择
     selectedModeIds.value = [];
   }
   isDeleting.value = !isDeleting.value;
-  isCreating.value = false; // 确保创建模式关闭
+  isCreating.value = false;
 };
 
-// 创建新模式
 const createMode = () => {
   if (!newModeName.value.trim()) return;
   
+  const modeUuid = uuidv4();
   const newMode = {
-    id: `mode-${uuidv4()}`,
+    id: `mode-${modeUuid}`,
     name: newModeName.value.trim(),
     includeDataSection: newModeWithData.value,
-    // 保留必要的基础属性
     level: 2,
     permissions: {
       card: {
@@ -147,12 +143,13 @@ const createMode = () => {
         assignPermissions: false
       }
     },
-    cardData: []
+    cardData: [],
+    routePath: `/mode/${modeUuid}`
   };
   
   cardStore.addMode(newMode);
+  generateModePage(newMode);
   
-  // 重置表单并退出创建模式
   newModeName.value = '';
   newModeWithData.value = false;
   isCreating.value = false;
@@ -256,7 +253,7 @@ const createMode = () => {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  cursor: default; /* 不可点击 */
+  cursor: default;
 }
 
 .data-badge {
@@ -273,3 +270,4 @@ const createMode = () => {
   font-style: italic;
 }
 </style>
+    
