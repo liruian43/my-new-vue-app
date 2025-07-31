@@ -7,7 +7,7 @@
         @click="toggleCreateMode"
         :class="{ active: isCreating }"
       >
-        {{ isCreating ? '创建完成' : '新建模式' }}
+        {{ isCreating ? '取消创建' : '新建模式' }}
       </button>
       
       <!-- 删除模式控制 -->
@@ -17,7 +17,7 @@
         :class="{ active: isDeleting, danger: isDeleting }"
         :disabled="modes.length <= 0"
       >
-        {{ isDeleting ? '删除完成' : '删除模式' }}
+        {{ isDeleting ? '确认删除' : '删除模式' }}
       </button>
     </div>
     
@@ -52,6 +52,7 @@
         :key="mode.id"
         class="mode-item"
       >
+        <!-- 仅在删除模式下显示复选框 -->
         <div v-if="isDeleting" class="mode-checkbox">
           <input 
             type="checkbox" 
@@ -59,11 +60,8 @@
             :value="mode.id"
           >
         </div>
-        <div 
-          class="mode-name"
-          :class="{ active: mode.id === currentModeId }"
-          @click="switchMode(mode.id)"
-        >
+        <!-- 模式名称仅作为文本展示 -->
+        <div class="mode-name">
           {{ mode.name }}
           <span v-if="mode.includeDataSection" class="data-badge">含数据区</span>
         </div>
@@ -77,47 +75,47 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue';
+import { ref, computed } from 'vue';
 import { useCardStore } from '../components/Data/store';
-import { v4 as uuidv4 } from 'uuid'; // 用于生成唯一ID，需要安装uuid包
+import { v4 as uuidv4 } from 'uuid';
 
 const cardStore = useCardStore();
 
-// 状态管理
+// 仅保留必要的状态
 const isCreating = ref(false);
 const isDeleting = ref(false);
 const newModeName = ref('');
 const newModeWithData = ref(false);
 const selectedModeIds = ref([]);
 
-// 从store获取模式数据
+// 仅获取模式列表数据
 const modes = computed(() => cardStore.modes);
-const currentModeId = computed({
-  get: () => cardStore.currentModeId,
-  set: (value) => cardStore.setCurrentMode(value)
-});
 
 // 切换创建模式状态
 const toggleCreateMode = () => {
   if (isCreating.value) {
-    // 退出创建模式时清空表单
+    // 取消创建时清空表单
     newModeName.value = '';
     newModeWithData.value = false;
   }
   isCreating.value = !isCreating.value;
-  // 确保删除模式处于关闭状态
-  isDeleting.value = false;
+  isDeleting.value = false; // 确保删除模式关闭
 };
 
 // 切换删除模式状态
 const toggleDeleteMode = () => {
   if (isDeleting.value) {
+    // 确认删除选中的模式
+    if (selectedModeIds.value.length > 0) {
+      if (confirm(`确定要删除选中的${selectedModeIds.value.length}个模式吗？`)) {
+        cardStore.deleteModes(selectedModeIds.value);
+      }
+    }
     // 退出删除模式时清空选择
     selectedModeIds.value = [];
   }
   isDeleting.value = !isDeleting.value;
-  // 确保创建模式处于关闭状态
-  isCreating.value = false;
+  isCreating.value = false; // 确保创建模式关闭
 };
 
 // 创建新模式
@@ -128,9 +126,8 @@ const createMode = () => {
     id: `mode-${uuidv4()}`,
     name: newModeName.value.trim(),
     includeDataSection: newModeWithData.value,
-    // 默认层级为中间级(2)，root为1
+    // 保留必要的基础属性
     level: 2,
-    // 默认权限：基础卡片区操作权限
     permissions: {
       card: {
         addCard: true,
@@ -150,44 +147,16 @@ const createMode = () => {
         assignPermissions: false
       }
     },
-    // 初始卡片数据为空
     cardData: []
   };
   
   cardStore.addMode(newMode);
-  
-  // 自动切换到新模式
-  currentModeId.value = newMode.id;
   
   // 重置表单并退出创建模式
   newModeName.value = '';
   newModeWithData.value = false;
   isCreating.value = false;
 };
-
-// 切换模式
-const switchMode = (modeId) => {
-  if (!isDeleting.value) { // 非删除状态下才允许切换
-    currentModeId.value = modeId;
-  }
-};
-
-// 监听删除模式状态变化
-watch(isDeleting, (newVal) => {
-  if (!newVal) {
-    selectedModeIds.value = [];
-  }
-});
-
-// 删除选中的模式
-watch(isDeleting, (newVal) => {
-  if (!newVal && selectedModeIds.value.length > 0) {
-    if (confirm(`确定要删除选中的${selectedModeIds.value.length}个模式吗？`)) {
-      cardStore.deleteModes(selectedModeIds.value);
-    }
-    selectedModeIds.value = [];
-  }
-});
 </script>
 
 <style scoped>
@@ -280,23 +249,14 @@ watch(isDeleting, (newVal) => {
   gap: 8px;
 }
 
-.mode-checkbox {
-}
-
 .mode-name {
   padding: 6px 12px;
   background-color: #f0f0f0;
   border-radius: 4px;
-  cursor: pointer;
-  transition: all 0.2s;
   display: inline-flex;
   align-items: center;
   gap: 6px;
-}
-
-.mode-name.active {
-  background-color: #42b983;
-  color: white;
+  cursor: default; /* 不可点击 */
 }
 
 .data-badge {
