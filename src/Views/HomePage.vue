@@ -13,6 +13,8 @@
     <!-- 正常内容 -->
     <div v-else class="component-container">
       <CardSection />
+      <!-- 模式管理组件，放在卡片区和数据区中间 -->
+      <ModeManagement />
       <DataSection />
     </div>
   </div>
@@ -23,6 +25,8 @@ import { onMounted, ref } from 'vue';
 import { useCardStore } from '../components/Data/store';
 import CardSection from './CardSection.vue';
 import DataSection from './DataSection.vue';
+// 导入模式管理组件
+import ModeManagement from './ModeManagement.vue';
 
 const cardStore = useCardStore();
 const loading = ref(true);
@@ -38,7 +42,9 @@ onMounted(() => {
 // 加载所有数据
 const loadAllData = async () => {
   try {
+    // 同时加载卡片和模式数据
     await cardStore.loadCardsFromLocal();
+    await cardStore.loadModesFromLocal();
     alert('数据已从本地存储加载');
     
     // 如果没有数据，添加一个默认卡片
@@ -73,7 +79,10 @@ const loadAllData = async () => {
 const handleContainerClick = (event) => {
   const isButtonClick = event.target.closest('.test-button') !== null;
   const isCardControlsClick = event.target.closest('.card-controls') !== null;
-  if (!isButtonClick && !isCardControlsClick) {
+  // 新增：忽略模式管理组件内的点击
+  const isModeManagementClick = event.target.closest('.mode-management') !== null;
+  
+  if (!isButtonClick && !isCardControlsClick && !isModeManagementClick) {
     cardStore.selectedCardId = null;
     cardStore.deletingCardId = null;
   }
@@ -119,4 +128,4 @@ const handleContainerClick = (event) => {
 .component-container > * {
   margin-bottom: 10px;
 }
-</style>  
+</style>
