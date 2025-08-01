@@ -1,7 +1,8 @@
 <template>
   <div class="card-section">
-    <!-- 新增：联动控制组件，放在顶部控制按钮上方 -->
+    <!-- 联动控制组件：仅在/root_admin及其子路径显示 -->
     <ModeLinkageControl 
+      v-if="isRootAdminRoute"
       @confirm-linkage="handleLinkage"
     />
 
@@ -132,8 +133,18 @@ import { useCardStore } from '../components/Data/store';
 import UniversalCard from '../components/UniversalCard/UniversalCard.vue';
 // 引入联动控制组件
 import ModeLinkageControl from '../components/ModeLinkageControl.vue';
-// 引入模式协调工具（用于处理实际联动逻辑）
+// 引入模式协调工具和路由
 import { coordinateMode } from '../utils/modeCoordinator';
+import { useRoute } from 'vue-router'; // 引入路由钩子
+
+// 路由判断逻辑：仅匹配/root_admin及其所有子路径
+const route = useRoute();
+const isRootAdminRoute = computed(() => {
+  // 正则表达式精确匹配：
+  // ^/root_admin$ 匹配精确的/root_admin路径
+  // ^/root_admin/ 匹配所有以/root_admin/开头的子路径
+  return /^\/root_admin($|\/)/.test(route.path);
+});
 
 const cardStore = useCardStore();
 
@@ -232,18 +243,39 @@ const setShowDropdown = (cardId, value) => {
   cardStore.setShowDropdown(cardId, value);
 };
 
-// 新增：处理联动逻辑
+// 处理联动逻辑
 const handleLinkage = (config) => {
-  // 获取当前卡片区的完整数据作为基准
-  const currentData = {
-    cards: [...cards.value], // 卡片数据（包括结构和内容）
+  // 收集完整的root_admin数据
+  const sourceData = {
+    cards: cards.value.map(card => ({
+      id: card.id,
+      title: card.data.title,
+      options: card.data.options.map(option => ({
+        id: option.id,
+        name: option.name,
+        value: option.value,
+        unit: option.unit,
+        checked: option.checked
+      })),
+      selectOptions: card.data.selectOptions.map(option => ({
+        id: option.id,
+        label: option.label
+      })),
+      structure: {
+        optionCount: card.data.options.length,
+        hasSelect: card.data.selectOptions.length > 0
+      }
+    })),
+    cardCount: cards.value.length,
     timestamp: new Date().toISOString()
   };
   
-  // 调用模式协调工具执行实际联动
+  // 调用协调工具执行同步
   coordinateMode({
-    sourceData: currentData,
+    sourceModeId: 'root_admin',
+    sourceData: sourceData,
     targetMode: config.targetMode,
+    targetModeIds: config.targetModeIds,
     syncFields: config.sync,
     authFields: config.auth
   });
@@ -258,7 +290,7 @@ const handleLinkage = (config) => {
   border-radius: 8px;
 }
 
-/* 新增：为联动组件添加间距 */
+/* 为联动组件添加间距 */
 :deep(.mode-linkage-control) {
   margin-bottom: 20px;
 }
@@ -342,3 +374,4 @@ const handleLinkage = (config) => {
   justify-content: center;
 }
 </style>
+    

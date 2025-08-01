@@ -23,7 +23,7 @@
           所有模式
         </div>
         
-        <!-- 使用过滤后的模式列表 -->
+        <!-- 使用过滤过滤后的的模式列表 -->
         <div 
           class="mode-option" 
           v-for="mode in filteredModes" 
@@ -95,7 +95,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue';
+import { ref, computed, watch, defineEmits } from 'vue';
 // 与App.vue完全相同的方式引入数据源
 import { useCardStore } from '@/components/Data/store';
 
@@ -115,7 +115,7 @@ const filteredModes = computed(() => {
   return modes.value.filter(mode => mode.id !== 'root_admin');
 });
 
-// 同步选项（组件私有状态）
+// 同步选项（已移除复选框状态选项）
 const syncOptions = ref([
   { id: 1, name: '标题', checked: false },
   { id: 2, name: '选项名称', checked: false },
@@ -123,7 +123,7 @@ const syncOptions = ref([
   { id: 4, name: '选项单位', checked: false }
 ]);
 
-// 授权选项（组件私有状态）
+// 授权选项（保持原样，"复选框"代表控制是否允许显示和使用复选框功能）
 const authOptions = ref([
   { id: 1, name: '选项名称', checked: false },
   { id: 2, name: '选项值', checked: false },
@@ -153,18 +153,26 @@ const canConfirmLinkage = computed(() => {
   if (!isInPrepareState.value || !selectedMode.value || !cardStore.currentModeId) return false;
   
   const hasSyncChecked = syncOptions.value.some(item => item.checked);
-  const hasAuthChecked = authOptions.value.some(item => item.checked);
-  
-  return hasSyncChecked || hasAuthChecked;
+  // 即使没有勾选授权项，只要有同步项就允许确认
+  return hasSyncChecked;
 });
 
 const confirmLinkage = () => {
+  // 找到目标模式ID
+  let targetModeIds = [];
+  if (selectedMode.value === '所有模式') {
+    targetModeIds = filteredModes.value.map(mode => mode.id);
+  } else {
+    const targetMode = modes.value.find(mode => mode.name === selectedMode.value);
+    if (targetMode) {
+      targetModeIds = [targetMode.id];
+    }
+  }
+  
   const linkageConfig = {
-    sourceModeId: cardStore.currentModeId || 'root_admin', // 添加源模式ID
+    sourceModeId: cardStore.currentModeId || 'root_admin',
     targetMode: selectedMode.value,
-    targetModeIds: selectedMode.value === '所有模式' 
-      ? modes.value.map(mode => mode.id)
-      : [modes.value.find(mode => mode.name === selectedMode.value)?.id],
+    targetModeIds: targetModeIds,
     sync: syncOptions.value.filter(item => item.checked).map(item => item.name),
     auth: authOptions.value.filter(item => item.checked).map(item => item.name),
     timestamp: new Date().toISOString()
@@ -369,3 +377,4 @@ const emit = defineEmits(['confirm-linkage']);
   }
 }
 </style>
+    
