@@ -10,16 +10,26 @@ const router = createRouter({
       path: '/',
       name: 'Home',
       component: HomePage
+    },
+
+    // ✅ 新增：直接添加一条静态路由，让 /root_admin 指向 src/root_admin/root_admin.vue
+    {
+      path: '/root_admin',
+      name: 'RootAdminHomePage',
+      component: () => import('../root_admin/root_admin.vue') // 推荐懒加载
+      // 如果你不想懒加载，也可以直接导入，例如：
+      // import RootAdminHomePage from '../root_admin/root_admin.vue'
+      // component: RootAdminHomePage
     }
   ]
 })
 
-// 新增：动态// 1. 获取所有已创建的模式ID（从本地存储）
+// ✅ 保留：你原来的获取 modeIds 方法（绝对不动）
 const getModeIds = () => {
   return JSON.parse(localStorage.getItem('modeIds') || '[]')
 }
 
-// 2. 动态注册模式路由（只做映射，不生成模板）
+// ✅ 保留：你原来的动态注册模式路由逻辑（绝对不动）
 const registerModeRoutes = () => {
   const modeIds = getModeIds()
   
@@ -27,19 +37,18 @@ const registerModeRoutes = () => {
     const routeName = `Mode-${modeId}`
     const routePath = `/mode/${modeId}`
     
-    // 避免重复注册路由
     if (!router.hasRoute(routeName)) {
       router.addRoute({
         path: routePath,
         name: routeName,
-        component: getModeComponent(modeId) // 由generateModePage提供组件
+        component: getModeComponent(modeId)
       })
     }
   })
 }
 
-// 3. 初始化时注册已有的模式路由
+// ✅ 保留：你原来的动态路由注册调用（绝对不动）
 registerModeRoutes()
 
-// 导出路由实例（保持原有导出方式）
+// ✅ 导出路由实例（保持原有导出方式）
 export default router

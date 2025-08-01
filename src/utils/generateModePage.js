@@ -1,5 +1,5 @@
-import CardSection from '../Views/CardSection.vue'
-import DataSection from '../Views/DataSection.vue'
+import CardSection from '../root_admin/CardSection.vue'
+import DataSection from '../root_admin/DataSection.vue'
 import { defineComponent } from 'vue'
 
 // 生成模式页面模板（只负责模板，不涉及路由）

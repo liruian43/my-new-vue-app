@@ -1,149 +1,152 @@
 <template>
-  <div class="home-page" @click="handleContainerClick">
-    <!-- 加载状态指示 -->
-    <div v-if="loading" class="loading-overlay">
-      <div class="loading-spinner">加载中...</div>
-    </div>
-    
-    <!-- 错误提示 -->
-    <div v-else-if="error" class="error-message">
-      {{ error }}
-    </div>
-    
-    <!-- 正常内容 -->
-    <div v-else class="component-container">
-      <CardSection />
-      <!-- 模式管理组件，放在卡片区和数据区中间 -->
-      <ModeManagement />
-      <DataSection />
+  <div class="home-page">
+    <!-- 16:9 横向背景容器 -->
+    <div class="bg-container">
+      <div class="content-wrapper">
+        <div class="content">
+          <div class="header">
+            <img src="@/assets/logo.png" alt="系统Logo" class="logo" />
+            <h1 class="title">自定义流程模拟系统</h1>
+          </div>
+          
+          <div class="quote-section">
+            <div class="main-quote">有志者，事竟成</div>
+            <div class="sub-quote">——《后汉书》</div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue';
-import { useCardStore } from '../components/Data/store';
-import CardSection from './CardSection.vue';
-import DataSection from './DataSection.vue';
-// 导入模式管理组件
-import ModeManagement from './ModeManagement.vue';
-
-const cardStore = useCardStore();
-const loading = ref(true);
-const error = ref(null);
-// 定义主模式固定ID
-const MAIN_MODE_ID = 'root_admin';
-
-// 初始化
-onMounted(() => {
-  // 先注册主模式
-  const mainModeExists = cardStore.modes.some(mode => mode.id === MAIN_MODE_ID);
-  if (!mainModeExists) {
-    cardStore.addMode({
-      id: MAIN_MODE_ID,
-      name: '主模式',
-      includeDataSection: true,
-      isRoot: true
-    });
-  }
-  // 设置主模式为当前激活模式
-  if (!cardStore.currentModeId) {
-    cardStore.setCurrentMode(MAIN_MODE_ID);
-  }
-  
-  loadAllData().finally(() => {
-    loading.value = false;
-  });
-});
-
-// 加载所有数据
-const loadAllData = async () => {
-  try {
-    // 同时加载卡片和模式数据
-    await cardStore.loadCardsFromLocal();
-    await cardStore.loadModesFromLocal();
-    alert('数据已从本地存储加载');
-    
-    // 如果没有数据，添加一个默认卡片
-    if (cardStore.cards.length === 0) {
-      cardStore.addCard({
-        data: {
-          title: '默认卡片',
-          options: [{ id: 1, name: "选项1", value: "100", unit: "kg", checked: false }],
-          selectOptions: [{ id: 1, label: "选项一" }],
-          selectedValue: "",
-        }
-      });
-    }
-  } catch (err) {
-    error.value = '加载数据失败: ' + err.message;
-    alert('加载数据失败: ' + err.message);
-    console.error('加载数据失败:', err);
-    
-    // 如果加载失败，添加一个默认卡片
-    cardStore.addCard({
-      data: {
-        title: '默认卡片',
-        options: [{ id: 1, name: "选项1", value: "100", unit: "kg", checked: false }],
-        selectOptions: [{ id: 1, label: "选项一" }],
-        selectedValue: "",
-      }
-    });
-  }
-};
-
-// 处理容器点击
-const handleContainerClick = (event) => {
-  const isButtonClick = event.target.closest('.test-button') !== null;
-  const isCardControlsClick = event.target.closest('.card-controls') !== null;
-  // 新增：忽略模式管理组件内的点击
-  const isModeManagementClick = event.target.closest('.mode-management') !== null;
-  
-  if (!isButtonClick && !isCardControlsClick && !isModeManagementClick) {
-    cardStore.selectedCardId = null;
-    cardStore.deletingCardId = null;
-  }
-};
+// 静态首页，无需逻辑
 </script>
 
-<style>
-/* 加载状态样式 */
-.loading-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: rgba(255, 255, 255, 0.8);
+<style scoped>
+.home-page {
+  width: 100vw;
+  height: 100vh;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  font-family: 'Microsoft YaHei', '微软雅黑', Arial, sans-serif;
+}
+
+/* 16:9 横向背景容器 - 绿色→金黄→绿色交叉渐变 */
+.bg-container {
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, 
+    #56ab2f 0%,     /* 左侧深绿 */
+    #a8e6cf 25%,    /* 中间浅绿/过渡 */
+    #ffd700 50%,    /* 中心金黄 */
+    #a8e6cf 75%,    /* 中间浅绿/过渡 */
+    #56ab2f 100%    /* 右侧深绿 */
+  );
   display: flex;
-  justify-content: center;
   align-items: center;
-  z-index: 1000;
+  justify-content: center;
+  position: relative;
 }
 
-.loading-spinner {
-  font-size: 24px;
-  color: #333;
-  animation: spin 1s linear infinite;
+/* 内容包装器 */
+.content-wrapper {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  box-sizing: border-box;
 }
 
-@keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+.content {
+  text-align: left;
+  max-width: 800px;
+  width: 100%;
 }
 
-.error-message {
-  padding: 20px;
-  background-color: #ffebee;
-  color: #b71c1c;
-  border-radius: 4px;
-  margin: 20px;
-  text-align: center;
-  font-size: 16px;
+.header {
+  display: flex;
+  align-items: center;
+  gap: 40px;
+  margin-bottom: 60px;
 }
 
-.component-container > * {
-  margin-bottom: 10px;
+.logo {
+  width: 90px;
+  height: 90px;
+  object-fit: contain;
+}
+
+.title {
+  font-size: 42px;
+  font-weight: bold;
+  color: white;
+  margin: 0;
+  text-shadow: 2px 2px 6px rgba(0,0,0,0.4);
+  letter-spacing: 4px;
+}
+
+/* ✅ 名言区域 - 您要求的布局 */
+.quote-section {
+  background: rgba(255, 255, 255, 0.95);
+  padding: 40px 45px;
+  border-radius: 12px;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.15);
+  backdrop-filter: blur(10px);
+  min-height: 140px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+/* ✅ "有志者事竟成" - 居中对齐 */
+.main-quote {
+  font-size: 26px;
+  color: #2c3e50;
+  font-weight: 600;
+  margin: 0 0 15px 0;
+  font-family: 'KaiTi', '楷体', serif;
+  line-height: 1.4;
+  text-align: center; /* ✅ 居中对齐 */
+}
+
+/* ✅ "——《后汉书》" - 靠右对齐 */
+.sub-quote {
+  font-size: 15px;
+  color: #7f8c8d;
+  font-style: italic;
+  margin: 0;
+  font-family: 'KaiTi', '楷体', serif;
+  text-align: right; /* ✅ 靠右对齐 */
+  width: 100%; /* 确保靠右效果 */
+}
+
+/* 大屏幕优化 */
+@media (min-width: 1200px) {
+  .title {
+    font-size: 48px;
+    letter-spacing: 5px;
+  }
+  
+  .main-quote {
+    font-size: 28px;
+  }
+  
+  .header {
+    gap: 50px;
+    margin-bottom: 70px;
+  }
+  
+  .logo {
+    width: 100px;
+    height: 100px;
+  }
+  
+  .quote-section {
+    padding: 45px 50px;
+  }
 }
 </style>
-    

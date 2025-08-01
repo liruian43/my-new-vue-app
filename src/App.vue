@@ -1,24 +1,31 @@
 <template>
   <div class="app-container">
     <div class="nav-container">
-      <!-- 左上角模式切换换下拉菜单 -->
-      <div class="mode-switcher">
-        <select 
-          v-model="selectedModeId" 
-          @change="handleModeChange"
-          class="mode-select"
-          :disabled="modes.length === 0"
-        >
-          <option value="">选择模式</option>
-          <option 
-            v-for="mode in modes" 
-            :key="mode.id" 
-            :value="mode.id"
+      <!-- 左侧垂直排列容器 -->
+      <div class="left-vertical-group">
+        <!-- root_admin固定导航入口 -->
+        <div class="root-admin-entry" @click="goToRootAdmin">根权限</div>
+        
+        <!-- 模式切换下拉菜单 -->
+        <div class="mode-switcher">
+          <select 
+            v-model="selectedModeId" 
+            @change="handleModeChange"
+            class="mode-select"
+            :disabled="filteredModes.length === 0"
           >
-            {{ mode.name }} 
-            <span v-if="mode.includeDataSection" class="data-badge">含数据</span>
-          </option>
-        </select>
+            <option value="">选择模式</option>
+            <!-- 仅渲染过滤后的模式 -->
+            <option 
+              v-for="mode in filteredModes" 
+              :key="mode.id" 
+              :value="mode.id"
+            >
+              {{ mode.name }} 
+              <span v-if="mode.includeDataSection" class="data-badge">含数据</span>
+            </option>
+          </select>
+        </div>
       </div>
       
       <h1>通用卡片管理系统</h1>
@@ -37,33 +44,42 @@ const router = useRouter();
 // 卡片存储实例
 const cardStore = useCardStore();
 
-// 从store获取模式列表
+// 从store获取原始模式列表
 const modes = computed(() => cardStore.modes);
-// 选中的模式ID（仅用于下拉框选择，不自动同步）
+
+// 仅基于ID过滤root_admin模式，无其他过滤条件
+const filteredModes = computed(() => {
+  return modes.value.filter(mode => mode.id !== 'root_admin');
+});
+
+// 选中的模式ID
 const selectedModeId = ref('');
 
-// 处理模式切换（仅在手动选择时触发）
+// 处理模式切换
 const handleModeChange = () => {
   if (selectedModeId.value) {
-    // 1. 更新store中的当前模式
     cardStore.setCurrentMode(selectedModeId.value);
-    // 2. 跳转到对应的模式页面
     router.push(`/mode/${selectedModeId.value}`);
     console.log(`已切换到模式: ${selectedModeId.value}`);
   } else {
-    // 选择"选择模式"时返回首页
     cardStore.setCurrentMode('');
     router.push('/');
   }
 };
 
+// 跳转到root_admin页面
+const goToRootAdmin = () => {
+  router.push('/root_admin');
+};
+
 onMounted(() => {
   console.log("App.vue 已挂载");
-  // 移除自动选择逻辑，初始状态为空
+  // 打印所有模式信息用于调试
+  console.log("所有模式列表:", modes.value);
 });
 
-// 监听模式列表变化，避免已删除的模式仍显示在选中状态
-watch(modes, (newModes) => {
+// 监听过滤后的模式列表变化
+watch(filteredModes, (newModes) => {
   const modeExists = newModes.some(mode => mode.id === selectedModeId.value);
   if (!modeExists) {
     selectedModeId.value = '';
@@ -73,6 +89,7 @@ watch(modes, (newModes) => {
 </script>
 
 <style>
+/* 样式保持不变 */
 .app-container {
   padding: 20px;
   font-family: Arial, sans-serif;
@@ -88,14 +105,23 @@ watch(modes, (newModes) => {
   width: 100%;
   margin-bottom: 20px;
   position: relative;
+  min-height: 80px;
 }
 
-/* 模式切换样式 */
-.mode-switcher {
+.left-vertical-group {
   position: absolute;
   left: 20px;
   top: 50%;
   transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.mode-switcher {
+  margin-top: 7px;
+  width: 100%;
+  text-align: center;
 }
 
 .mode-select {
@@ -123,5 +149,22 @@ h1 {
   margin: 0;
   color: #333;
 }
+
+.root-admin-entry {
+  padding: 2px 6px;
+  color: #0066cc;
+  text-decoration: underline;
+  cursor: pointer;
+  font-size: 14px;
+  user-select: none;
+  background: none;
+  border: none;
+  width: 100%;
+  text-align: center;
+}
+
+.root-admin-entry:hover {
+  color: #004499;
+  text-decoration: underline;
+}
 </style>
-    

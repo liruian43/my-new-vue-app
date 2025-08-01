@@ -23,10 +23,10 @@
           所有模式
         </div>
         
-        <!-- 与App.vue采用相同方式引用数据源 -->
+        <!-- 使用过滤后的模式列表 -->
         <div 
           class="mode-option" 
-          v-for="mode in modes" 
+          v-for="mode in filteredModes" 
           :key="mode.id"
           @click="selectMode(mode.name)"
         >
@@ -108,8 +108,12 @@ const selectedMode = ref('');
 const isInPrepareState = ref(false);
 
 // 与App.vue完全相同的方式获取模式列表
-// 仅数据来源相同，状态完全独立
 const modes = computed(() => cardStore.modes);
+
+// 新增计算属性过滤掉ID为root_admin的模式
+const filteredModes = computed(() => {
+  return modes.value.filter(mode => mode.id !== 'root_admin');
+});
 
 // 同步选项（组件私有状态）
 const syncOptions = ref([
@@ -178,8 +182,8 @@ const resetLinkageState = () => {
   authOptions.value.forEach(item => item.checked = false);
 };
 
-// 仅监听自身引用的数据变化，不与其他组件产生关联
-watch(modes, (newModes) => {
+// 监听过滤后的模式列表变化
+watch(filteredModes, (newModes) => {
   if (selectedMode.value && selectedMode.value !== '所有模式') {
     const modeExists = newModes.some(mode => mode.name === selectedMode.value);
     if (!modeExists) {
@@ -365,4 +369,3 @@ const emit = defineEmits(['confirm-linkage']);
   }
 }
 </style>
-    
