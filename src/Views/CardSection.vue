@@ -1,5 +1,10 @@
 <template>
   <div class="card-section">
+    <!-- 新增：联动控制组件，放在顶部控制按钮上方 -->
+    <ModeLinkageControl 
+      @confirm-linkage="handleLinkage"
+    />
+
     <!-- 顶部控制按钮 -->
     <div class="card-controls">
       <button class="test-button" @click="addCard">添加卡片</button>
@@ -125,6 +130,10 @@
 import { computed } from 'vue';
 import { useCardStore } from '../components/Data/store';
 import UniversalCard from '../components/UniversalCard/UniversalCard.vue';
+// 引入联动控制组件
+import ModeLinkageControl from '../components/ModeLinkageControl.vue';
+// 引入模式协调工具（用于处理实际联动逻辑）
+import { coordinateMode } from '../utils/modeCoordinator';
 
 const cardStore = useCardStore();
 
@@ -222,6 +231,23 @@ const handleDeleteSelectOption = (cardId, optionId) => {
 const setShowDropdown = (cardId, value) => {
   cardStore.setShowDropdown(cardId, value);
 };
+
+// 新增：处理联动逻辑
+const handleLinkage = (config) => {
+  // 获取当前卡片区的完整数据作为基准
+  const currentData = {
+    cards: [...cards.value], // 卡片数据（包括结构和内容）
+    timestamp: new Date().toISOString()
+  };
+  
+  // 调用模式协调工具执行实际联动
+  coordinateMode({
+    sourceData: currentData,
+    targetMode: config.targetMode,
+    syncFields: config.sync,
+    authFields: config.auth
+  });
+};
 </script>
 
 <style scoped>
@@ -230,6 +256,11 @@ const setShowDropdown = (cardId, value) => {
   padding: 20px;
   border: 1px solid #ddd;
   border-radius: 8px;
+}
+
+/* 新增：为联动组件添加间距 */
+:deep(.mode-linkage-control) {
+  margin-bottom: 20px;
 }
 
 .card-controls {
@@ -310,4 +341,4 @@ const setShowDropdown = (cardId, value) => {
   align-items: center;
   justify-content: center;
 }
-</style>  
+</style>

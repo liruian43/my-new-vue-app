@@ -24,7 +24,8 @@ export default class DataManager {
     this.storage = storageStrategy;
     this.modeDataPrefix = 'mode-data:';
     this.sourceModeId = options.sourceModeId || null; // 单向流数据源
-    this.circularReferences = new WeakSet();
+    // 修复：将WeakSet改为Set，因为WeakSet没有clear()方法
+    this.circularReferences = new Set();
     // 新增：记录所有模式ID（用于全量操作）
     this.modeIndexKey = 'mode-index';
   }
@@ -255,4 +256,3 @@ export default class DataManager {
     });
   }
 }
-    
