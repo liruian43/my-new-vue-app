@@ -39,7 +39,7 @@
     <!-- 准备/取消联动按钮 -->
     <button 
       class="action-button prepare-button"
-      :disabled="!selectedMode"
+      :disabled="!selectedMode || !cardStore.currentModeId"
       @click="togglePrepareStatus"
     >
       {{ isInPrepareState ? '取消联动' : '准备联动' }}
@@ -146,7 +146,7 @@ const togglePrepareStatus = () => {
 };
 
 const canConfirmLinkage = computed(() => {
-  if (!isInPrepareState.value || !selectedMode.value) return false;
+  if (!isInPrepareState.value || !selectedMode.value || !cardStore.currentModeId) return false;
   
   const hasSyncChecked = syncOptions.value.some(item => item.checked);
   const hasAuthChecked = authOptions.value.some(item => item.checked);
@@ -156,6 +156,7 @@ const canConfirmLinkage = computed(() => {
 
 const confirmLinkage = () => {
   const linkageConfig = {
+    sourceModeId: cardStore.currentModeId || 'root_admin', // 添加源模式ID
     targetMode: selectedMode.value,
     targetModeIds: selectedMode.value === '所有模式' 
       ? modes.value.map(mode => mode.id)
@@ -364,3 +365,4 @@ const emit = defineEmits(['confirm-linkage']);
   }
 }
 </style>
+    

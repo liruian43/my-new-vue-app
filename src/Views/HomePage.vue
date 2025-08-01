@@ -31,9 +31,26 @@ import ModeManagement from './ModeManagement.vue';
 const cardStore = useCardStore();
 const loading = ref(true);
 const error = ref(null);
+// 定义主模式固定ID
+const MAIN_MODE_ID = 'root_admin';
 
 // 初始化
 onMounted(() => {
+  // 先注册主模式
+  const mainModeExists = cardStore.modes.some(mode => mode.id === MAIN_MODE_ID);
+  if (!mainModeExists) {
+    cardStore.addMode({
+      id: MAIN_MODE_ID,
+      name: '主模式',
+      includeDataSection: true,
+      isRoot: true
+    });
+  }
+  // 设置主模式为当前激活模式
+  if (!cardStore.currentModeId) {
+    cardStore.setCurrentMode(MAIN_MODE_ID);
+  }
+  
   loadAllData().finally(() => {
     loading.value = false;
   });
@@ -129,3 +146,4 @@ const handleContainerClick = (event) => {
   margin-bottom: 10px;
 }
 </style>
+    

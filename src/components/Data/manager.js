@@ -22,20 +22,66 @@ export class MemoryStorageStrategy {
 export default class DataManager {
   constructor(storageStrategy, options = {}) {
     this.storage = storageStrategy;
+    // 主ID专属数据区前缀（独立于普通模式）
+    this.mainDataPrefix = 'main-data:'; // root_admin的数据用这个前缀
+    // 普通模式数据区前缀
     this.modeDataPrefix = 'mode-data:';
-    this.sourceModeId = options.sourceModeId || null; // 单向流数据源
+    // 主ID固定为root_admin（核心！主数据区的唯一标识）
+    this.rootAdminId = 'root_admin';
+    // 单向流数据源（默认为主ID）
+    this.sourceModeId = options.sourceModeId || this.rootAdminId;
     // 修复：将WeakSet改为Set，因为WeakSet没有clear()方法
     this.circularReferences = new Set();
-    // 新增：记录所有模式ID（用于全量操作）
+    // 记录所有模式ID（用于全量操作，不含主ID）
     this.modeIndexKey = 'mode-index';
   }
 
-  // ================= 模式生命周期管理（新增核心）=================
+  // ================= 主ID数据区专属方法（新增）=================
   /**
-   * 注册新模式（创建模式时调用）
+   * 保存主ID(root_admin)的数据（独立数据区）
+   * @param {string} namespace - 数据分类（如'cards'、'config'）
+   * @param {string} dataId - 数据唯一标识
+   * @param {any} data - 要保存的数据
+   */
+  saveMainData(namespace, dataId, data) {
+    const storageKey = `${this.mainDataPrefix}${namespace}:${dataId}`;
+    this.save(storageKey, data);
+  }
+
+  /**
+   * 加载主ID(root_admin)的数据
+   * @param {string} namespace - 数据分类
+   * @param {string} dataId - 数据唯一标识
+   * @returns 对应的数据
+   */
+  loadMainData(namespace, dataId) {
+    const storageKey = `${this.mainDataPrefix}${namespace}:${dataId}`;
+    return this.load(storageKey);
+  }
+
+  /**
+   * 清空主ID的某个命名空间数据
+   * @param {string} namespace - 数据分类
+   */
+  clearMainNamespaceData(namespace) {
+    const mainPrefix = `${this.mainDataPrefix}${namespace}:`;
+    const allKeys = this.getAllKeys();
+    allKeys.forEach(key => {
+      if (key.startsWith(mainPrefix)) {
+        this.storage.removeItem(key);
+      }
+    });
+  }
+
+  // ================= 模式生命周期管理（兼容主ID隔离）=================
+  /**
+   * 注册新模式（创建模式时调用，跳过主ID）
    * @param {string} modeId - 模式ID
    */
   registerMode(modeId) {
+    // 主ID不需要注册到普通模式列表
+    if (modeId === this.rootAdminId) return;
+    
     const existingModes = this.load(this.modeIndexKey) || [];
     if (!existingModes.includes(modeId)) {
       this.save(this.modeIndexKey, [...existingModes, modeId]);
@@ -43,13 +89,19 @@ export default class DataManager {
   }
 
   /**
-   * 删除模式（自动清理所有关联数据）
+   * 删除模式（自动清理所有关联数据，禁止删除主ID）
    * @param {string} modeId - 要删除的模式ID
    */
   deleteMode(modeId) {
+    // 禁止删除主ID
+    if (modeId === this.rootAdminId) {
+      console.warn('禁止删除主模式(root_admin)');
+      return;
+    }
+
     if (!modeId) return;
 
-    // 1. 清理该模式的所有数据（核心）
+    // 1. 清理该模式的所有数据
     this.clearModeAllData(modeId);
 
     // 2. 从模式索引中移除
@@ -60,42 +112,85 @@ export default class DataManager {
   }
 
   /**
-   * 获取所有已注册的模式ID
+   * 获取所有已注册的模式ID（不含主ID）
    */
   getAllModeIds() {
     return this.load(this.modeIndexKey) || [];
   }
 
-  // ================= 数据操作（保持隔离与单向流）=================
+  // ================= 普通模式数据操作（与主ID数据区严格分离）=================
+  /**
+   * 保存普通模式的数据（与主ID数据区隔离）
+   * @param {string} modeId - 模式ID
+   * @param {string} namespace - 数据分类
+   * @param {string} dataId - 数据唯一标识
+   * @param {any} data - 要保存的数据
+   * @param {boolean} isFromSource - 是否来自数据源（用于单向流控制）
+   */
   saveModeData(modeId, namespace, dataId, data, isFromSource = false) {
+    // 主ID的数据不通过此方法处理，强制使用主ID专属方法
+    if (modeId === this.rootAdminId) {
+      console.warn('请使用saveMainData()保存主模式数据');
+      return;
+    }
+
     // 单向流控制：非数据源模式禁止直接写入
     if (this.sourceModeId && modeId !== this.sourceModeId && !isFromSource) {
       console.warn(`禁止直接修改非数据源模式(${modeId})的数据，请通过数据源同步`);
       return;
     }
 
-    const storageKey = this.buildModeKey(modeId, namespace, dataId);
+    const storageKey = `${this.modeDataPrefix}${modeId}:${namespace}:${dataId}`;
     this.save(storageKey, data);
   }
 
+  /**
+   * 加载普通模式的数据
+   * @param {string} modeId - 模式ID
+   * @param {string} namespace - 数据分类
+   * @param {string} dataId - 数据唯一标识
+   * @returns 对应的数据
+   */
   loadModeData(modeId, namespace, dataId) {
-    const storageKey = this.buildModeKey(modeId, namespace, dataId);
+    // 主ID的数据不通过此方法处理
+    if (modeId === this.rootAdminId) {
+      console.warn('请使用loadMainData()加载主模式数据');
+      return null;
+    }
+
+    const storageKey = `${this.modeDataPrefix}${modeId}:${namespace}:${dataId}`;
     return this.load(storageKey);
   }
 
-  // 从数据源同步数据到目标模式（单向流）
+  // 从数据源同步数据到目标模式（支持主ID作为数据源）
   syncFromSource(targetModeId, namespace = null) {
+    // 禁止同步到主ID（主ID是源头，不接受其他模式的数据）
+    if (targetModeId === this.rootAdminId) {
+      console.warn('主模式(root_admin)不接受其他模式的同步数据');
+      return;
+    }
+
     if (!this.sourceModeId) {
       console.error('未设置数据源模式，请初始化时指定sourceModeId');
       return;
     }
     if (targetModeId === this.sourceModeId) return;
 
-    const sourceData = namespace 
-      ? this.listModeNamespaceData(this.sourceModeId, namespace)
-      : this.getAllModeData(this.sourceModeId);
+    // 区分数据源是主ID还是普通模式
+    let sourceData;
+    if (this.sourceModeId === this.rootAdminId) {
+      // 从主ID数据区加载
+      sourceData = namespace 
+        ? this.listMainNamespaceData(namespace)
+        : this.getAllMainData();
+    } else {
+      // 从普通模式数据区加载
+      sourceData = namespace 
+        ? this.listModeNamespaceData(this.sourceModeId, namespace)
+        : this.getAllModeData(this.sourceModeId);
+    }
 
-    // 同步数据（标记为来自数据源，绕过限制）
+    // 同步数据到目标模式（标记为来自数据源，绕过限制）
     if (namespace) {
       Object.entries(sourceData).forEach(([dataId, data]) => {
         this.saveModeData(targetModeId, namespace, dataId, data, true);
@@ -109,37 +204,59 @@ export default class DataManager {
     }
   }
 
-  // ================= 数据清理方法（增强）=================
+  // ================= 主ID数据区辅助方法（新增）=================
   /**
-   * 清空指定模式的所有数据（删除模式时内部调用）
-   * @param {string} modeId - 模式ID
+   * 列出主ID某个命名空间下的所有数据
+   * @param {string} namespace - 数据分类
+   * @returns 该命名空间下的所有数据（{dataId: data, ...}）
    */
-  clearModeAllData(modeId) {
-    const modePrefix = `${this.modeDataPrefix}${modeId}:`;
-    const allKeys = this.getAllKeys();
-    
-    // 遍历并删除该模式的所有数据键
-    allKeys.forEach(key => {
-      if (key.startsWith(modePrefix)) {
-        this.storage.removeItem(key);
-      }
-    });
-  }
-
-  deleteModeData(modeId, namespace, dataId) {
-    const storageKey = this.buildModeKey(modeId, namespace, dataId);
-    this.storage.removeItem(storageKey);
-  }
-
-  // ================= 其他辅助方法=================
-  listModeNamespaceData(modeId, namespace) {
-    const namespacePrefix = this.buildModeKey(modeId, namespace);
+  listMainNamespaceData(namespace) {
+    const namespacePrefix = `${this.mainDataPrefix}${namespace}:`;
     const allKeys = this.getAllKeys();
     const result = {};
 
     allKeys.forEach(key => {
       if (key.startsWith(namespacePrefix)) {
-        const dataId = key.replace(`${namespacePrefix}:`, '');
+        const dataId = key.replace(namespacePrefix, '');
+        result[dataId] = this.load(key);
+      }
+    });
+
+    return result;
+  }
+
+  /**
+   * 获取主ID的所有数据
+   * @returns 所有数据（{namespace: {dataId: data, ...}, ...}）
+   */
+  getAllMainData() {
+    const mainPrefix = this.mainDataPrefix;
+    const allKeys = this.getAllKeys();
+    const result = {};
+
+    allKeys.forEach(key => {
+      if (key.startsWith(mainPrefix)) {
+        const [, namespace, dataId] = key.replace(mainPrefix, '').split(':');
+        if (!result[namespace]) result[namespace] = {};
+        result[namespace][dataId || ''] = this.load(key);
+      }
+    });
+
+    return result;
+  }
+
+  // ================= 普通模式数据区辅助方法（保持不变）=================
+  listModeNamespaceData(modeId, namespace) {
+    // 过滤主ID
+    if (modeId === this.rootAdminId) return {};
+
+    const namespacePrefix = `${this.modeDataPrefix}${modeId}:${namespace}:`;
+    const allKeys = this.getAllKeys();
+    const result = {};
+
+    allKeys.forEach(key => {
+      if (key.startsWith(namespacePrefix)) {
+        const dataId = key.replace(namespacePrefix, '');
         result[dataId] = this.load(key);
       }
     });
@@ -148,15 +265,18 @@ export default class DataManager {
   }
 
   getAllModeData(modeId) {
+    // 过滤主ID
+    if (modeId === this.rootAdminId) return {};
+
     const modePrefix = `${this.modeDataPrefix}${modeId}:`;
     const allKeys = this.getAllKeys();
     const result = {};
 
     allKeys.forEach(key => {
       if (key.startsWith(modePrefix)) {
-        const [, ns, dataId] = key.replace(modePrefix, '').split(':');
-        if (!result[ns]) result[ns] = {};
-        result[ns][dataId || ''] = this.load(key);
+        const [, namespace, dataId] = key.replace(modePrefix, '').split(':');
+        if (!result[namespace]) result[namespace] = {};
+        result[namespace][dataId || ''] = this.load(key);
       }
     });
 
@@ -164,6 +284,9 @@ export default class DataManager {
   }
 
   queryModeData(modeId, namespace, predicate) {
+    // 过滤主ID
+    if (modeId === this.rootAdminId) return {};
+
     const namespaceData = this.listModeNamespaceData(modeId, namespace);
     const result = {};
 
@@ -176,13 +299,40 @@ export default class DataManager {
     return result;
   }
 
-  // ================= 内部工具方法=================
-  buildModeKey(modeId, namespace, dataId) {
-    let key = `${this.modeDataPrefix}${modeId}:${namespace}`;
-    if (dataId) key += `:${dataId}`;
-    return key;
+  // ================= 数据清理方法（增强主ID保护）=================
+  /**
+   * 清空指定普通模式的所有数据（不影响主ID）
+   * @param {string} modeId - 模式ID
+   */
+  clearModeAllData(modeId) {
+    // 保护主ID数据不被清理
+    if (modeId === this.rootAdminId) {
+      console.warn('禁止清理主模式(root_admin)的数据');
+      return;
+    }
+
+    const modePrefix = `${this.modeDataPrefix}${modeId}:`;
+    const allKeys = this.getAllKeys();
+    
+    allKeys.forEach(key => {
+      if (key.startsWith(modePrefix)) {
+        this.storage.removeItem(key);
+      }
+    });
   }
 
+  deleteModeData(modeId, namespace, dataId) {
+    // 保护主ID数据
+    if (modeId === this.rootAdminId) {
+      console.warn('请使用主模式专属方法操作主数据');
+      return;
+    }
+
+    const storageKey = `${this.modeDataPrefix}${modeId}:${namespace}:${dataId}`;
+    this.storage.removeItem(storageKey);
+  }
+
+  // ================= 内部工具方法（保持不变）=================
   getAllKeys() {
     if (this.storage instanceof MemoryStorageStrategy) {
       return Array.from(this.storage.data.keys());
@@ -224,7 +374,7 @@ export default class DataManager {
     }
   }
 
-  // ================= 导入导出功能=================
+  // ================= 导入导出功能（兼容主ID数据）=================
   exportToFile(data, fileName) {
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -256,3 +406,4 @@ export default class DataManager {
     });
   }
 }
+    

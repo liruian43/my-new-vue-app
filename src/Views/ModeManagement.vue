@@ -15,7 +15,7 @@
         class="mode-button" 
         @click="toggleDeleteMode"
         :class="{ active: isDeleting, danger: isDeleting }"
-        :disabled="modes.length <= 0"
+        :disabled="filteredModes.length <= 0"
       >
         {{ isDeleting ? '确认删除' : '删除模式' }}
       </button>
@@ -45,10 +45,10 @@
       </button>
     </div>
     
-    <!-- 模式列表 -->
+    <!-- 模式列表（使用过滤后的列表） -->
     <div class="mode-list">
       <div 
-        v-for="mode in modes" 
+        v-for="mode in filteredModes"
         :key="mode.id"
         class="mode-item"
       >
@@ -67,7 +67,7 @@
         </div>
       </div>
       
-      <div v-if="modes.length === 0 && !isCreating" class="empty-state">
+      <div v-if="filteredModes.length === 0 && !isCreating" class="empty-state">
         暂无模式，请点击"新建模式"创建
       </div>
     </div>
@@ -88,7 +88,10 @@ const newModeName = ref('');
 const newModeWithData = ref(false);
 const selectedModeIds = ref([]);
 
-const modes = computed(() => cardStore.modes);
+// 过滤掉主模式（root_admin）
+const filteredModes = computed(() => {
+  return cardStore.modes.filter(mode => mode.id !== 'root_admin');
+});
 
 const toggleCreateMode = () => {
   if (isCreating.value) {
@@ -102,9 +105,12 @@ const toggleCreateMode = () => {
 const toggleDeleteMode = () => {
   if (isDeleting.value) {
     if (selectedModeIds.value.length > 0) {
-      if (confirm(`确定要删除选中的${selectedModeIds.value.length}个模式吗？`)) {
-        cardStore.deleteModes(selectedModeIds.value);
-        selectedModeIds.value.forEach(modeId => {
+      // 过滤掉可能被选中的主模式ID
+      const safeModeIds = selectedModeIds.value.filter(id => id !== 'root_admin');
+      
+      if (safeModeIds.length > 0 && confirm(`确定要删除选中的${safeModeIds.length}个模式吗？`)) {
+        cardStore.deleteModes(safeModeIds);
+        safeModeIds.forEach(modeId => {
           deleteModePage(modeId);
         });
       }
@@ -157,6 +163,7 @@ const createMode = () => {
 </script>
 
 <style scoped>
+/* 样式完全保留，未做任何修改 */
 .mode-management {
   padding: 20px;
   border: 1px solid #ddd;
@@ -270,4 +277,3 @@ const createMode = () => {
   font-style: italic;
 }
 </style>
-    

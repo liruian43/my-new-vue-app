@@ -38,7 +38,7 @@ export const useCardStore = defineStore('card', {
     currentModeId: null, // 当前激活的模式ID
     // 根模式(全权限)，不显示在模式列表中
     rootMode: {
-      id: 'root-mode',
+      id: 'root_admin', // 主ID修改为root_admin
       name: '根模式',
       level: 1,
       includeDataSection: true,
@@ -418,3 +418,4 @@ export const useCardStore = defineStore('card', {
     }
   }
 });
+    
