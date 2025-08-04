@@ -3,6 +3,8 @@
     <div class="nav-container">
       <!-- 左侧垂直排列容器 -->
       <div class="left-vertical-group">
+        <!-- 首页导航入口 -->
+        <div class="root-admin-entry" @click="goToHome">首页</div>
         <!-- root_admin固定导航入口 -->
         <div class="root-admin-entry" @click="goToRootAdmin">根权限</div>
         
@@ -65,6 +67,11 @@ const handleModeChange = () => {
     cardStore.setCurrentMode('');
     router.push('/');
   }
+};
+
+// 跳转到首页
+const goToHome = () => {
+  router.push('/');
 };
 
 // 跳转到root_admin页面
@@ -168,3 +175,4 @@ h1 {
   text-decoration: underline;
 }
 </style>
+    

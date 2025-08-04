@@ -36,17 +36,7 @@ const MAIN_MODE_ID = 'root_admin';
 
 // 初始化
 onMounted(() => {
-  // 先注册主模式
-  const mainModeExists = cardStore.modes.some(mode => mode.id === MAIN_MODE_ID);
-  if (!mainModeExists) {
-    cardStore.addMode({
-      id: MAIN_MODE_ID,
-      name: '主模式',
-      includeDataSection: true,
-      isRoot: true
-    });
-  }
-  // 设置主模式为当前激活模式
+  // 设置主模式为当前激活模式（无需重复注册，store中已定义rootMode）
   if (!cardStore.currentModeId) {
     cardStore.setCurrentMode(MAIN_MODE_ID);
   }
@@ -56,16 +46,15 @@ onMounted(() => {
   });
 });
 
-// 加载所有数据
+// 加载所有数据 - 适配最新的store方法
 const loadAllData = async () => {
   try {
-    // 同时加载卡片和模式数据
-    await cardStore.loadCardsFromLocal();
-    await cardStore.loadModesFromLocal();
-    alert('数据已从本地存储加载');
+    // 使用重构后的初始化方法
+    await cardStore.initialize();
     
-    // 如果没有数据，添加一个默认卡片
-    if (cardStore.cards.length === 0) {
+    // 检查是否有会话级卡片数据
+    if (cardStore.sessionCards.length === 0 && cardStore.mediumCards.length === 0) {
+      // 添加默认卡片到会话级
       cardStore.addCard({
         data: {
           title: '默认卡片',
@@ -74,7 +63,11 @@ const loadAllData = async () => {
           selectedValue: "",
         }
       });
+      // 保存到会话存储
+      cardStore.saveSessionCards(MAIN_MODE_ID);
     }
+    
+    alert('数据已从存储加载');
   } catch (err) {
     error.value = '加载数据失败: ' + err.message;
     alert('加载数据失败: ' + err.message);
@@ -89,6 +82,8 @@ const loadAllData = async () => {
         selectedValue: "",
       }
     });
+    // 保存到会话存储
+    cardStore.saveSessionCards(MAIN_MODE_ID);
   }
 };
 
