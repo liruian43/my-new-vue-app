@@ -45,6 +45,9 @@ export const useCardStore = defineStore('card', {
     sessionCards: [], // 会话级
     mediumCards: [], // 中期存储（localStorage）
     
+    // 预设映射关系存储
+    presetMappings: {}, // 结构: { [cardId]: { [selectOptionId]: {checkedOptionIds: [], optionsData: []} } }
+    
     // 核心状态标识
     selectedCardId: null,
     deletingCardId: null,
@@ -80,6 +83,11 @@ export const useCardStore = defineStore('card', {
         card = this.sessionCards.find(card => card.id === this.selectedCardId);
       }
       return card;
+    },
+    
+    // 当前选中卡片的预设配置
+    selectedCardPresets() {
+      return this.presetMappings[this.selectedCardId] || {};
     },
     
     // 当前激活的模式
@@ -143,10 +151,13 @@ export const useCardStore = defineStore('card', {
         // 3. 加载中期存储数据
         this.loadAllMediumCards();
         
-        // 4. 纯内存区初始化
+        // 4. 加载预设映射
+        this.loadPresetMappings();
+        
+        // 5. 纯内存区初始化
         this.tempCards = [];
         
-        // 5. 监听跨标签会话数据变化
+        // 6. 监听跨标签会话数据变化
         window.addEventListener('storage', (e) => {
           if (e.key.startsWith(sessionStorageEnhancer.sessionId) && 
               e.key.includes(this.currentModeId)) {
@@ -159,6 +170,87 @@ export const useCardStore = defineStore('card', {
       } finally {
         this.loading = false;
       }
+    },
+    
+    // 加载预设映射
+    loadPresetMappings() {
+      const stored = localStorage.getItem('card_preset_mappings');
+      if (stored) {
+        try {
+          this.presetMappings = JSON.parse(stored);
+        } catch (e) {
+          console.error('加载预设映射失败:', e);
+          this.presetMappings = {};
+        }
+      }
+    },
+    
+    // 保存预设映射
+    savePresetMappings() {
+      try {
+        localStorage.setItem('card_preset_mappings', JSON.stringify(this.presetMappings));
+        return true;
+      } catch (e) {
+        console.error('保存预设映射失败:', e);
+        return false;
+      }
+    },
+    
+    // 为卡片的下拉选项保存预设配置
+    savePresetForSelectOption(cardId, selectOptionId, checkedOptions) {
+      if (!this.presetMappings[cardId]) {
+        this.presetMappings[cardId] = {};
+      }
+      
+      // 只保存勾选的选项及其完整信息（包括null值）
+      const optionsData = checkedOptions.map(option => ({
+        id: option.id,
+        name: option.name ?? null,
+        value: option.value ?? null,
+        unit: option.unit ?? null,
+        checked: true
+      }));
+      
+      this.presetMappings[cardId][selectOptionId] = {
+        checkedOptionIds: checkedOptions.map(option => option.id),
+        optionsData: optionsData
+      };
+      
+      return this.savePresetMappings();
+    },
+    
+    // 应用预设配置到卡片
+    applyPresetToCard(cardId, selectOptionId) {
+      const cardPresets = this.presetMappings[cardId];
+      if (!cardPresets || !cardPresets[selectOptionId]) {
+        return false;
+      }
+      
+      const preset = cardPresets[selectOptionId];
+      const card = this.sessionCards.find(c => c.id === cardId) || 
+                   this.tempCards.find(c => c.id === cardId);
+      
+      if (!card) return false;
+      
+      // 重置所有选项的勾选状态
+      card.data.options = card.data.options.map(option => ({
+        ...option,
+        checked: false
+      }));
+      
+      // 应用预设的勾选状态和值
+      preset.optionsData.forEach(presetOption => {
+        const targetOption = card.data.options.find(o => o.id === presetOption.id);
+        if (targetOption) {
+          targetOption.checked = true;
+          // 只更新存在的值，保留其他属性
+          if (presetOption.name !== undefined) targetOption.name = presetOption.name;
+          if (presetOption.value !== undefined) targetOption.value = presetOption.value;
+          if (presetOption.unit !== undefined) targetOption.unit = presetOption.unit;
+        }
+      });
+      
+      return true;
     },
     
     // 加载指定模式的会话级卡片
@@ -177,6 +269,7 @@ export const useCardStore = defineStore('card', {
         isTitleEditing: card.isTitleEditing ?? false,
         isOptionsEditing: card.isOptionsEditing ?? false,
         isSelectEditing: card.isSelectEditing ?? false,
+        isPresetEditing: card.isPresetEditing ?? false,
         showDropdown: card.showDropdown ?? false,
         data: {
           title: card.data?.title ?? null,
@@ -187,11 +280,12 @@ export const useCardStore = defineStore('card', {
             unit: option.unit ?? null,
             checked: option.checked ?? false
           })),
+          // 关键修复：确保下拉选项的label始终是字符串（空字符串而非null）
           selectOptions: (card.data?.selectOptions || []).map(opt => ({
             id: opt.id || Date.now(),
-            label: opt.label ?? null
+            label: opt.label ?? ''  // 此处修改，解决toLowerCase报错
           })),
-          selectedValue: card.data?.selectedValue ?? null
+          selectedValue: card.data?.selectedValue ?? null  // 保持原有逻辑，不影响预设
         },
         editableFields: {
           ...{
@@ -207,9 +301,39 @@ export const useCardStore = defineStore('card', {
       };
     },
     
-    // 保存会话级卡片（自动触发校验）
-    async saveSessionCards(modeId) {
-      const validation = await this.validateConfiguration();
+    // 添加下拉选项时确保label是字符串
+    addSelectOption(cardId, label) {
+      const tempCard = this.tempCards.find(c => c.id === cardId);
+      if (tempCard) {
+        // 确保label是字符串（空字符串而非null）
+        tempCard.data.selectOptions.push({ id: Date.now(), label: label ?? '' });
+        return;
+      }
+      
+      const sessionIndex = this.sessionCards.findIndex(c => c.id === cardId);
+      if (sessionIndex !== -1) {
+        const card = this.sessionCards[sessionIndex];
+        // 确保label是字符串（空字符串而非null）
+        card.data.selectOptions.push({ id: Date.now(), label: label ?? '' });
+      }
+    },
+    
+    // 添加卡片
+    addCard(cardData) {
+      const newCard = this.normalizeCardStructure({
+        ...cardData,
+        storageLevel: 'session',
+        id: Date.now()
+      });
+      
+      this.sessionCards.push(newCard);
+      this.selectedCardId = newCard.id;
+      return newCard;
+    },
+    
+    // 保存会话卡片
+    saveSessionCards(modeId) {
+      const validation = dataManager.validateConfig(this.sessionCards);
       if (validation.pass) {
         sessionStorageEnhancer.save(modeId, 'cards', validation.validCards);
         return true;
@@ -217,12 +341,12 @@ export const useCardStore = defineStore('card', {
       return false;
     },
     
-    // 调用manager进行配置校验
+    // 验证配置
     validateConfiguration() {
       return dataManager.validateConfig(this.sessionCards);
     },
     
-    // 加载所有模式的中期存储卡片
+    // 加载所有中期存储卡片
     loadAllMediumCards() {
       const storedData = localStorage.getItem('app_medium_cards');
       this.mediumCards = storedData ? JSON.parse(storedData) : [];
@@ -233,7 +357,6 @@ export const useCardStore = defineStore('card', {
       const currentMode = this.currentMode;
       if (!currentMode) return [];
       
-      // 先校验数据
       const validation = dataManager.validateConfig(this.sessionCards);
       if (!validation.pass) {
         this.error = '数据校验失败，无法保存到中期存储';
@@ -241,25 +364,22 @@ export const useCardStore = defineStore('card', {
         return [];
       }
       
-      // 准备中期存储数据
       const mediumData = validation.validCards.map(card => ({
         ...card,
         modeId: currentMode.id,
         storedAt: new Date().toISOString()
       }));
       
-      // 合并并去重
       this.mediumCards = [
         ...this.mediumCards.filter(c => !(c.modeId === currentMode.id && mediumData.some(m => m.id === c.id))),
         ...mediumData
       ];
       
-      // 保存到localStorage
       localStorage.setItem('app_medium_cards', JSON.stringify(this.mediumCards));
       return mediumData;
     },
     
-    // 从中期存储移除卡片
+    // 从中期存储移除
     removeFromMedium(cardIds) {
       if (!cardIds || cardIds.length === 0) return;
       
@@ -267,7 +387,7 @@ export const useCardStore = defineStore('card', {
       localStorage.setItem('app_medium_cards', JSON.stringify(this.mediumCards));
     },
     
-    // 中期存储 → 会话级
+    // 从中期存储加载
     loadFromMedium(mediumCardIds) {
       const mediumCards = this.mediumCards.filter(card => 
         mediumCardIds.includes(card.id)
@@ -280,7 +400,7 @@ export const useCardStore = defineStore('card', {
       return mediumCards;
     },
     
-    // 纯内存级：添加临时卡片
+    // 添加临时卡片
     addTempCard(initialData = {}) {
       const newCard = this.normalizeCardStructure({
         ...initialData,
@@ -292,7 +412,7 @@ export const useCardStore = defineStore('card', {
       return newCard;
     },
     
-    // 纯内存级：更新临时卡片
+    // 更新临时卡片
     updateTempCard(updatedCard) {
       const index = this.tempCards.findIndex(card => card.id === updatedCard.id);
       if (index !== -1) {
@@ -306,7 +426,7 @@ export const useCardStore = defineStore('card', {
       return null;
     },
     
-    // 纯内存 → 会话级
+    // 提升到会话级
     promoteToSession(cardIds) {
       if (!cardIds || cardIds.length === 0) return [];
       
@@ -318,34 +438,18 @@ export const useCardStore = defineStore('card', {
           addedToSessionAt: new Date().toISOString()
         }));
       
-      // 合并到会话级（去重）
       this.sessionCards = [
         ...this.sessionCards.filter(card => !cardIds.includes(card.id)),
         ...promotedCards
       ];
       
-      // 保存会话数据
       this.saveSessionCards(this.currentModeId);
       
-      // 从纯内存移除
       this.tempCards = this.tempCards.filter(card => !cardIds.includes(card.id));
       return promotedCards;
     },
     
-    // 会话级：添加卡片
-    addCard(cardData) {
-      const newCard = this.normalizeCardStructure({
-        ...cardData,
-        storageLevel: 'session',
-        id: Date.now()
-      });
-      
-      this.sessionCards.push(newCard);
-      this.selectedCardId = newCard.id;
-      return newCard;
-    },
-    
-    // 会话级：更新卡片
+    // 更新会话卡片
     updateSessionCard(updatedCard) {
       const index = this.sessionCards.findIndex(card => card.id === updatedCard.id);
       if (index !== -1) {
@@ -359,16 +463,14 @@ export const useCardStore = defineStore('card', {
       return null;
     },
     
-    // 会话级：更新卡片标题
+    // 更新卡片标题
     updateCardTitle(cardId, newTitle) {
-      // 先尝试更新临时卡片
       const tempIndex = this.tempCards.findIndex(c => c.id === cardId);
       if (tempIndex !== -1) {
         this.tempCards[tempIndex].data.title = newTitle;
         return this.tempCards[tempIndex];
       }
       
-      // 再尝试更新会话卡片
       const sessionIndex = this.sessionCards.findIndex(c => c.id === cardId);
       if (sessionIndex !== -1) {
         this.sessionCards[sessionIndex].data.title = newTitle;
@@ -378,16 +480,14 @@ export const useCardStore = defineStore('card', {
       return null;
     },
     
-    // 会话级：更新卡片选项
+    // 更新卡片选项
     updateCardOptions(cardId, updatedOptions) {
-      // 先尝试更新临时卡片
       const tempIndex = this.tempCards.findIndex(c => c.id === cardId);
       if (tempIndex !== -1) {
         this.tempCards[tempIndex].data.options = updatedOptions;
         return this.tempCards[tempIndex];
       }
       
-      // 再尝试更新会话卡片
       const sessionIndex = this.sessionCards.findIndex(c => c.id === cardId);
       if (sessionIndex !== -1) {
         this.sessionCards[sessionIndex].data.options = updatedOptions;
@@ -397,56 +497,60 @@ export const useCardStore = defineStore('card', {
       return null;
     },
     
-    // 会话级：更新下拉选择值
+    // 更新卡片选中值
     updateCardSelectedValue(cardId, newValue) {
-      // 先尝试更新临时卡片
       const tempIndex = this.tempCards.findIndex(c => c.id === cardId);
       if (tempIndex !== -1) {
         this.tempCards[tempIndex].data.selectedValue = newValue;
         return this.tempCards[tempIndex];
       }
       
-      // 再尝试更新会话卡片
       const sessionIndex = this.sessionCards.findIndex(c => c.id === cardId);
       if (sessionIndex !== -1) {
         this.sessionCards[sessionIndex].data.selectedValue = newValue;
+        
+        const selectedOption = this.sessionCards[sessionIndex].data.selectOptions
+          .find(opt => opt.label === newValue);
+          
+        if (selectedOption) {
+          this.applyPresetToCard(cardId, selectedOption.id);
+        }
+        
         return this.sessionCards[sessionIndex];
       }
       
       return null;
     },
     
-    // 会话级：删除卡片
+    // 删除卡片
     deleteCard(cardId) {
-      // 先从纯内存删除
       this.tempCards = this.tempCards.filter(card => card.id !== cardId);
-      
-      // 再从会话级删除
       this.sessionCards = this.sessionCards.filter(card => card.id !== cardId);
       this.saveSessionCards(this.currentModeId);
-      
-      // 最后从中期存储删除
       this.removeFromMedium([cardId]);
+      
+      if (this.presetMappings[cardId]) {
+        delete this.presetMappings[cardId];
+        this.savePresetMappings();
+      }
       
       if (this.selectedCardId === cardId) {
         this.selectedCardId = null;
       }
     },
     
-    // 模式联动：主模式推送数据到非主模式
+    // 同步到模式
     syncToMode(targetModeId, cardIds, authorize = false) {
       if (!targetModeId || targetModeId === 'root_admin') {
         this.error = '不能向主模式推送数据';
         return null;
       }
       
-      // 验证主模式权限
       if (!this.isRootMode) {
         this.error = '只有主模式可以推送数据';
         return null;
       }
       
-      // 获取要推送的主模式数据（已校验）
       const validation = dataManager.validateConfig(this.sessionCards);
       if (!validation.pass) {
         this.error = '源数据校验失败，无法同步';
@@ -464,24 +568,33 @@ export const useCardStore = defineStore('card', {
           authorizedBy: 'root_admin'
         }));
       
+      const cardPresets = {};
+      cardIds.forEach(id => {
+        if (this.presetMappings[id]) {
+          cardPresets[id] = this.presetMappings[id];
+        }
+      });
+      
       if (sourceCards.length === 0) return null;
       
-      // 加载目标模式的会话数据并合并
       const targetRawCards = sessionStorageEnhancer.load(targetModeId, 'cards') || [];
       const targetCards = [...targetRawCards.filter(card => !cardIds.includes(card.id)), ...sourceCards];
       
-      // 保存到目标模式的会话存储
       sessionStorageEnhancer.save(targetModeId, 'cards', targetCards);
       
-      // 如果目标模式是当前活跃模式，实时更新
       if (this.currentModeId === targetModeId) {
         this.sessionCards = targetCards;
+        
+        Object.keys(cardPresets).forEach(cardId => {
+          this.presetMappings[cardId] = cardPresets[cardId];
+        });
+        this.savePresetMappings();
       }
       
       return { targetModeId, syncedCount: sourceCards.length, authorized };
     },
     
-    // 模式管理：添加非主模式
+    // 添加模式
     addMode(modeData) {
       const newMode = {
         id: `mode-${uuidv4()}`,
@@ -511,23 +624,20 @@ export const useCardStore = defineStore('card', {
       return newMode;
     },
     
-    // 切换模式
+    // 设置当前模式
     setCurrentMode(modeId) {
-      // 保存当前模式的会话数据
       if (this.currentModeId) {
         this.saveSessionCards(this.currentModeId);
       }
       
-      // 切换到新模式并加载其数据
       this.currentModeId = modeId;
       this.loadSessionCards(modeId);
       
-      // 清空纯内存区和选中状态
       this.tempCards = [];
       this.selectedCardId = null;
     },
     
-    // 卡片编辑操作：标题编辑状态切换
+    // 切换标题编辑状态
     toggleTitleEditing(cardId) {
       const tempIndex = this.tempCards.findIndex(c => c.id === cardId);
       if (tempIndex !== -1) {
@@ -541,7 +651,7 @@ export const useCardStore = defineStore('card', {
       }
     },
     
-    // 选项编辑状态切换
+    // 切换选项编辑状态
     toggleOptionsEditing(cardId) {
       const tempIndex = this.tempCards.findIndex(c => c.id === cardId);
       if (tempIndex !== -1) {
@@ -555,11 +665,32 @@ export const useCardStore = defineStore('card', {
       }
     },
     
+    // 切换预设编辑状态
+    togglePresetEditing(cardId) {
+      const tempIndex = this.tempCards.findIndex(c => c.id === cardId);
+      if (tempIndex !== -1) {
+        this.tempCards[tempIndex].isPresetEditing = !this.tempCards[tempIndex].isPresetEditing;
+        return;
+      }
+      
+      const sessionIndex = this.sessionCards.findIndex(c => c.id === cardId);
+      if (sessionIndex !== -1) {
+        const card = this.sessionCards[sessionIndex];
+        card.isPresetEditing = !card.isPresetEditing;
+        
+        if (card.isPresetEditing) {
+          card.isOptionsEditing = true;
+          card.isSelectEditing = true;
+          card.editableFields.optionCheckbox = true;
+        }
+      }
+    },
+    
     // 添加选项
     addOption(cardId, afterId) {
       const tempCard = this.tempCards.find(c => c.id === cardId);
       if (tempCard) {
-        const newOption = { id: Date.now(), name: '', value: null, unit: '', checked: false };
+        const newOption = { id: Date.now(), name: null, value: null, unit: null, checked: false };
         const options = [...tempCard.data.options];
         
         if (afterId) {
@@ -576,7 +707,7 @@ export const useCardStore = defineStore('card', {
       
       const sessionIndex = this.sessionCards.findIndex(c => c.id === cardId);
       if (sessionIndex !== -1) {
-        const newOption = { id: Date.now(), name: '', value: null, unit: '', checked: false };
+        const newOption = { id: Date.now(), name: null, value: null, unit: null, checked: false };
         const card = this.sessionCards[sessionIndex];
         const options = [...card.data.options];
         
@@ -607,21 +738,6 @@ export const useCardStore = defineStore('card', {
       }
     },
     
-    // 添加下拉选项
-    addSelectOption(cardId, label) {
-      const tempCard = this.tempCards.find(c => c.id === cardId);
-      if (tempCard) {
-        tempCard.data.selectOptions.push({ id: Date.now(), label: label ?? '' });
-        return;
-      }
-      
-      const sessionIndex = this.sessionCards.findIndex(c => c.id === cardId);
-      if (sessionIndex !== -1) {
-        const card = this.sessionCards[sessionIndex];
-        card.data.selectOptions.push({ id: Date.now(), label: label ?? '' });
-      }
-    },
-    
     // 删除下拉选项
     deleteSelectOption(cardId, optionId) {
       const tempCard = this.tempCards.find(c => c.id === cardId);
@@ -634,10 +750,15 @@ export const useCardStore = defineStore('card', {
       if (sessionIndex !== -1) {
         const card = this.sessionCards[sessionIndex];
         card.data.selectOptions = card.data.selectOptions.filter(o => o.id !== optionId);
+        
+        if (this.presetMappings[cardId] && this.presetMappings[cardId][optionId]) {
+          delete this.presetMappings[cardId][optionId];
+          this.savePresetMappings();
+        }
       }
     },
     
-    // 控制下拉框显示
+    // 设置下拉显示状态
     setShowDropdown(cardId, value) {
       const tempCard = this.tempCards.find(c => c.id === cardId);
       if (tempCard) {
@@ -651,7 +772,7 @@ export const useCardStore = defineStore('card', {
       }
     },
     
-    // 下拉编辑状态切换
+    // 切换下拉编辑状态
     toggleSelectEditing(cardId) {
       const tempIndex = this.tempCards.findIndex(c => c.id === cardId);
       if (tempIndex !== -1) {
@@ -679,7 +800,7 @@ export const useCardStore = defineStore('card', {
       }
     },
     
-    // 批量更新可编辑字段
+    // 更新可编辑字段配置
     updateEditableFields(cardId, fieldsConfig) {
       const tempIndex = this.tempCards.findIndex(c => c.id === cardId);
       if (tempIndex !== -1) {
@@ -699,11 +820,12 @@ export const useCardStore = defineStore('card', {
       }
     },
     
-    // 导入导出（委托给manager处理）
+    // 导出数据
     exportData(fileName = 'card_data.json') {
       return dataManager.exportData(this.currentModeId, fileName);
     },
     
+    // 导入数据
     async importData(file) {
       try {
         const importedData = await dataManager.importFromFile(file);
@@ -722,18 +844,25 @@ export const useCardStore = defineStore('card', {
       }
     },
     
-    // 清空模式数据
+    // 清除模式数据
     clearModeData(modeId) {
-      // 清空会话级
       sessionStorageEnhancer.clear(modeId, 'cards');
       if (this.currentModeId === modeId) {
         this.sessionCards = [];
       }
       
-      // 清空中期存储
       this.mediumCards = this.mediumCards.filter(card => card.modeId !== modeId);
       localStorage.setItem('app_medium_cards', JSON.stringify(this.mediumCards));
+      
+      Object.keys(this.presetMappings).forEach(cardId => {
+        const card = this.sessionCards.find(c => c.id === cardId) || 
+                     this.mediumCards.find(c => c.id === cardId);
+                     
+        if (card && card.modeId === modeId) {
+          delete this.presetMappings[cardId];
+        }
+      });
+      this.savePresetMappings();
     }
   }
 });
-    

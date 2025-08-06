@@ -43,14 +43,17 @@
       >
         {{ selectedCard?.isTitleEditing ? "完成标题编辑" : "编辑标题" }}
       </button>
+      
+      <!-- 替换"编辑选项"按钮为"编辑预设"按钮 -->
       <button
         class="test-button"
-        @click="toggleOptionsEditing"
+        @click="togglePresetEditing"
         :disabled="!selectedCardId"
-        :class="{ active: selectedCard?.isOptionsEditing }"
+        :class="{ active: selectedCard?.isPresetEditing }"
       >
-        {{ selectedCard?.isOptionsEditing ? "完成选项编辑" : "编辑选项" }}
+        {{ selectedCard?.isPresetEditing ? "完成预设" : "编辑预设" }}
       </button>
+
       <button
         class="test-button"
         @click="toggleSelectEditing"
@@ -111,6 +114,14 @@
       </button>
     </div>
 
+    <!-- 预设编辑提示 -->
+    <div 
+      v-if="selectedCard?.isPresetEditing" 
+      class="preset-editing-hint"
+    >
+      <p>预设编辑模式：选择一个下拉选项，勾选需要关联的选项，自动保存关联关系</p>
+    </div>
+
     <!-- 卡片列表 -->
     <div class="cards-container">
       <div
@@ -129,16 +140,18 @@
           v-model:options="card.data.options"
           v-model:selectedValue="card.data.selectedValue"
           :selectOptions="card.data.selectOptions"
-          :showDropdown="card.showDropdown"
+          :showDropdown="card.showDropdown || card.isPresetEditing"
           :isTitleEditing="card.isTitleEditing"
-          :isOptionsEditing="card.isOptionsEditing"
-          :isSelectEditing="card.isSelectEditing"
+          :isOptionsEditing="card.isOptionsEditing || card.isPresetEditing"
+          :isSelectEditing="card.isSelectEditing || card.isPresetEditing"
           :editableFields="card.editableFields"
           @add-option="(afterId) => handleAddOption(card.id, afterId)"
           @delete-option="(optionId) => handleDeleteOption(card.id, optionId)"
           @add-select-option="(label) => handleAddSelectOption(card.id, label)"
           @delete-select-option="(optionId) => handleDeleteSelectOption(card.id, optionId)"
           @dropdown-toggle="(value) => setShowDropdown(card.id, value)"
+          @update:selectedValue="(value) => handleSelectedValueChange(card.id, value)"
+          @update:options="(options) => handleOptionsChange(card.id, options)"
           :class="{ selected: selectedCardId === card.id }"
           :className="''"
           :style="{}"
@@ -213,6 +226,7 @@ watch(
       if (!Array.isArray(card.data.options)) card.data.options = [];
       if (!Array.isArray(card.data.selectOptions)) card.data.selectOptions = [];
       if (!('showDropdown' in card)) card.showDropdown = false;
+      if (!('isPresetEditing' in card)) card.isPresetEditing = false; // 新增预设编辑状态
       if (!card.editableFields) {
         card.editableFields = {
           optionName: true,
@@ -226,6 +240,43 @@ watch(
     });
   },
   { deep: true, immediate: true }
+);
+
+// 监听选项变化，在预设编辑模式下自动保存关联关系
+watch(
+  () => selectedCard.value?.data.options,
+  (newOptions) => {
+    if (selectedCard.value?.isPresetEditing && newOptions && selectedCard.value.data.selectedValue) {
+      const cardId = selectedCard.value.id;
+      const selectedOption = selectedCard.value.data.selectOptions
+        .find(opt => opt.label === selectedCard.value.data.selectedValue);
+      
+      if (selectedOption) {
+        // 获取所有勾选的选项
+        const checkedOptions = newOptions.filter(option => option.checked);
+        // 保存预设关联
+        cardStore.savePresetForSelectOption(cardId, selectedOption.id, checkedOptions);
+      }
+    }
+  },
+  { deep: true }
+);
+
+// 监听下拉选项变化，在预设编辑模式下加载关联选项
+watch(
+  () => selectedCard.value?.data.selectedValue,
+  (newValue, oldValue) => {
+    if (newValue && newValue !== oldValue && !selectedCard.value?.isPresetEditing) {
+      // 非编辑模式下自动应用预设
+      const cardId = selectedCard.value.id;
+      const selectedOption = selectedCard.value.data.selectOptions
+        .find(opt => opt.label === newValue);
+      
+      if (selectedOption) {
+        cardStore.applyPresetToCard(cardId, selectedOption.id);
+      }
+    }
+  }
 );
 
 // 简化的卡片有效性检查
@@ -316,6 +367,13 @@ const toggleTitleEditing = () => {
   }
 };
 
+// 新增：切换预设编辑状态
+const togglePresetEditing = () => {
+  if (selectedCardId.value) {
+    cardStore.togglePresetEditing(selectedCardId.value);
+  }
+};
+
 const toggleOptionsEditing = () => {
   if (selectedCardId.value) {
     cardStore.toggleOptionsEditing(selectedCardId.value);
@@ -350,6 +408,16 @@ const setShowDropdown = (cardId, value) => {
   cardStore.setShowDropdown(cardId, value);
 };
 
+// 新增：处理下拉选项变化
+const handleSelectedValueChange = (cardId, value) => {
+  cardStore.updateCardSelectedValue(cardId, value);
+};
+
+// 新增：处理选项变化
+const handleOptionsChange = (cardId, options) => {
+  cardStore.updateCardOptions(cardId, options);
+};
+
 // 联动处理
 const handleLinkage = (config) => {
   if (checkResult.value !== 'pass') {
@@ -372,7 +440,9 @@ const handleLinkage = (config) => {
         show: card.showDropdown,
         options: card.data.selectOptions,
         selectedValue: card.data.selectedValue
-      }
+      },
+      // 新增：包含预设映射信息
+      presetMappings: cardStore.presetMappings[card.id] || {}
     })),
     timestamp: new Date().toISOString()
   };
@@ -403,6 +473,17 @@ const handleLinkage = (config) => {
   /* 移除可能导致错位的样式 */
   width: 100%;
   box-sizing: border-box;
+}
+
+/* 新增：预设编辑提示样式 */
+.preset-editing-hint {
+  margin: 10px 0;
+  padding: 10px;
+  background-color: #e3f2fd;
+  border-left: 4px solid #2196f3;
+  color: #0d47a1;
+  border-radius: 4px;
+  font-size: 14px;
 }
 
 .card-controls {
@@ -507,3 +588,4 @@ const handleLinkage = (config) => {
   justify-content: center;
 }
 </style>
+    
