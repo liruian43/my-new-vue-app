@@ -139,8 +139,9 @@
           @add-select-option="(label) => handleAddSelectOption(card.id, label)"
           @delete-select-option="(optionId) => handleDeleteSelectOption(card.id, optionId)"
           @dropdown-toggle="(value) => setShowDropdown(card.id, value)"
-          @click.stop
           :class="{ selected: selectedCardId === card.id }"
+          :className="''"
+          :style="{}"
         />
 
         <div v-if="deletingCardId === card.id" class="delete-overlay">
@@ -506,4 +507,3 @@ const handleLinkage = (config) => {
   justify-content: center;
 }
 </style>
-    
