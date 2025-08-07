@@ -1,8 +1,9 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import HomePage from '../Views/HomePage.vue' // 保持原有路径
-import { getModeComponent } from '../utils/generateModePage' // 导入模式页面组件获取方法
+import HomePage from '../Views/HomePage.vue'
+// 导入模式处理函数和路由初始化函数
+import { initRouter, loadGeneratedModes, generateModePage } from '../utils/generateModePage'
 
-// 保留你原有的基础路由配置
+// 创建路由实例
 const router = createRouter({
   history: createWebHistory(),
   routes: [
@@ -11,44 +12,64 @@ const router = createRouter({
       name: 'Home',
       component: HomePage
     },
-
-    // ✅ 新增：直接添加一条静态路由，让 /root_admin 指向 src/root_admin/root_admin.vue
     {
       path: '/root_admin',
       name: 'RootAdminHomePage',
-      component: () => import('../root_admin/root_admin.vue') // 推荐懒加载
-      // 如果你不想懒加载，也可以直接导入，例如：
-      // import RootAdminHomePage from '../root_admin/root_admin.vue'
-      // component: RootAdminHomePage
+      component: () => import('../root_admin/root_admin.vue')
     }
   ]
 })
 
-// ✅ 保留：你原来的获取 modeIds 方法（绝对不动）
-const getModeIds = () => {
-  return JSON.parse(localStorage.getItem('modeIds') || '[]')
-}
+// 关键：初始化路由实例到模式生成工具中
+initRouter(router);
 
-// ✅ 保留：你原来的动态注册模式路由逻辑（绝对不动）
+// 获取存储的模式
+const getStoredModes = () => {
+  return loadGeneratedModes() || [];
+};
+
+// 动态注册模式路由
 const registerModeRoutes = () => {
-  const modeIds = getModeIds()
+  const storedModes = getStoredModes();
   
-  modeIds.forEach(modeId => {
-    const routeName = `Mode-${modeId}`
-    const routePath = `/mode/${modeId}`
+  storedModes.forEach(mode => {
+    const routeName = `Mode-${mode.id}`;
     
+    // 检查路由是否已存在
     if (!router.hasRoute(routeName)) {
-      router.addRoute({
-        path: routePath,
-        name: routeName,
-        component: getModeComponent(modeId)
-      })
+      // 生成并注册路由（确保传递完整的模式信息）
+      generateModePage({
+        id: mode.id,
+        name: mode.name,
+        routePath: mode.path,
+        // 添加基本的默认属性，确保模式能正常工作
+        level: 2,
+        permissions: {
+          card: {
+            addCard: true,
+            deleteCard: true,
+            editTitle: true,
+            editOptions: true
+          }
+        },
+        cardData: [],
+        syncStatus: 'unsynced',
+        lastSyncTime: null
+      });
     }
-  })
-}
+  });
+};
 
-// ✅ 保留：你原来的动态路由注册调用（绝对不动）
-registerModeRoutes()
+// 执行路由注册
+registerModeRoutes();
 
-// ✅ 导出路由实例（保持原有导出方式）
+// 监听路由变化，确保动态路由正确加载
+router.beforeEach((to, from, next) => {
+  // 检查是否是模式页面但路由未注册
+  if (to.path.startsWith('/mode/') && !router.hasRoute(to.name)) {
+    registerModeRoutes();
+  }
+  next();
+});
+
 export default router

@@ -48,7 +48,10 @@
     <!-- 同步选项区域 -->
     <div class="sync-options">
       <div class="option-group">
-        <span class="group-label">同步:</span>
+        <span class="group-label">同步(控制显示):</span>
+        <div class="fixed-sync-hint">
+          固定同步: 卡片数量、选项数据、卡片顺序、下拉菜单
+        </div>
         <div 
           class="option-item" 
           v-for="syncItem in syncOptions" 
@@ -66,7 +69,7 @@
 
       <!-- 授权选项区域 -->
       <div class="option-group">
-        <span class="group-label">授权:</span>
+        <span class="group-label">授权(控制编辑):</span>
         <div 
           class="option-item" 
           v-for="authItem in authOptions" 
@@ -115,20 +118,21 @@ const filteredModes = computed(() => {
   return modes.value.filter(mode => mode.id !== 'root_admin');
 });
 
-// 同步选项（已移除复选框状态选项）
+// 同步选项（控制是否展示内容）- 新增fieldId映射系统允许的字段ID
 const syncOptions = ref([
-  { id: 1, name: '标题', checked: false },
-  { id: 2, name: '选项名称', checked: false },
-  { id: 3, name: '选项值', checked: false },
-  { id: 4, name: '选项单位', checked: false }
+  { id: 1, name: '卡片标题', fieldId: 'title', checked: false },
+  { id: 2, name: '选项名称', fieldId: 'optionName', checked: false },
+  { id: 3, name: '选项值', fieldId: 'optionValue', checked: false },
+  { id: 4, name: '选项单位', fieldId: 'optionUnit', checked: false }
 ]);
 
-// 授权选项（保持原样，"复选框"代表控制是否允许显示和使用复选框功能）
+// 授权选项（控制是否允许编辑）- 新增fieldId映射系统允许的字段ID
 const authOptions = ref([
-  { id: 1, name: '选项名称', checked: false },
-  { id: 2, name: '选项值', checked: false },
-  { id: 3, name: '选项单位', checked: false },
-  { id: 4, name: '复选框', checked: false }
+  { id: 1, name: '卡片标题', fieldId: 'title', checked: false },
+  { id: 2, name: '选项名称', fieldId: 'optionName', checked: false },
+  { id: 3, name: '选项值', fieldId: 'optionValue', checked: false },
+  { id: 4, name: '选项单位', fieldId: 'optionUnit', checked: false },
+  { id: 5, name: '复选框', fieldId: 'checkbox', checked: false }
 ]);
 
 // 组件内部方法（不影响任何其他组件）
@@ -152,9 +156,8 @@ const togglePrepareStatus = () => {
 const canConfirmLinkage = computed(() => {
   if (!isInPrepareState.value || !selectedMode.value || !cardStore.currentModeId) return false;
   
-  const hasSyncChecked = syncOptions.value.some(item => item.checked);
-  // 即使没有勾选授权项，只要有同步项就允许确认
-  return hasSyncChecked;
+  // 固定同步项无需勾选也可确认
+  return true;
 });
 
 const confirmLinkage = () => {
@@ -166,15 +169,23 @@ const confirmLinkage = () => {
     const targetMode = modes.value.find(mode => mode.name === selectedMode.value);
     if (targetMode) {
       targetModeIds = [targetMode.id];
+    } else {
+      alert('未找到目标模式');
+      return;
     }
   }
   
+  // 构建联动配置，使用fieldId替代显示名称传递给协调器
   const linkageConfig = {
     sourceModeId: cardStore.currentModeId || 'root_admin',
     targetMode: selectedMode.value,
     targetModeIds: targetModeIds,
-    sync: syncOptions.value.filter(item => item.checked).map(item => item.name),
-    auth: authOptions.value.filter(item => item.checked).map(item => item.name),
+    // 固定同步字段（映射为系统允许的ID）
+    fixedSync: ['cardCount', 'options', 'cardOrder', 'selectOptions'],
+    // 用户选择的同步字段（使用fieldId）
+    sync: syncOptions.value.filter(item => item.checked).map(item => item.fieldId),
+    // 用户选择的授权字段（使用fieldId）
+    auth: authOptions.value.filter(item => item.checked).map(item => item.fieldId),
     timestamp: new Date().toISOString()
   };
   
@@ -205,7 +216,7 @@ const emit = defineEmits(['confirm-linkage']);
 </script>
 
 <style scoped>
-/* 样式保持不变 */
+/* 样式保持不变，仅添加固定同步提示样式 */
 .mode-linkage-control {
   display: flex;
   align-items: center;
@@ -322,7 +333,8 @@ const emit = defineEmits(['confirm-linkage']);
 
 .option-group {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: flex-start;
   gap: 10px;
 }
 
@@ -330,6 +342,13 @@ const emit = defineEmits(['confirm-linkage']);
   font-size: 14px;
   font-weight: 500;
   color: #606266;
+}
+
+.fixed-sync-hint {
+  font-size: 12px;
+  color: #909399;
+  margin-left: 20px;
+  width: 100%;
 }
 
 .option-item {

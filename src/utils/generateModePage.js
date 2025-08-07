@@ -1,108 +1,119 @@
-import CardSection from '../root_admin/CardSection.vue'
-import DataSection from '../root_admin/DataSection.vue'
-import { defineComponent, ref, onMounted } from 'vue'
-// 导入数据管理器和存储策略
-import DataManager, { LocalStorageStrategy } from '../components/Data/manager.js'
-// 导入卡片存储（修复handleContainerClick中useCardStore未导入的问题）
-import { useCardStore } from '../components/Data/store'
+import OtherModeTemplate from '../components/Othermodes/OtherModeTemplate.vue';
 
-// 初始化数据管理器（与项目存储策略保持一致）
-const storageStrategy = new LocalStorageStrategy()
-const dataManager = new DataManager(storageStrategy)
+let routerInstance = null;
 
-// 生成模式页面模板（只负责模板，不涉及路由）
+export const initRouter = (router) => {
+  routerInstance = router;
+};
+
 export const generateModePage = (mode) => {
-  // 根据模式是否包含数据区，动态生成不同的模板内容
-  const template = `
-    <div class="home-page" @click="handleContainerClick">
-      <div v-if="loading" class="loading-overlay">
-        <div class="loading-spinner">加载中...</div>
-      </div>
-      <div v-else-if="error" class="error-message">{{ error }}</div>
-      <div v-else class="component-container">
-        <CardSection :mode-id="modeId" :cards="cards" />
-        ${mode.includeDataSection ? '<DataSection :mode-id="modeId" />' : ''}
-      </div>
-    </div>
-  `
-
-  // 保存模板到本地存储（路由不存储模板）
-  localStorage.setItem(`modeTemplate_${mode.id}`, template)
-  
-  // 记录模式ID，用于路由注册
-  const modeIds = JSON.parse(localStorage.getItem('modeIds') || '[]')
-  if (!modeIds.includes(mode.id)) {
-    modeIds.push(mode.id)
-    localStorage.setItem('modeIds', JSON.stringify(modeIds))
+  if (!routerInstance) {
+    console.error('路由实例未初始化，请先调用initRouter()');
+    return null;
   }
-}
-
-// 提供给路由的组件获取方法（路由只做跳转映射）
-export const getModeComponent = (modeId) => {
-  // 从本地存储获取模板
-  const template = localStorage.getItem(`modeTemplate_${modeId}`)
   
-  // 返回Vue组件定义（路由只需要知道组件，不关心模板如何生成）
-  return defineComponent({
-    components: { CardSection, DataSection },
-    setup() {
-      // 使用ref存储响应式数据
-      const modeIdRef = ref(modeId)
-      const loading = ref(true)
-      const error = ref(null)
-      const cards = ref([])
+  if (!mode || !mode.id) {
+    console.error('生成模式页面失败：缺少模式ID');
+    return null;
+  }
+  
+  // 标准化路由路径：统一使用`/mode/${mode.id}`格式
+  const standardizedPath = `/mode/${mode.id}`;
+  // 更新模式的routePath为标准化路径
+  const modeWithStandardPath = { ...mode, routePath: standardizedPath };
+  
+  const modeComponent = {
+    id: modeWithStandardPath.id,
+    name: `${modeWithStandardPath.id}-component`,
+    path: modeWithStandardPath.routePath,
+    component: createModeComponent(modeWithStandardPath)
+  };
+  
+  registerModeRoute(modeComponent);
+  saveGeneratedMode(modeComponent);
+  
+  console.log(`已生成模式页面: ${mode.name} (${mode.id})`);
+  return modeComponent;
+};
 
-      // 处理容器点击事件
-      const handleContainerClick = (event) => {
-        const isCardControls = event.target.closest('.card-controls')
-        if (!isCardControls) {
-          // 重置选中状态
-          const cardStore = useCardStore()
-          cardStore.selectedCardId = null
-        }
-      }
-
-      // 页面挂载时加载数据
-      onMounted(async () => {
-        try {
-          loading.value = true
-          
-          // 加载当前模式的卡片数据
-          const modeCards = dataManager.loadModeData(
-            modeIdRef.value, 
-            'cards', 
-            'all'
-          )
-          if (modeCards) {
-            cards.value = modeCards
-          }
-
-        } catch (err) {
-          console.error('加载模式数据失败:', err)
-          error.value = '数据加载失败，请刷新页面重试'
-        } finally {
-          loading.value = false
-        }
-      })
-
-      return {
-        modeId: modeIdRef,
-        loading,
-        error,
-        cards,
-        handleContainerClick
-      }
+const createModeComponent = (mode) => {
+  return {
+    template: `<OtherModeTemplate :mode-id="modeId" />`,
+    data() {
+      return { modeId: mode.id };
     },
-    template: template || '<div>页面加载失败</div>'
-  })
-}
+    components: { OtherModeTemplate }
+  };
+};
 
-// 删除模式页面（同步清理模板和ID记录）
-export const deleteModePage = (modeId) => {
-  localStorage.removeItem(`modeTemplate_${modeId}`)
-  const modeIds = JSON.parse(localStorage.getItem('modeIds') || '[]')
-  localStorage.setItem('modeIds', JSON.stringify(modeIds.filter(id => id !== modeId)))
+const registerModeRoute = (modeComponent) => {
+  if (!routerInstance) return;
   
-  // 同时清理该模式的所有数据
-  dataManager.deleteMode(modeId)
-}
+  const routeExists = routerInstance.getRoutes().some(
+    route => route.path === modeComponent.path
+  );
+  
+  if (!routeExists) {
+    routerInstance.addRoute({
+      path: modeComponent.path,
+      name: modeComponent.name,
+      component: modeComponent.component,
+      meta: { modeId: modeComponent.id, requiresAuth: true }
+    });
+  }
+};
+
+const saveGeneratedMode = (modeComponent) => {
+  let generatedModes = JSON.parse(localStorage.getItem('generated_modes') || '[]');
+  
+  const index = generatedModes.findIndex(m => m.id === modeComponent.id);
+  if (index !== -1) {
+    generatedModes[index] = modeComponent;
+  } else {
+    generatedModes.push({
+      id: modeComponent.id,
+      name: modeComponent.name,
+      path: modeComponent.path
+    });
+  }
+  
+  localStorage.setItem('generated_modes', JSON.stringify(generatedModes));
+};
+
+// 核心修复：彻底删除模式相关的路由和存储数据
+export const deleteModePage = (modeId) => {
+  if (!routerInstance) return;
+  
+  // 1. 从路由中移除
+  const route = routerInstance.getRoutes().find(r => r.meta?.modeId === modeId);
+  if (route) {
+    routerInstance.removeRoute(route.name);
+  }
+  
+  // 2. 从生成的模式列表中移除
+  let generatedModes = JSON.parse(localStorage.getItem('generated_modes') || '[]');
+  generatedModes = generatedModes.filter(m => m.id !== modeId);
+  localStorage.setItem('generated_modes', JSON.stringify(generatedModes));
+  
+  console.log(`已彻底删除模式页面数据: ${modeId}`);
+};
+
+export const loadGeneratedModes = () => {
+  return JSON.parse(localStorage.getItem('generated_modes') || '[]');
+};
+
+// 新增：跳转到模式页面的函数，确保路径正确
+export const navigateToMode = (modeId) => {
+  if (!routerInstance) {
+    console.error('路由实例未初始化');
+    return;
+  }
+  
+  const targetPath = `/mode/${modeId}`;
+  routerInstance.push(targetPath).catch(err => {
+    // 忽略重复导航错误
+    if (!err.message.includes('Avoided redundant navigation')) {
+      console.error('导航到模式页面失败:', err);
+    }
+  });
+};

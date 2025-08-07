@@ -24,7 +24,6 @@
               :value="mode.id"
             >
               {{ mode.name }} 
-              <span v-if="mode.includeDataSection" class="data-badge">含数据</span>
             </option>
           </select>
         </div>
@@ -145,13 +144,6 @@ watch(filteredModes, (newModes) => {
   cursor: not-allowed;
 }
 
-.data-badge {
-  font-size: 12px;
-  color: #2196f3;
-  margin-left: 6px;
-  font-weight: normal;
-}
-
 h1 {
   margin: 0;
   color: #333;
@@ -175,4 +167,3 @@ h1 {
   text-decoration: underline;
 }
 </style>
-    
