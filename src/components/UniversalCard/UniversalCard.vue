@@ -144,6 +144,16 @@ import { ref, computed, watch, onMounted, defineProps, defineEmits } from "vue";
 
 // 定义 props
 const props = defineProps({
+  // 新增：声明className和style props
+  className: {
+    type: String,
+    default: ''
+  },
+  style: {
+    type: Object,
+    default: () => ({})
+  },
+  // 原有props保持不变
   modelValue: {
     type: String,
     required: true,
@@ -365,13 +375,13 @@ onMounted(() => {
 }
 
 .universal-card {
-  max-width: 240px;
-  margin: 0 auto;
-  border: 1px solid #e0e0e0;
-  border-radius: 8px;
-  padding: 4px;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
-  background-color: #fff;
+  max-width: 240px !important;
+  margin: 0 auto !important;
+  border: 1px solid #e0e0e0 !important;
+  border-radius: 8px !important;
+  padding: 4px !important;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05) !important;
+  background-color: #fff !important;
 }
 
 .card-title {
@@ -677,3 +687,4 @@ onMounted(() => {
   height: 20px;
 }
 </style>
+    
