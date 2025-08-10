@@ -16,22 +16,22 @@ const sessionStorageEnhancer = {
     }
     return sessionId;
   },
-  
+
   getStorageKey(modeId, type) {
     return `${this.sessionId}_${modeId}_${type}`;
   },
-  
+
   save(modeId, type, data) {
     const key = this.getStorageKey(modeId, type);
     sessionStorage.setItem(key, JSON.stringify(data));
   },
-  
+
   load(modeId, type) {
     const key = this.getStorageKey(modeId, type);
     const data = sessionStorage.getItem(key);
     return data ? JSON.parse(data) : [];
   },
-  
+
   clear(modeId, type) {
     const key = this.getStorageKey(modeId, type);
     sessionStorage.removeItem(key);
@@ -40,22 +40,22 @@ const sessionStorageEnhancer = {
 
 // 定义8项内容的字段标识
 export const FIELD_IDS = {
-  CARD_COUNT: 'cardCount', // 1.卡片数量（通过数组长度体现）
-  CARD_ORDER: 'cardOrder', // 3.卡片顺序（通过数组索引体现）
-  CARD_TITLE: 'title', // 4.卡片标题
-  OPTIONS: 'options', // 2.选项数据（数组）
-  OPTION_NAME: 'optionName', // 5.选项名称（options子项）
-  OPTION_VALUE: 'optionValue', // 6.选项值（options子项）
-  OPTION_UNIT: 'optionUnit', // 7.选项单位（options子项）
-  SELECT_OPTIONS: 'selectOptions' // 8.下拉菜单
+  CARD_COUNT: 'cardCount',       // 1.卡片数量（通过数组长度体现）
+  CARD_ORDER: 'cardOrder',       // 3.卡片顺序（通过数组索引体现）
+  CARD_TITLE: 'title',           // 4.卡片标题
+  OPTIONS: 'options',            // 2.选项数据（数组）
+  OPTION_NAME: 'optionName',     // 5.选项名称（options子项）
+  OPTION_VALUE: 'optionValue',   // 6.选项值（options子项）
+  OPTION_UNIT: 'optionUnit',     // 7.选项单位（options子项）
+  SELECT_OPTIONS: 'selectOptions'// 8.下拉菜单
 };
 
 // 固定同步的字段（无需用户选择，点击联动即同步）
 export const FIXED_SYNC_FIELDS = [
-  FIELD_IDS.OPTIONS, 
+  FIELD_IDS.OPTIONS,
   FIELD_IDS.SELECT_OPTIONS,
-  FIELD_IDS.CARD_COUNT, // 由数组长度自然同步
-  FIELD_IDS.CARD_ORDER // 由数组索引自然同步
+  FIELD_IDS.CARD_COUNT,
+  FIELD_IDS.CARD_ORDER
 ];
 
 // 可配置同步的字段（用户选择是否同步展示内容）
@@ -77,13 +77,13 @@ export const AUTHORIZABLE_FIELDS = [
 export const useCardStore = defineStore('card', {
   state: () => ({
     // 存储数据
-    tempCards: [], // 纯内存级
-    sessionCards: [], // 会话级
-    mediumCards: [], // 中期存储（localStorage）
-    
+    tempCards: [],       // 纯内存级
+    sessionCards: [],    // 会话级
+    mediumCards: [],     // 中期存储（localStorage）
+
     // 预设映射关系存储
     presetMappings: {}, 
-    
+
     // 核心状态标识
     selectedCardId: null,
     deletingCardId: null,
@@ -91,10 +91,11 @@ export const useCardStore = defineStore('card', {
     error: null,
     viewMode: 'tree',
     storageType: localStorage.getItem('storageType') || 'local',
-    
+
     // 模式管理（用户创建的模式）
     modes: [],
     currentModeId: 'root_admin', // 默认在主模式
+    
     // 主模式（源数据区 - 固定不可删除）
     rootMode: {
       id: 'root_admin',
@@ -109,7 +110,7 @@ export const useCardStore = defineStore('card', {
       cardData: []
     }
   }),
-  
+
   getters: {
     // 当前选中的卡片
     selectedCard() {
@@ -119,38 +120,38 @@ export const useCardStore = defineStore('card', {
       }
       return card;
     },
-    
+
     // 当前选中卡片的预设配置
     selectedCardPresets() {
       return this.presetMappings[this.selectedCardId] || {};
     },
-    
+
     // 当前激活的模式
     currentMode() {
       if (this.currentModeId === 'root_admin') return this.rootMode;
       return this.modes.find(mode => mode.id === this.currentModeId) || null;
     },
-    
+
     // 当前模式的会话级卡片
     currentModeSessionCards() {
       return [...this.sessionCards];
     },
-    
+
     // 当前模式的中期存储卡片
     currentModeMediumCards() {
       return this.mediumCards.filter(card => card.modeId === this.currentModeId);
     },
-    
+
     // 主模式中期存储数据
     rootMediumData() {
       return this.mediumCards.filter(card => card.modeId === 'root_admin');
     },
-    
+
     // 是否为主模式
     isRootMode() {
       return this.currentModeId === 'root_admin';
     },
-    
+
     // 选中卡片的可编辑字段配置
     selectedCardEditableFields() {
       return this.selectedCard?.editableFields || {
@@ -176,13 +177,13 @@ export const useCardStore = defineStore('card', {
       };
     }
   },
-  
+
   actions: {
     // 初始化：加载数据
     async initialize() {
       this.loading = true;
       this.error = null;
-      
+
       try {
         // 1. 加载用户创建的模式（主模式不存储在localStorage）
         const storedModes = localStorage.getItem('app_user_modes');
@@ -220,7 +221,7 @@ export const useCardStore = defineStore('card', {
         this.loading = false;
       }
     },
-    
+
     // 加载预设映射
     loadPresetMappings() {
       const stored = localStorage.getItem('card_preset_mappings');
@@ -233,7 +234,7 @@ export const useCardStore = defineStore('card', {
         }
       }
     },
-    
+
     // 保存预设映射
     savePresetMappings() {
       try {
@@ -244,7 +245,7 @@ export const useCardStore = defineStore('card', {
         return false;
       }
     },
-    
+
     // 为卡片的下拉选项保存预设配置
     savePresetForSelectOption(cardId, selectOptionId, checkedOptions) {
       if (!this.presetMappings[cardId]) {
@@ -266,7 +267,7 @@ export const useCardStore = defineStore('card', {
       
       return this.savePresetMappings();
     },
-    
+
     // 应用预设配置到卡片
     applyPresetToCard(cardId, selectOptionId) {
       const cardPresets = this.presetMappings[cardId];
@@ -299,16 +300,15 @@ export const useCardStore = defineStore('card', {
       
       return true;
     },
-    
+
     // 加载指定模式的会话级卡片
     loadSessionCards(modeId) {
       const rawCards = sessionStorageEnhancer.load(modeId, 'cards') || [];
       this.sessionCards = rawCards.map(card => this.normalizeCardStructure(card));
     },
-    
-    // 标准化卡片结构，确保包含8项内容和状态标记
+
+    // 标准化卡片结构
     normalizeCardStructure(card) {
-      // 基础卡片结构
       const baseCard = {
         id: card.id || Date.now(),
         modeId: card.modeId || this.currentModeId,
@@ -318,6 +318,7 @@ export const useCardStore = defineStore('card', {
         isSelectEditing: card.isSelectEditing ?? false,
         isPresetEditing: card.isPresetEditing ?? false,
         showDropdown: card.showDropdown ?? false,
+        
         // 同步和授权状态标记
         syncStatus: {
           title: {
@@ -343,6 +344,7 @@ export const useCardStore = defineStore('card', {
             isAuthorized: card.syncStatus?.selectOptions?.isAuthorized ?? false
           }
         },
+        
         data: {
           title: card.data?.title ?? null,
           options: (card.data?.options || []).map(option => ({
@@ -351,7 +353,6 @@ export const useCardStore = defineStore('card', {
             value: option.value ?? null,
             unit: option.unit ?? null,
             checked: option.checked ?? false,
-            // 本地值，用于存储目标模式的编辑内容
             localName: option.localName ?? null,
             localValue: option.localValue ?? null,
             localUnit: option.localUnit ?? null
@@ -362,6 +363,7 @@ export const useCardStore = defineStore('card', {
           })),
           selectedValue: card.data?.selectedValue ?? null
         },
+        
         editableFields: {
           ...{
             optionName: true,
@@ -377,7 +379,7 @@ export const useCardStore = defineStore('card', {
       
       return baseCard;
     },
-    
+
     // 添加下拉选项
     addSelectOption(cardId, label) {
       const tempCard = this.tempCards.find(c => c.id === cardId);
@@ -392,7 +394,7 @@ export const useCardStore = defineStore('card', {
         card.data.selectOptions.push({ id: Date.now(), label: label ?? '' });
       }
     },
-    
+
     // 添加卡片
     addCard(cardData) {
       const newCard = this.normalizeCardStructure({
@@ -405,7 +407,7 @@ export const useCardStore = defineStore('card', {
       this.selectedCardId = newCard.id;
       return newCard;
     },
-    
+
     // 保存会话卡片
     saveSessionCards(modeId) {
       const validation = dataManager.validateConfig(this.sessionCards);
@@ -415,18 +417,18 @@ export const useCardStore = defineStore('card', {
       }
       return false;
     },
-    
+
     // 验证配置
     validateConfiguration() {
       return dataManager.validateConfig(this.sessionCards);
     },
-    
+
     // 加载所有中期存储卡片
     loadAllMediumCards() {
       const storedData = localStorage.getItem('app_medium_cards');
       this.mediumCards = storedData ? JSON.parse(storedData) : [];
     },
-    
+
     // 保存到中期存储
     saveToMedium() {
       const currentMode = this.currentMode;
@@ -453,7 +455,7 @@ export const useCardStore = defineStore('card', {
       localStorage.setItem('app_medium_cards', JSON.stringify(this.mediumCards));
       return mediumData;
     },
-    
+
     // 从中期存储移除
     removeFromMedium(cardIds) {
       if (!cardIds || cardIds.length === 0) return;
@@ -461,7 +463,7 @@ export const useCardStore = defineStore('card', {
       this.mediumCards = this.mediumCards.filter(card => !cardIds.includes(card.id));
       localStorage.setItem('app_medium_cards', JSON.stringify(this.mediumCards));
     },
-    
+
     // 从中期存储加载
     loadFromMedium(mediumCardIds) {
       const mediumCards = this.mediumCards.filter(card => 
@@ -474,7 +476,7 @@ export const useCardStore = defineStore('card', {
       this.saveSessionCards(this.currentModeId);
       return mediumCards;
     },
-    
+
     // 添加临时卡片
     addTempCard(initialData = {}) {
       const newCard = this.normalizeCardStructure({
@@ -486,7 +488,7 @@ export const useCardStore = defineStore('card', {
       this.selectedCardId = newCard.id;
       return newCard;
     },
-    
+
     // 更新临时卡片
     updateTempCard(updatedCard) {
       const index = this.tempCards.findIndex(card => card.id === updatedCard.id);
@@ -500,7 +502,7 @@ export const useCardStore = defineStore('card', {
       }
       return null;
     },
-    
+
     // 提升到会话级
     promoteToSession(cardIds) {
       if (!cardIds || cardIds.length === 0) return [];
@@ -523,7 +525,7 @@ export const useCardStore = defineStore('card', {
       this.tempCards = this.tempCards.filter(card => !cardIds.includes(card.id));
       return promotedCards;
     },
-    
+
     // 更新会话卡片
     updateSessionCard(updatedCard) {
       const index = this.sessionCards.findIndex(card => card.id === updatedCard.id);
@@ -537,7 +539,7 @@ export const useCardStore = defineStore('card', {
       }
       return null;
     },
-    
+
     // 更新卡片标题
     updateCardTitle(cardId, newTitle) {
       const tempIndex = this.tempCards.findIndex(c => c.id === cardId);
@@ -554,7 +556,7 @@ export const useCardStore = defineStore('card', {
       
       return null;
     },
-    
+
     // 更新卡片选项
     updateCardOptions(cardId, updatedOptions) {
       const tempIndex = this.tempCards.findIndex(c => c.id === cardId);
@@ -571,7 +573,7 @@ export const useCardStore = defineStore('card', {
       
       return null;
     },
-    
+
     // 更新卡片选中值
     updateCardSelectedValue(cardId, newValue) {
       const tempIndex = this.tempCards.findIndex(c => c.id === cardId);
@@ -596,7 +598,7 @@ export const useCardStore = defineStore('card', {
       
       return null;
     },
-    
+
     // 删除卡片
     deleteCard(cardId) {
       this.tempCards = this.tempCards.filter(card => card.id !== cardId);
@@ -613,8 +615,8 @@ export const useCardStore = defineStore('card', {
         this.selectedCardId = null;
       }
     },
-    
-    // 同步到模式 - 增强版：支持完整8项内容和同步/授权状态
+
+    // 同步到模式
     syncToMode(targetModeId, cardIds, syncConfig) {
       if (!targetModeId || targetModeId === 'root_admin') {
         this.error = '不能向主模式推送数据';
@@ -626,7 +628,6 @@ export const useCardStore = defineStore('card', {
         return null;
       }
       
-      // 验证同步配置
       const { syncFields = [], authFields = [] } = syncConfig || {};
       
       const validation = dataManager.validateConfig(this.sessionCards);
@@ -635,15 +636,12 @@ export const useCardStore = defineStore('card', {
         return null;
       }
       
-      // 处理要同步的卡片，添加同步和授权状态标记
       const sourceCards = validation.validCards
         .filter(card => cardIds.includes(card.id))
         .map(card => {
-          // 处理卡片标题的同步状态
           const titleSync = syncFields.includes(FIELD_IDS.CARD_TITLE);
           const titleAuth = authFields.includes(FIELD_IDS.CARD_TITLE);
           
-          // 处理选项各字段的同步状态
           const nameSync = syncFields.includes(FIELD_IDS.OPTION_NAME);
           const nameAuth = authFields.includes(FIELD_IDS.OPTION_NAME);
           
@@ -653,7 +651,6 @@ export const useCardStore = defineStore('card', {
           const unitSync = syncFields.includes(FIELD_IDS.OPTION_UNIT);
           const unitAuth = authFields.includes(FIELD_IDS.OPTION_UNIT);
           
-          // 构建带状态标记的卡片数据
           return this.normalizeCardStructure({
             ...card,
             modeId: targetModeId,
@@ -678,20 +675,19 @@ export const useCardStore = defineStore('card', {
                 }
               },
               selectOptions: {
-                hasSync: true, // 固定同步
-                isAuthorized: false // 固定不可编辑
+                hasSync: true,  // 固定同步
+                isAuthorized: false  // 固定不可编辑
               }
             },
             data: {
               ...card.data,
-              // 对于未同步的字段，设置为null但保留结构
               title: titleSync ? card.data.title : null,
               options: card.data.options.map(option => ({
                 ...option,
                 name: nameSync ? option.name : null,
                 value: valueSync ? option.value : null,
                 unit: unitSync ? option.unit : null,
-                localName: null, // 初始化本地值为空
+                localName: null,
                 localValue: null,
                 localUnit: null
               }))
@@ -700,7 +696,6 @@ export const useCardStore = defineStore('card', {
           });
         });
       
-      // 处理预设映射
       const cardPresets = {};
       cardIds.forEach(id => {
         if (this.presetMappings[id]) {
@@ -710,29 +705,22 @@ export const useCardStore = defineStore('card', {
       
       if (sourceCards.length === 0) return null;
       
-      // 加载目标模式现有卡片
       const targetRawCards = sessionStorageEnhancer.load(targetModeId, 'cards') || [];
-      // 合并卡片（保留未同步的卡片，替换已同步的卡片）
       const targetCards = [
         ...targetRawCards.filter(card => !cardIds.includes(card.id)),
         ...sourceCards
       ];
       
-      // 保存到目标模式的会话存储
       sessionStorageEnhancer.save(targetModeId, 'cards', targetCards);
       
-      // 如果当前就在目标模式，直接更新视图
       if (this.currentModeId === targetModeId) {
         this.sessionCards = targetCards;
-        
-        // 同步预设映射
         Object.keys(cardPresets).forEach(cardId => {
           this.presetMappings[cardId] = cardPresets[cardId];
         });
         this.savePresetMappings();
       }
       
-      // 更新模式的同步信息
       this.updateModeSyncInfo(targetModeId, {
         lastSyncTime: new Date().toISOString(),
         syncFields,
@@ -742,7 +730,7 @@ export const useCardStore = defineStore('card', {
       
       return { targetModeId, syncedCount: sourceCards.length, syncFields, authFields };
     },
-    
+
     // 更新模式的同步信息
     updateModeSyncInfo(modeId, syncInfo) {
       const modeIndex = this.modes.findIndex(m => m.id === modeId);
@@ -757,10 +745,9 @@ export const useCardStore = defineStore('card', {
         localStorage.setItem('app_user_modes', JSON.stringify(this.modes));
       }
     },
-    
-    // 更新目标模式的卡片本地值（用户编辑内容）
+
+    // 更新目标模式的卡片本地值
     updateModeCardLocalValue(modeId, cardId, fieldType, optIndex, value) {
-      // 确保只能更新当前模式
       if (modeId !== this.currentModeId) return false;
       
       const cardIndex = this.sessionCards.findIndex(c => c.id === cardId);
@@ -768,9 +755,7 @@ export const useCardStore = defineStore('card', {
       
       const card = this.sessionCards[cardIndex];
       
-      // 根据字段类型更新本地值
       if (fieldType === 'title') {
-        // 检查是否有权限编辑
         if (!card.syncStatus.title.isAuthorized) return false;
         card.data.title = value;
       } 
@@ -789,14 +774,12 @@ export const useCardStore = defineStore('card', {
         }
       }
       
-      // 保存更新
       this.saveSessionCards(modeId);
       return true;
     },
-    
-    // 添加模式（用户创建的模式）
+
+    // 添加模式
     addMode(modeData) {
-      // 防止创建主模式
       if (modeData.id === 'root_admin' || modeData.name === '根模式（源数据区）') {
         this.error = '不能创建与主模式同名或同ID的模式';
         return null;
@@ -805,8 +788,8 @@ export const useCardStore = defineStore('card', {
       const newMode = {
         id: modeData.id || `mode-${uuidv4()}`,
         ...modeData,
-        level: 2, // 标记为用户模式
-        isUserMode: true, // 用于区分
+        level: 2,
+        isUserMode: true,
         syncInfo: {
           lastSyncTime: null,
           syncFields: [],
@@ -816,32 +799,25 @@ export const useCardStore = defineStore('card', {
       };
       
       this.modes.push(newMode);
-      // 单独存储用户模式，与主模式隔离
       localStorage.setItem('app_user_modes', JSON.stringify(this.modes));
       return newMode;
     },
-    
-    // 删除模式（仅删除用户创建的模式，不影响卡片）
+
+    // 删除模式
     deleteModes(modeIds) {
-      // 严格过滤：排除主模式
       const filteredIds = modeIds.filter(id => id !== 'root_admin');
       if (filteredIds.length === 0) return;
       
-      // 从内存中移除
       this.modes = this.modes.filter(mode => !filteredIds.includes(mode.id));
-      
-      // 同步到存储（仅用户模式）
       localStorage.setItem('app_user_modes', JSON.stringify(this.modes));
       
-      // 如果当前模式被删除，切换到主模式
       if (filteredIds.includes(this.currentModeId)) {
         this.setCurrentMode('root_admin');
       }
     },
-    
+
     // 设置当前模式
     setCurrentMode(modeId) {
-      // 防止切换到不存在的模式
       const modeExists = modeId === 'root_admin' || this.modes.some(m => m.id === modeId);
       if (!modeExists) return;
       
@@ -855,8 +831,8 @@ export const useCardStore = defineStore('card', {
       this.tempCards = [];
       this.selectedCardId = null;
     },
-    
-    // 切换标题编辑状态
+
+    // 切换标题编辑状态（修改点：root_admin 放开权限）
     toggleTitleEditing(cardId) {
       const tempIndex = this.tempCards.findIndex(c => c.id === cardId);
       if (tempIndex !== -1) {
@@ -866,15 +842,15 @@ export const useCardStore = defineStore('card', {
       
       const sessionIndex = this.sessionCards.findIndex(c => c.id === cardId);
       if (sessionIndex !== -1) {
-        // 检查是否有权限编辑
         const card = this.sessionCards[sessionIndex];
-        if (card.syncStatus.title.isAuthorized) {
+        // 修改点：root_admin 直接允许；其他模式仍按授权
+        if (this.currentModeId === 'root_admin' || card.syncStatus.title.isAuthorized) {
           card.isTitleEditing = !card.isTitleEditing;
         }
       }
     },
-    
-    // 切换选项编辑状态
+
+    // 切换选项编辑状态（修改点：root_admin 放开权限）
     toggleOptionsEditing(cardId) {
       const tempIndex = this.tempCards.findIndex(c => c.id === cardId);
       if (tempIndex !== -1) {
@@ -885,17 +861,23 @@ export const useCardStore = defineStore('card', {
       const sessionIndex = this.sessionCards.findIndex(c => c.id === cardId);
       if (sessionIndex !== -1) {
         const card = this.sessionCards[sessionIndex];
-        // 检查是否有任何选项字段有权限编辑
-        const canEdit = card.syncStatus.options.name.isAuthorized || 
-                       card.syncStatus.options.value.isAuthorized ||
-                       card.syncStatus.options.unit.isAuthorized;
-                       
+        // 修改点：root_admin 直接允许；其他模式按授权检查
+        let canEdit = false;
+        if (this.currentModeId === 'root_admin') {
+          canEdit = true;
+        } else {
+          canEdit =
+            card.syncStatus.options.name.isAuthorized || 
+            card.syncStatus.options.value.isAuthorized ||
+            card.syncStatus.options.unit.isAuthorized;
+        }
+        
         if (canEdit) {
           card.isOptionsEditing = !card.isOptionsEditing;
         }
       }
     },
-    
+
     // 切换预设编辑状态
     togglePresetEditing(cardId) {
       const tempIndex = this.tempCards.findIndex(c => c.id === cardId);
@@ -916,7 +898,7 @@ export const useCardStore = defineStore('card', {
         }
       }
     },
-    
+
     // 添加选项
     addOption(cardId, afterId) {
       const tempCard = this.tempCards.find(c => c.id === cardId);
@@ -971,7 +953,7 @@ export const useCardStore = defineStore('card', {
         card.data.options = options;
       }
     },
-    
+
     // 删除选项
     deleteOption(cardId, optionId) {
       const tempCard = this.tempCards.find(c => c.id === cardId);
@@ -986,7 +968,7 @@ export const useCardStore = defineStore('card', {
         card.data.options = card.data.options.filter(o => o.id !== optionId);
       }
     },
-    
+
     // 删除下拉选项
     deleteSelectOption(cardId, optionId) {
       const tempCard = this.tempCards.find(c => c.id === cardId);
@@ -1006,7 +988,7 @@ export const useCardStore = defineStore('card', {
         }
       }
     },
-    
+
     // 设置下拉显示状态
     setShowDropdown(cardId, value) {
       const tempCard = this.tempCards.find(c => c.id === cardId);
@@ -1020,7 +1002,7 @@ export const useCardStore = defineStore('card', {
         this.sessionCards[sessionIndex].showDropdown = value;
       }
     },
-    
+
     // 切换下拉编辑状态
     toggleSelectEditing(cardId) {
       const tempIndex = this.tempCards.findIndex(c => c.id === cardId);
@@ -1034,7 +1016,7 @@ export const useCardStore = defineStore('card', {
         this.sessionCards[sessionIndex].isSelectEditing = !this.sessionCards[sessionIndex].isSelectEditing;
       }
     },
-    
+
     // 切换可编辑字段
     toggleEditableField(cardId, field) {
       const tempIndex = this.tempCards.findIndex(c => c.id === cardId);
@@ -1048,7 +1030,7 @@ export const useCardStore = defineStore('card', {
         this.sessionCards[sessionIndex].editableFields[field] = !this.sessionCards[sessionIndex].editableFields[field];
       }
     },
-    
+
     // 更新可编辑字段配置
     updateEditableFields(cardId, fieldsConfig) {
       const tempIndex = this.tempCards.findIndex(c => c.id === cardId);
@@ -1068,12 +1050,12 @@ export const useCardStore = defineStore('card', {
         };
       }
     },
-    
+
     // 导出数据
     exportData(fileName = 'card_data.json') {
       return dataManager.exportData(this.currentModeId, fileName);
     },
-    
+
     // 导入数据
     async importData(file) {
       try {
@@ -1094,3 +1076,4 @@ export const useCardStore = defineStore('card', {
     }
   }
 });
+    

@@ -2,8 +2,8 @@
   <div class="card-section">
     <!-- 联动控制组件：仅在root_admin模式显示 -->
     <ModeLinkageControl 
-      v-if="isRootAdminMode"
-      @confirm-linkage="handleLinkage"
+      v-if="isRootAdminMode" 
+      @confirm-linkage="handleLinkage" 
     />
 
     <!-- 顶部控制按钮 -->
@@ -28,6 +28,7 @@
 
       <!-- 其他原有按钮保持不变 -->
       <button class="test-button" @click="addCard">添加卡片</button>
+      
       <button
         class="test-button"
         @click="prepareDeleteCard"
@@ -35,6 +36,7 @@
       >
         删除卡片
       </button>
+      
       <button
         class="test-button"
         @click="toggleTitleEditing"
@@ -44,7 +46,7 @@
         {{ selectedCard?.isTitleEditing ? "完成标题编辑" : "编辑标题" }}
       </button>
       
-      <!-- 替换"编辑选项"按钮为"编辑预设"按钮 -->
+      <!-- "编辑预设"是唯一允许组合的功能 -->
       <button
         class="test-button"
         @click="togglePresetEditing"
@@ -62,6 +64,7 @@
       >
         {{ selectedCard?.isSelectEditing ? "完成下拉菜单编辑" : "编辑下拉菜单" }}
       </button>
+      
       <button
         class="test-button"
         @click="() => toggleEditableField('optionName')"
@@ -72,6 +75,7 @@
           selectedCard?.editableFields.optionName ? "完成名称编辑" : "编辑选项名称"
         }}
       </button>
+      
       <button
         class="test-button"
         @click="() => toggleEditableField('optionValue')"
@@ -82,6 +86,7 @@
           selectedCard?.editableFields.optionValue ? "完成值编辑" : "编辑选项值"
         }}
       </button>
+      
       <button
         class="test-button"
         @click="() => toggleEditableField('optionUnit')"
@@ -92,6 +97,7 @@
           selectedCard?.editableFields.optionUnit ? "完成单位编辑" : "编辑选项单位"
         }}
       </button>
+      
       <button
         class="test-button"
         @click="() => toggleEditableField('optionCheckbox')"
@@ -102,6 +108,7 @@
           selectedCard?.editableFields.optionCheckbox ? "隐藏选项复选框" : "显示选项复选框"
         }}
       </button>
+      
       <button
         class="test-button"
         @click="() => toggleEditableField('optionActions')"
@@ -131,10 +138,12 @@
         :class="{ 
           deleting: deletingCardId === card.id, 
           selected: selectedCardId === card.id,
-          invalid: checkResult === 'fail' && !isCardValid(card)
+          invalid: checkResult === 'fail' && !isCardValid(card),
+          'hide-option-actions': !card.editableFields.optionActions
         }"
         @click.stop="selectCard(card.id)"
       >
+        <!-- 子组件：用 props 传函数，不再用 @add-option 等事件 -->
         <UniversalCard
           v-model:modelValue="card.data.title"
           v-model:options="card.data.options"
@@ -144,16 +153,13 @@
           :isTitleEditing="card.isTitleEditing"
           :isOptionsEditing="card.isOptionsEditing || card.isPresetEditing"
           :isSelectEditing="card.isSelectEditing || card.isPresetEditing"
-          :editableFields="card.editableFields"
-          @add-option="(afterId) => handleAddOption(card.id, afterId)"
-          @delete-option="(optionId) => handleDeleteOption(card.id, optionId)"
-          @add-select-option="(label) => handleAddSelectOption(card.id, label)"
-          @delete-select-option="(optionId) => handleDeleteSelectOption(card.id, optionId)"
-          @dropdown-toggle="(value) => setShowDropdown(card.id, value)"
-          @update:selectedValue="(value) => handleSelectedValueChange(card.id, value)"
-          @update:options="(options) => handleOptionsChange(card.id, options)"
+          :on-add-option="(afterId) => handleAddOption(card.id, afterId)"
+          :on-delete-option="(optionId) => handleDeleteOption(card.id, optionId)"
+          :on-add-select-option="(label) => handleAddSelectOption(card.id, label)"
+          :on-delete-select-option="(optionId) => handleDeleteSelectOption(card.id, optionId)"
+          :on-dropdown-toggle="(value) => setShowDropdown(card.id, value)"
+          :editableFields="{ ...card.editableFields, optionActions: true }"
           :class="{ selected: selectedCardId === card.id }"
-          :className="''"
           :style="{}"
         />
 
@@ -169,7 +175,6 @@
 import { computed, ref, watch } from 'vue';
 import { useCardStore } from '../components/Data/store';
 import UniversalCard from '../components/UniversalCard/UniversalCard.vue';
-// 确保正确导入联动组件
 import ModeLinkageControl from '../components/ModeLinkageControl.vue';
 import { coordinateMode } from '../utils/modeCoordinator';
 import { useRoute } from 'vue-router';
@@ -227,6 +232,7 @@ watch(
       if (!Array.isArray(card.data.selectOptions)) card.data.selectOptions = [];
       if (!('showDropdown' in card)) card.showDropdown = false;
       if (!('isPresetEditing' in card)) card.isPresetEditing = false; // 新增预设编辑状态
+      
       if (!card.editableFields) {
         card.editableFields = {
           optionName: true,
@@ -282,20 +288,20 @@ watch(
 // 简化的卡片有效性检查
 /* eslint-disable no-unused-vars */
 const isCardValid = (card) => {
-/* eslint-enable no-unused-vars */
+  /* eslint-enable no-unused-vars */
   return true;
 };
 
 // 检查配置
 const checkConfigurationComplete = async () => {
   if (!isRootAdminMode.value) return;
-
+  
   checkResult.value = 'loading';
-
+  
   try {
     const validation = await cardStore.validateConfiguration();
     checkResult.value = validation.pass ? 'pass' : 'fail';
-
+    
     if (checkResult.value === 'fail') {
       const firstInvalidCard = document.querySelector('.card-wrapper.invalid');
       if (firstInvalidCard) {
@@ -315,13 +321,7 @@ const addCard = () => {
   cardStore.addCard({
     data: {
       title: `新卡片 ${cards.value.length + 1}`,
-      options: [{ 
-        id: Date.now(), 
-        name: null,
-        value: null, 
-        unit: null, 
-        checked: false 
-      }],
+      options: [{ id: Date.now(), name: null, value: null, unit: null, checked: false }],
       selectOptions: [{ id: Date.now(), label: null }],
       selectedValue: null
     },
@@ -332,11 +332,12 @@ const addCard = () => {
 // 修复：确保添加选项后正确更新
 const handleAddOption = (cardId, afterId) => {
   cardStore.addOption(cardId, afterId);
-  
   const cardIndex = cards.value.findIndex(c => c.id === cardId);
+  
   if (cardIndex !== -1) {
     const card = cards.value[cardIndex];
     const newOption = card.data.options[card.data.options.length - 1];
+    
     if (newOption) {
       newOption.name = newOption.name || null;
       newOption.value = newOption.value || null;
@@ -424,7 +425,7 @@ const handleLinkage = (config) => {
     checkConfigurationComplete();
     return;
   }
-
+  
   const sourceData = {
     cardCount: sessionSourceData.value.length,
     cards: sessionSourceData.value.map((card, index) => ({
@@ -587,5 +588,9 @@ const handleLinkage = (config) => {
   align-items: center;
   justify-content: center;
 }
+
+/* 新增：当 optionActions 关闭时，仅隐藏加/减按钮，不影响名称/值/单位输入框 */
+:deep(.hide-option-actions .option-actions) {
+  display: none !important;
+}
 </style>
-    
