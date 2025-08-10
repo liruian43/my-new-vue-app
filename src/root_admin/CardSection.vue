@@ -43,7 +43,7 @@
         :disabled="!selectedCardId"
         :class="{ active: selectedCard?.isTitleEditing }"
       >
-        {{ selectedCard?.isTitleEditing ? "完成标题编辑" : "编辑标题" }}
+        {{ selectedCard?.isTitleEditing ? "完成编辑" : "编辑标题" }}
       </button>
       
       <!-- "编辑预设"是唯一允许组合的功能 -->
@@ -62,7 +62,7 @@
         :disabled="!selectedCardId"
         :class="{ active: selectedCard?.isSelectEditing }"
       >
-        {{ selectedCard?.isSelectEditing ? "完成下拉菜单编辑" : "编辑下拉菜单" }}
+        {{ selectedCard?.isSelectEditing ? "完成下拉编辑" : "编辑下拉菜单" }}
       </button>
       
       <button
