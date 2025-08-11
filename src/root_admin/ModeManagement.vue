@@ -1,68 +1,79 @@
 <template>
   <div class="mode-management">
-    <div class="mode-controls">
-      <!-- 新建模式按钮 -->
-      <button 
-        class="mode-button" 
-        @click="toggleCreateMode"
-        :class="{ active: isCreating }"
-      >
-        {{ isCreating ? '取消创建' : '新建模式' }}
-      </button>
-      
-      <!-- 删除模式按钮 -->
-      <button 
-        class="mode-button" 
-        @click="toggleDeleteMode"
-        :class="{ danger: isDeleting, active: isDeleting }"
-        :disabled="filteredModes.length <= 0"
-      >
-        {{ isDeleting ? '确认删除' : '删除模式' }}
-      </button>
-    </div>
-    
-    <!-- 创建模式表单 -->
-    <div v-if="isCreating" class="create-mode-form">
-      <input 
-        type="text" 
-        v-model="newModeName" 
-        placeholder="请输入模式名称"
-        class="mode-name-input"
-        @keyup.enter="createMode"
-      >
-      <button 
-        class="confirm-create-button"
-        @click="createMode"
-        :disabled="!newModeName.trim()"
-      >
-        确认创建
-      </button>
-    </div>
-    
-    <!-- 模式列表 -->
-    <div class="mode-list">
-      <div 
-        v-for="mode in filteredModes"
-        :key="mode.id"
-        class="mode-item"
-      >
-        <!-- 复选框（仅删除模式显示） -->
-        <div v-if="isDeleting" class="mode-checkbox">
-          <input 
-            type="checkbox" 
-            v-model="selectedModeIds" 
-            :value="mode.id"
-          >
-        </div>
-        <!-- 模式名称 -->
-        <div class="mode-name">
-          {{ mode.name }}
-        </div>
+    <!-- 原模式管理功能区域，添加了容器和边框 -->
+    <div class="mode-management-container">
+      <div class="mode-controls">
+        <!-- 新建模式按钮 -->
+        <button 
+          class="mode-button" 
+          @click="toggleCreateMode"
+          :class="{ active: isCreating }"
+        >
+          {{ isCreating ? '取消创建' : '新建模式' }}
+        </button>
+        
+        <!-- 删除模式按钮 -->
+        <button 
+          class="mode-button" 
+          @click="toggleDeleteMode"
+          :class="{ danger: isDeleting, active: isDeleting }"
+          :disabled="filteredModes.length <= 0"
+        >
+          {{ isDeleting ? '确认删除' : '删除模式' }}
+        </button>
       </div>
       
-      <div v-if="filteredModes.length === 0 && !isCreating" class="empty-state">
-        暂无创建的模式，请点击"新建模式"
+      <!-- 创建模式表单 -->
+      <div v-if="isCreating" class="create-mode-form">
+        <input 
+          type="text" 
+          v-model="newModeName" 
+          placeholder="请输入模式名称"
+          class="mode-name-input"
+          @keyup.enter="createMode"
+        >
+        <button 
+          class="confirm-create-button"
+          @click="createMode"
+          :disabled="!newModeName.trim()"
+        >
+          确认创建
+        </button>
       </div>
+      
+      <!-- 模式列表 -->
+      <div class="mode-list">
+        <div 
+          v-for="mode in filteredModes"
+          :key="mode.id"
+          class="mode-item"
+        >
+          <!-- 复选框（仅删除模式显示） -->
+          <div v-if="isDeleting" class="mode-checkbox">
+            <input 
+              type="checkbox" 
+              v-model="selectedModeIds" 
+              :value="mode.id"
+            >
+          </div>
+          <!-- 模式名称 -->
+          <div class="mode-name">
+            {{ mode.name }}
+          </div>
+        </div>
+        
+        <div v-if="filteredModes.length === 0 && !isCreating" class="empty-state">
+          暂无创建的模式，请点击"新建模式"
+        </div>
+      </div>
+    </div>
+    
+    <!-- 添加的ModeLinkageControl组件 -->
+    <div class="mode-linkage-container">
+      <ModeLinkageControl 
+        v-if="isRootAdminMode" 
+        @confirm-linkage="handleLinkage" 
+      />
     </div>
   </div>
 </template>
@@ -72,6 +83,18 @@ import { ref, computed, onMounted } from 'vue';
 import { useCardStore } from '../components/Data/store';
 import { v4 as uuidv4 } from 'uuid';
 import { generateModePage, deleteModePage } from '../utils/generateModePage';
+// 导入ModeLinkageControl组件
+import ModeLinkageControl from '../components/ModeLinkageControl.vue';
+import { useRoute } from 'vue-router';
+import { coordinateMode } from '../utils/modeCoordinator';
+
+// 路由判断逻辑：仅匹配/root_admin及其所有子路径
+const route = useRoute();
+
+// 模式判断
+const isRootAdminMode = computed(() => {
+  return /^\/root_admin($|\/)/.test(route.path);
+});
 
 // 初始化存储
 const cardStore = useCardStore();
@@ -193,6 +216,54 @@ const createMode = () => {
     modeLoading.value = false;
   }
 };
+
+// 联动处理（从CardSection.vue迁移过来的方法）
+const handleLinkage = (config) => {
+  // 会话级源数据区数据
+  const sessionSourceData = computed(() => {
+    const data = cardStore.currentModeSessionCards;
+    return Array.isArray(data) ? data : [];
+  });
+  
+  if (cardStore.checkResult !== 'pass') {
+    // 这里简化处理，实际应该调用配置检查方法
+    cardStore.checkResult = 'loading';
+    setTimeout(() => {
+      cardStore.checkResult = 'pass';
+    }, 500);
+    return;
+  }
+  
+  const sourceData = {
+    cardCount: sessionSourceData.value.length,
+    cards: sessionSourceData.value.map((card, index) => ({
+      cardIndex: index,
+      optionCount: card.data.options.length,
+      title: card.data.title,
+      options: card.data.options.map(opt => ({
+        name: opt.name,
+        value: opt.value,
+        unit: opt.unit
+      })),
+      dropdown: {
+        show: card.showDropdown,
+        options: card.data.selectOptions,
+        selectedValue: card.data.selectedValue
+      },
+      presetMappings: cardStore.presetMappings[card.id] || {}
+    })),
+    timestamp: new Date().toISOString()
+  };
+  
+  coordinateMode({
+    sourceModeId: 'root_admin',
+    sourceData: sourceData,
+    targetMode: config.targetMode,
+    targetModeIds: config.targetModeIds,
+    syncFields: config.sync,
+    authFields: config.auth
+  });
+};
 </script>
 
 <style scoped>
@@ -201,6 +272,15 @@ const createMode = () => {
   border: 1px solid #ddd;
   border-radius: 8px;
   margin: 10px 0;
+}
+
+/* 原模式管理功能的容器样式 */
+.mode-management-container {
+  padding: 15px;
+  border: 1px solid #eee;
+  border-radius: 6px;
+  margin-bottom: 20px;
+  background-color: #fcfcfc;
 }
 
 .mode-controls {
@@ -331,6 +411,14 @@ const createMode = () => {
   align-items: center;
   justify-content: center;
   z-index: 10;
+}
+
+/* 模式联动控制组件的容器样式 */
+.mode-linkage-container {
+  padding: 15px;
+  border: 1px solid #eee;
+  border-radius: 6px;
+  background-color: #f9f9f9;
 }
 
 @media (max-width: 768px) {

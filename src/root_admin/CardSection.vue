@@ -1,11 +1,5 @@
 <template>
   <div class="card-section">
-    <!-- 联动控制组件：仅在root_admin模式显示 -->
-    <ModeLinkageControl 
-      v-if="isRootAdminMode" 
-      @confirm-linkage="handleLinkage" 
-    />
-
     <!-- 顶部控制按钮 -->
     <div class="card-controls">
       <!-- 配置检查按钮（允许在预设模式中使用） -->
@@ -172,15 +166,13 @@
 import { computed, ref, watch } from 'vue';
 import { useCardStore } from '../components/Data/store';
 import UniversalCard from '../components/UniversalCard/UniversalCard.vue';
-import ModeLinkageControl from '../components/ModeLinkageControl.vue';
-import { coordinateMode } from '../utils/modeCoordinator';
 import { useRoute } from 'vue-router';
 
 // 路由判断逻辑：仅匹配/root_admin及其所有子路径
 const route = useRoute();
 const cardStore = useCardStore();
 
-// 模式判断
+// 模式判断（保留但不再用于ModeLinkageControl组件）
 const isRootAdminMode = computed(() => {
   return /^\/root_admin($|\/)/.test(route.path);
 });
@@ -207,12 +199,6 @@ const deletingCardId = computed({
 });
 
 const selectedCard = computed(() => cardStore.selectedCard);
-
-// 会话级源数据区数据
-const sessionSourceData = computed(() => {
-  const data = cardStore.currentModeSessionCards;
-  return Array.isArray(data) ? data : [];
-});
 
 // 校验相关状态（loading/pass/fail）
 const checkResult = ref('');
@@ -400,54 +386,6 @@ const handleDeleteSelectOption = (cardId, optionId) => {
 const setShowDropdown = (cardId, value) => {
   cardStore.setShowDropdown(cardId, value);
 };
-
-// 备用：下拉值变化
-const handleSelectedValueChange = (cardId, value) => {
-  cardStore.updateCardSelectedValue(cardId, value);
-};
-
-// 备用：选项数组变化
-const handleOptionsChange = (cardId, options) => {
-  cardStore.updateCardOptions(cardId, options);
-};
-
-// 联动处理
-const handleLinkage = (config) => {
-  if (checkResult.value !== 'pass') {
-    checkConfigurationComplete();
-    return;
-  }
-  
-  const sourceData = {
-    cardCount: sessionSourceData.value.length,
-    cards: sessionSourceData.value.map((card, index) => ({
-      cardIndex: index,
-      optionCount: card.data.options.length,
-      title: card.data.title,
-      options: card.data.options.map(opt => ({
-        name: opt.name,
-        value: opt.value,
-        unit: opt.unit
-      })),
-      dropdown: {
-        show: card.showDropdown,
-        options: card.data.selectOptions,
-        selectedValue: card.data.selectedValue
-      },
-      presetMappings: cardStore.presetMappings[card.id] || {}
-    })),
-    timestamp: new Date().toISOString()
-  };
-  
-  coordinateMode({
-    sourceModeId: 'root_admin',
-    sourceData: sourceData,
-    targetMode: config.targetMode,
-    targetModeIds: config.targetModeIds,
-    syncFields: config.sync,
-    authFields: config.auth
-  });
-};
 </script>
 
 <style scoped>
@@ -456,12 +394,6 @@ const handleLinkage = (config) => {
   padding: 20px;
   border: 1px solid #ddd;
   border-radius: 8px;
-}
-
-:deep(.mode-linkage-control) {
-  margin-bottom: 20px;
-  width: 100%;
-  box-sizing: border-box;
 }
 
 .preset-editing-hint {
