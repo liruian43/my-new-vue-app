@@ -73,7 +73,7 @@
         </div>
       </div>
 
-      <div class="searchable-select">
+      <div class="searchable-select" ref="selectContainerRef">
         <div class="select-input-container">
           <input
             type="text"
@@ -85,6 +85,7 @@
               'select-input',
               isSelectEditing && editableFields.select ? 'editable' : '',
             ]"
+            ref="selectInputRef"
           />
 
           <div
@@ -115,6 +116,8 @@
             'select-dropdown',
             isSelectEditing && editableFields.select ? 'editable' : '',
           ]"
+          ref="dropdownRef"
+          :style="dropdownInlineStyle"
         >
           <div v-if="filteredOptions.length === 0" class="dropdown-empty">
             {{
@@ -140,7 +143,16 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted, defineProps, defineEmits } from "vue";
+import {
+  ref,
+  computed,
+  watch,
+  onMounted,
+  onBeforeUnmount,
+  nextTick,
+  defineProps,
+  defineEmits
+} from "vue";
 
 // 定义 props
 const props = defineProps({
@@ -237,6 +249,12 @@ const localOptions = ref([...props.options]);
 const localSelectedValue = ref(props.selectedValue);
 const titleInputRef = ref(null);
 
+// 新增：用于动态定位的 ref 和样式对象
+const selectContainerRef = ref(null);
+const selectInputRef = ref(null);
+const dropdownRef = ref(null);
+const dropdownInlineStyle = ref({});
+
 // 计算属性
 const filteredOptions = computed(() => {
   return props.selectOptions.filter((option) =>
@@ -327,19 +345,58 @@ const deleteSelectedOption = () => {
   }
 };
 
+// 新增：动态定位计算函数
+const updateDropdownPosition = () => {
+  if (!selectContainerRef.value || !selectInputRef.value || !dropdownRef.value) return;
+  
+  const containerRect = selectContainerRef.value.getBoundingClientRect();
+  const inputRect = selectInputRef.value.getBoundingClientRect();
+  const left = inputRect.left - containerRect.left;
+  
+  dropdownInlineStyle.value = {
+    left: `${left}px`,
+    right: 'auto',
+    marginLeft: '0px',
+    marginRight: '0px',
+  };
+};
+
+// 新增：在相关状态变化时重新计算定位
+watch(
+  () => [props.showDropdown, props.isSelectEditing, props.editableFields.select],
+  async () => {
+    await nextTick();
+    if (props.showDropdown) updateDropdownPosition();
+  }
+);
+
+// 新增：窗口尺寸变化时也更新
+const handleResize = () => {
+  if (props.showDropdown) updateDropdownPosition();
+};
+
 // 生命周期钩子
 onMounted(() => {
   if (props.isTitleEditing && titleInputRef.value) {
     titleInputRef.value.focus();
   }
+  
+  window.addEventListener('resize', handleResize);
+  
+  // 若初始就显示下拉，确保定位一次
+  if (props.showDropdown) {
+    nextTick(() => updateDropdownPosition());
+  }
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', handleResize);
 });
 </script>
 
 <style scoped>
 /* 样式保持不变 */
-*,
-*::before,
-*::after {
+*, *::before, *::after {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
@@ -460,10 +517,12 @@ onMounted(() => {
 .option-name {
   flex: 2;
 }
+
 .option-value {
   flex: 1;
   text-align: right;
 }
+
 .option-unit {
   flex: 1;
 }
@@ -543,6 +602,7 @@ onMounted(() => {
   background-color: #4caf50;
   color: white;
 }
+
 .action-button.delete {
   background-color: #f44336;
   color: white;
@@ -687,4 +747,3 @@ onMounted(() => {
   height: 20px;
 }
 </style>
-    

@@ -8,7 +8,7 @@
 
     <!-- 顶部控制按钮 -->
     <div class="card-controls">
-      <!-- 配置检查按钮 -->
+      <!-- 配置检查按钮（允许在预设模式中使用） -->
       <button 
         class="test-button check-complete-btn" 
         @click="checkConfigurationComplete"
@@ -26,9 +26,10 @@
         }}
       </button>
 
-      <!-- 其他原有按钮保持不变 -->
-      <button class="test-button" @click="addCard">添加卡片</button>
-      
+      <!-- 添加/删除卡片（允许在预设模式中使用） -->
+      <button class="test-button" @click="addCard">
+        添加卡片
+      </button>
       <button
         class="test-button"
         @click="prepareDeleteCard"
@@ -36,17 +37,18 @@
       >
         删除卡片
       </button>
-      
+
+      <!-- 编辑标题（允许在预设模式中使用） -->
       <button
         class="test-button"
         @click="toggleTitleEditing"
         :disabled="!selectedCardId"
         :class="{ active: selectedCard?.isTitleEditing }"
       >
-        {{ selectedCard?.isTitleEditing ? "完成编辑" : "编辑标题" }}
+        {{ selectedCard?.isTitleEditing ? "完成标题编辑" : "编辑标题" }}
       </button>
       
-      <!-- "编辑预设"是唯一允许组合的功能 -->
+      <!-- 编辑预设（独立；开启时禁用除四个例外外的所有其他按钮，并强制具备两项基础能力） -->
       <button
         class="test-button"
         @click="togglePresetEditing"
@@ -56,68 +58,56 @@
         {{ selectedCard?.isPresetEditing ? "完成预设" : "编辑预设" }}
       </button>
 
+      <!-- 基础按钮：编辑下拉菜单（在预设模式中禁用） -->
       <button
         class="test-button"
         @click="toggleSelectEditing"
-        :disabled="!selectedCardId"
-        :class="{ active: selectedCard?.isSelectEditing }"
+        :disabled="!selectedCardId || selectedCard?.isPresetEditing"
+        :class="{ active: selectedCard?.isSelectEditing && !selectedCard?.isPresetEditing }"
       >
-        {{ selectedCard?.isSelectEditing ? "完成下拉编辑" : "编辑下拉菜单" }}
+        {{ selectedCard?.isSelectEditing ? "完成下拉菜单编辑" : "编辑下拉菜单" }}
       </button>
-      
+
+      <!-- 以下均为选项栏细分的独立控制（在预设模式中禁用） -->
       <button
         class="test-button"
         @click="() => toggleEditableField('optionName')"
-        :disabled="!selectedCardId"
-        :class="{ active: selectedCard?.editableFields.optionName }"
+        :disabled="!selectedCardId || selectedCard?.isPresetEditing"
+        :class="{ active: selectedCard?.editableFields.optionName && !selectedCard?.isPresetEditing }"
       >
-        {{
-          selectedCard?.editableFields.optionName ? "完成名称编辑" : "编辑选项名称"
-        }}
+        {{ selectedCard?.editableFields.optionName ? "完成名称编辑" : "编辑选项名称" }}
       </button>
-      
       <button
         class="test-button"
         @click="() => toggleEditableField('optionValue')"
-        :disabled="!selectedCardId"
-        :class="{ active: selectedCard?.editableFields.optionValue }"
+        :disabled="!selectedCardId || selectedCard?.isPresetEditing"
+        :class="{ active: selectedCard?.editableFields.optionValue && !selectedCard?.isPresetEditing }"
       >
-        {{
-          selectedCard?.editableFields.optionValue ? "完成值编辑" : "编辑选项值"
-        }}
+        {{ selectedCard?.editableFields.optionValue ? "完成值编辑" : "编辑选项值" }}
       </button>
-      
       <button
         class="test-button"
         @click="() => toggleEditableField('optionUnit')"
-        :disabled="!selectedCardId"
-        :class="{ active: selectedCard?.editableFields.optionUnit }"
+        :disabled="!selectedCardId || selectedCard?.isPresetEditing"
+        :class="{ active: selectedCard?.editableFields.optionUnit && !selectedCard?.isPresetEditing }"
       >
-        {{
-          selectedCard?.editableFields.optionUnit ? "完成单位编辑" : "编辑选项单位"
-        }}
+        {{ selectedCard?.editableFields.optionUnit ? "完成单位编辑" : "编辑选项单位" }}
       </button>
-      
       <button
         class="test-button"
         @click="() => toggleEditableField('optionCheckbox')"
-        :disabled="!selectedCardId"
-        :class="{ active: selectedCard?.editableFields.optionCheckbox }"
+        :disabled="!selectedCardId || selectedCard?.isPresetEditing"
+        :class="{ active: selectedCard?.editableFields.optionCheckbox && !selectedCard?.isPresetEditing }"
       >
-        {{
-          selectedCard?.editableFields.optionCheckbox ? "隐藏选项复选框" : "显示选项复选框"
-        }}
+        {{ selectedCard?.editableFields.optionCheckbox ? "隐藏选项复选框" : "显示选项复选框" }}
       </button>
-      
       <button
         class="test-button"
         @click="() => toggleEditableField('optionActions')"
-        :disabled="!selectedCardId"
-        :class="{ active: selectedCard?.editableFields.optionActions }"
+        :disabled="!selectedCardId || selectedCard?.isPresetEditing"
+        :class="{ active: selectedCard?.editableFields.optionActions && !selectedCard?.isPresetEditing }"
       >
-        {{
-          selectedCard?.editableFields.optionActions ? "隐藏选项按钮" : "显示选项按钮"
-        }}
+        {{ selectedCard?.editableFields.optionActions ? "隐藏选项按钮" : "显示选项按钮" }}
       </button>
     </div>
 
@@ -126,7 +116,7 @@
       v-if="selectedCard?.isPresetEditing" 
       class="preset-editing-hint"
     >
-      <p>预设编辑模式：选择一个下拉选项，勾选需要关联的选项，自动保存关联关系</p>
+      <p>预设编辑模式：选择或添加一个下拉选项，勾选需要关联的选项，自动保存关联；点击“完成预设”将保存并退出。</p>
     </div>
 
     <!-- 卡片列表 -->
@@ -139,26 +129,33 @@
           deleting: deletingCardId === card.id, 
           selected: selectedCardId === card.id,
           invalid: checkResult === 'fail' && !isCardValid(card),
-          'hide-option-actions': !card.editableFields.optionActions
+          'hide-option-actions': !card.editableFields.optionActions || card.isPresetEditing
         }"
         @click.stop="selectCard(card.id)"
       >
-        <!-- 子组件：用 props 传函数，不再用 @add-option 等事件 -->
         <UniversalCard
           v-model:modelValue="card.data.title"
           v-model:options="card.data.options"
           v-model:selectedValue="card.data.selectedValue"
           :selectOptions="card.data.selectOptions"
+
           :showDropdown="card.showDropdown || card.isPresetEditing"
           :isTitleEditing="card.isTitleEditing"
-          :isOptionsEditing="card.isOptionsEditing || card.isPresetEditing"
-          :isSelectEditing="card.isSelectEditing || card.isPresetEditing"
+          :isOptionsEditing="card.isPresetEditing || card.isOptionsEditing"
+          :isSelectEditing="card.isPresetEditing || card.isSelectEditing"
+
           :on-add-option="(afterId) => handleAddOption(card.id, afterId)"
           :on-delete-option="(optionId) => handleDeleteOption(card.id, optionId)"
           :on-add-select-option="(label) => handleAddSelectOption(card.id, label)"
           :on-delete-select-option="(optionId) => handleDeleteSelectOption(card.id, optionId)"
           :on-dropdown-toggle="(value) => setShowDropdown(card.id, value)"
-          :editableFields="{ ...card.editableFields, optionActions: true }"
+
+          :editableFields="{
+            ...card.editableFields,
+            optionActions: true,
+            // 预设编辑时强制显示复选框；退出预设后按用户设置
+            optionCheckbox: card.editableFields.optionCheckbox || card.isPresetEditing
+          }"
           :class="{ selected: selectedCardId === card.id }"
           :style="{}"
         />
@@ -183,12 +180,12 @@ import { useRoute } from 'vue-router';
 const route = useRoute();
 const cardStore = useCardStore();
 
-// 修复：使用与原有代码一致的模式判断逻辑
+// 模式判断
 const isRootAdminMode = computed(() => {
   return /^\/root_admin($|\/)/.test(route.path);
 });
 
-// 修复：正确获取卡片数据
+// 卡片数据
 const cards = computed(() => {
   return [
     ...(Array.isArray(cardStore.tempCards) ? cardStore.tempCards : []),
@@ -196,7 +193,7 @@ const cards = computed(() => {
   ];
 });
 
-// 修复：正确的双向绑定
+// 选中/删除中的卡片
 const selectedCardId = computed({
   get: () => cardStore.selectedCardId,
   set: (value) => {
@@ -211,7 +208,7 @@ const deletingCardId = computed({
 
 const selectedCard = computed(() => cardStore.selectedCard);
 
-// 新增：获取会话级源数据区数据
+// 会话级源数据区数据
 const sessionSourceData = computed(() => {
   const data = cardStore.currentModeSessionCards;
   return Array.isArray(data) ? data : [];
@@ -220,19 +217,17 @@ const sessionSourceData = computed(() => {
 // 校验相关状态（loading/pass/fail）
 const checkResult = ref('');
 
-// 修复：卡片初始化逻辑
+// 卡片初始化
 watch(
   () => [...cards.value],
   (newCards) => {
     if (!Array.isArray(newCards)) return;
-    
     newCards.forEach((card) => {
       if (!card.data) card.data = {};
       if (!Array.isArray(card.data.options)) card.data.options = [];
       if (!Array.isArray(card.data.selectOptions)) card.data.selectOptions = [];
       if (!('showDropdown' in card)) card.showDropdown = false;
-      if (!('isPresetEditing' in card)) card.isPresetEditing = false; // 新增预设编辑状态
-      
+      if (!('isPresetEditing' in card)) card.isPresetEditing = false;
       if (!card.editableFields) {
         card.editableFields = {
           optionName: true,
@@ -248,7 +243,7 @@ watch(
   { deep: true, immediate: true }
 );
 
-// 监听选项变化，在预设编辑模式下自动保存关联关系
+// 预设编辑中：勾选变化 => 自动保存到当前选中的下拉项
 watch(
   () => selectedCard.value?.data.options,
   (newOptions) => {
@@ -258,9 +253,7 @@ watch(
         .find(opt => opt.label === selectedCard.value.data.selectedValue);
       
       if (selectedOption) {
-        // 获取所有勾选的选项
         const checkedOptions = newOptions.filter(option => option.checked);
-        // 保存预设关联
         cardStore.savePresetForSelectOption(cardId, selectedOption.id, checkedOptions);
       }
     }
@@ -268,12 +261,11 @@ watch(
   { deep: true }
 );
 
-// 监听下拉选项变化，在预设编辑模式下加载关联选项
+// 非预设编辑时：切换下拉项 => 应用已保存的预设
 watch(
   () => selectedCard.value?.data.selectedValue,
   (newValue, oldValue) => {
     if (newValue && newValue !== oldValue && !selectedCard.value?.isPresetEditing) {
-      // 非编辑模式下自动应用预设
       const cardId = selectedCard.value.id;
       const selectedOption = selectedCard.value.data.selectOptions
         .find(opt => opt.label === newValue);
@@ -297,7 +289,6 @@ const checkConfigurationComplete = async () => {
   if (!isRootAdminMode.value) return;
   
   checkResult.value = 'loading';
-  
   try {
     const validation = await cardStore.validateConfiguration();
     checkResult.value = validation.pass ? 'pass' : 'fail';
@@ -329,7 +320,7 @@ const addCard = () => {
   });
 };
 
-// 修复：确保添加选项后正确更新
+// 添加选项行
 const handleAddOption = (cardId, afterId) => {
   cardStore.addOption(cardId, afterId);
   const cardIndex = cards.value.findIndex(c => c.id === cardId);
@@ -346,12 +337,13 @@ const handleAddOption = (cardId, afterId) => {
   }
 };
 
-// 修复：确保选中卡片逻辑正确执行
+// 选中卡片
 const selectCard = (id) => {
   selectedCardId.value = id;
   deletingCardId.value = null;
 };
 
+// 预删除
 const prepareDeleteCard = () => {
   if (selectedCardId.value) {
     deletingCardId.value = selectedCardId.value;
@@ -362,41 +354,40 @@ const confirmDeleteCard = (id) => {
   cardStore.deleteCard(id);
 };
 
+// 标题编辑（允许在预设模式中使用）
 const toggleTitleEditing = () => {
   if (selectedCardId.value) {
     cardStore.toggleTitleEditing(selectedCardId.value);
   }
 };
 
-// 新增：切换预设编辑状态
+// 编辑预设（独立，不调用基础按钮状态）
 const togglePresetEditing = () => {
   if (selectedCardId.value) {
     cardStore.togglePresetEditing(selectedCardId.value);
   }
 };
 
-const toggleOptionsEditing = () => {
-  if (selectedCardId.value) {
-    cardStore.toggleOptionsEditing(selectedCardId.value);
-  }
-};
-
+// 基础按钮：下拉编辑（预设模式中禁用）
 const toggleSelectEditing = () => {
   if (selectedCardId.value) {
     cardStore.toggleSelectEditing(selectedCardId.value);
   }
 };
 
+// 切换可编辑字段（预设模式中禁用）
 const toggleEditableField = (field) => {
   if (selectedCardId.value) {
     cardStore.toggleEditableField(selectedCardId.value, field);
   }
 };
 
+// 选项删
 const handleDeleteOption = (cardId, optionId) => {
   cardStore.deleteOption(cardId, optionId);
 };
 
+// 下拉选项增删
 const handleAddSelectOption = (cardId, label) => {
   cardStore.addSelectOption(cardId, label || null);
 };
@@ -405,16 +396,17 @@ const handleDeleteSelectOption = (cardId, optionId) => {
   cardStore.deleteSelectOption(cardId, optionId);
 };
 
+// 下拉显示开关
 const setShowDropdown = (cardId, value) => {
   cardStore.setShowDropdown(cardId, value);
 };
 
-// 新增：处理下拉选项变化
+// 备用：下拉值变化
 const handleSelectedValueChange = (cardId, value) => {
   cardStore.updateCardSelectedValue(cardId, value);
 };
 
-// 新增：处理选项变化
+// 备用：选项数组变化
 const handleOptionsChange = (cardId, options) => {
   cardStore.updateCardOptions(cardId, options);
 };
@@ -442,7 +434,6 @@ const handleLinkage = (config) => {
         options: card.data.selectOptions,
         selectedValue: card.data.selectedValue
       },
-      // 新增：包含预设映射信息
       presetMappings: cardStore.presetMappings[card.id] || {}
     })),
     timestamp: new Date().toISOString()
@@ -460,7 +451,6 @@ const handleLinkage = (config) => {
 </script>
 
 <style scoped>
-/* 保持原有样式结构 */
 .card-section {
   margin-bottom: 20px;
   padding: 20px;
@@ -468,15 +458,12 @@ const handleLinkage = (config) => {
   border-radius: 8px;
 }
 
-/* 联动组件样式：与原有代码保持一致 */
 :deep(.mode-linkage-control) {
   margin-bottom: 20px;
-  /* 移除可能导致错位的样式 */
   width: 100%;
   box-sizing: border-box;
 }
 
-/* 新增：预设编辑提示样式 */
 .preset-editing-hint {
   margin: 10px 0;
   padding: 10px;
@@ -563,10 +550,7 @@ const handleLinkage = (config) => {
 
 .delete-overlay {
   position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  inset: 0;
   background-color: rgba(255, 0, 0, 0.1);
   border-radius: inherit;
   display: flex;
@@ -589,7 +573,7 @@ const handleLinkage = (config) => {
   justify-content: center;
 }
 
-/* 新增：当 optionActions 关闭时，仅隐藏加/减按钮，不影响名称/值/单位输入框 */
+/* 仅隐藏“加/减按钮”，不影响名称/值/单位输入框 */
 :deep(.hide-option-actions .option-actions) {
   display: none !important;
 }
