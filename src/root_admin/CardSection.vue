@@ -45,7 +45,7 @@
         :disabled="!selectedCardId"
         :class="{ active: selectedCard?.isTitleEditing }"
       >
-        {{ selectedCard?.isTitleEditing ? "完成标题编辑" : "编辑标题" }}
+        {{ selectedCard?.isTitleEditing ? "完成编辑" : "编辑标题" }}
       </button>
       
       <!-- 编辑预设（独立；开启时禁用除四个例外外的所有其他按钮，并强制具备两项基础能力） -->
@@ -65,7 +65,7 @@
         :disabled="!selectedCardId || selectedCard?.isPresetEditing"
         :class="{ active: selectedCard?.isSelectEditing && !selectedCard?.isPresetEditing }"
       >
-        {{ selectedCard?.isSelectEditing ? "完成下拉菜单编辑" : "编辑下拉菜单" }}
+        {{ selectedCard?.isSelectEditing ? "完成下拉编辑" : "编辑下拉菜单" }}
       </button>
 
       <!-- 以下均为选项栏细分的独立控制（在预设模式中禁用） -->
