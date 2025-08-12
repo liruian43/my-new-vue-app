@@ -1,7 +1,6 @@
 import { defineStore } from 'pinia';
 import DataManager, { LocalStorageStrategy } from './manager';
 import { v4 as uuidv4 } from 'uuid';
-import rootStore from './store/rootstore'; // 引入拆分出的rootStore
 
 // 存储策略初始化
 const longTermStorage = new LocalStorageStrategy();
@@ -77,8 +76,19 @@ export const AUTHORIZABLE_FIELDS = [
 
 export const useCardStore = defineStore('card', {
   state: () => ({
-    // 引入rootStore的状态
-    ...rootStore.state,
+    // root_admin特有的状态
+    rootMode: {
+      id: 'root_admin',
+      name: '根模式（源数据区）',
+      level: 1,
+      permissions: {
+        card: { addCard: true, deleteCard: true, editTitle: true, editOptions: true },
+        data: { view: true, save: true, export: true, import: true },
+        mode: { create: true, delete: true, assignPermissions: true, sync: true },
+        authorize: { canAuthorize: true }
+      },
+      cardData: []
+    },
     
     // 数据区
     tempCards: [],
@@ -109,13 +119,13 @@ export const useCardStore = defineStore('card', {
   }),
 
   getters: {
-    // 引入rootStore的getters
+    // root_admin特有的getters
     isRootMode() {
-      return rootStore.getters.isRootMode(rootStore.state, this);
+      return this.currentModeId === 'root_admin';
     },
     
     rootMediumData() {
-      return rootStore.getters.rootMediumData(this);
+      return this.mediumCards.filter(card => card.modeId === 'root_admin');
     },
 
     selectedCard() {
@@ -177,7 +187,7 @@ export const useCardStore = defineStore('card', {
         this.modes = storedModes ? JSON.parse(storedModes) : [];
 
         // 初始化root模式
-        rootStore.actions.initRootMode(this.rootMode);
+        this.initRootMode();
 
         if (this.currentModeId) {
           this.loadSessionCards(this.currentModeId);
@@ -203,6 +213,11 @@ export const useCardStore = defineStore('card', {
       } finally {
         this.loading = false;
       }
+    },
+
+    // 初始化root模式数据
+    initRootMode() {
+      // root模式的初始化逻辑
     },
 
     // 预设映射读写
@@ -704,8 +719,24 @@ export const useCardStore = defineStore('card', {
 
     // root_admin 放开权限
     toggleTitleEditing(cardId) {
-      // 调用rootStore中的方法
-      return rootStore.actions.toggleTitleEditingForRoot(rootStore.state, this, cardId);
+      return this.toggleTitleEditingForRoot(cardId);
+    },
+
+    // root_admin特有的权限控制方法
+    toggleTitleEditingForRoot(cardId) {
+      const tempIndex = this.tempCards.findIndex(c => c.id === cardId);
+      if (tempIndex !== -1) {
+        this.tempCards[tempIndex].isTitleEditing = !this.tempCards[tempIndex].isTitleEditing;
+        return;
+      }
+      
+      const sessionIndex = this.sessionCards.findIndex(c => c.id === cardId);
+      if (sessionIndex !== -1) {
+        const card = this.sessionCards[sessionIndex];
+        if (this.currentModeId === 'root_admin' || card.syncStatus.title.isAuthorized) {
+          card.isTitleEditing = !card.isTitleEditing;
+        }
+      }
     },
 
     // root_admin 放开权限（预设期间无效）
@@ -899,9 +930,101 @@ export const useCardStore = defineStore('card', {
       this.selectedCardId = null;
     },
 
-    // 调用rootStore中的同步方法
+    // 只有root_admin能执行的同步操作
     syncToMode(targetModeId, cardIds, syncConfig) {
-      return rootStore.actions.syncToMode(rootStore.state, this, this, targetModeId, cardIds, syncConfig);
+      if (!targetModeId || targetModeId === 'root_admin') {
+        this.error = '不能向主模式推送数据';
+        return null;
+      }
+      
+      if (this.currentModeId !== 'root_admin') {
+        this.error = '只有主模式可以推送数据';
+        return null;
+      }
+      
+      const { syncFields = [], authFields = [] } = syncConfig || {};
+      const validation = DataManager.validateConfig(this.sessionCards);
+      
+      if (!validation.pass) {
+        this.error = '源数据校验失败，无法同步';
+        return null;
+      }
+      
+      const sourceCards = validation.validCards
+        .filter(card => cardIds.includes(card.id))
+        .map(card => {
+          const titleSync = syncFields.includes(this.FIELD_IDS.CARD_TITLE);
+          const titleAuth = authFields.includes(this.FIELD_IDS.CARD_TITLE);
+          const nameSync = syncFields.includes(this.FIELD_IDS.OPTION_NAME);
+          const nameAuth = authFields.includes(this.FIELD_IDS.OPTION_NAME);
+          const valueSync = syncFields.includes(this.FIELD_IDS.OPTION_VALUE);
+          const valueAuth = authFields.includes(this.FIELD_IDS.OPTION_VALUE);
+          const unitSync = syncFields.includes(this.FIELD_IDS.OPTION_UNIT);
+          const unitAuth = authFields.includes(this.FIELD_IDS.OPTION_UNIT);
+          
+          return this.normalizeCardStructure({
+            ...card,
+            modeId: targetModeId,
+            sourceModeId: 'root_admin',
+            syncStatus: {
+              title: { hasSync: titleSync, isAuthorized: titleAuth },
+              options: {
+                name: { hasSync: nameSync, isAuthorized: nameAuth },
+                value: { hasSync: valueSync, isAuthorized: valueAuth },
+                unit:  { hasSync: unitSync,  isAuthorized: unitAuth }
+              },
+              selectOptions: { hasSync: true, isAuthorized: false }
+            },
+            data: {
+              ...card.data,
+              title: titleSync ? card.data.title : null,
+              options: card.data.options.map(option => ({
+                ...option,
+                name: nameSync ? option.name : null,
+                value: valueSync ? option.value : null,
+                unit: unitSync ? option.unit : null,
+                localName: null,
+                localValue: null,
+                localUnit: null
+              }))
+            },
+            syncTime: new Date().toISOString()
+          });
+        });
+
+      const cardPresets = {};
+      cardIds.forEach(id => {
+        if (this.presetMappings[id]) {
+          cardPresets[id] = this.presetMappings[id];
+        }
+      });
+
+      if (sourceCards.length === 0) return null;
+
+      const targetRawCards = this.sessionStorageEnhancer.load(targetModeId, 'cards') || [];
+      const targetCards = [
+        ...targetRawCards.filter(card => !cardIds.includes(card.id)),
+        ...sourceCards
+      ];
+      
+      this.sessionStorageEnhancer.save(targetModeId, 'cards', targetCards);
+
+      if (this.currentModeId === targetModeId) {
+        this.sessionCards = targetCards;
+        Object.keys(cardPresets).forEach(cardId => {
+          this.presetMappings[cardId] = cardPresets[cardId];
+        });
+        this.savePresetMappings();
+      }
+
+      this.updateModeSyncInfo(targetModeId, {
+        lastSyncTime: new Date().toISOString(),
+        syncFields,
+        authFields,
+        syncedCardIds: cardIds
+      });
+
+      return { targetModeId, syncedCount: sourceCards.length, syncFields, authFields };
     },
 
     updateModeSyncInfo(modeId, syncInfo) {
@@ -948,4 +1071,3 @@ export const useCardStore = defineStore('card', {
     }
   }
 });
-    
