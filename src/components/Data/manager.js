@@ -1,4 +1,4 @@
-// 保留localStorage存储策略（长期存储专用）
+// 长期存储策略实现
 export class LocalStorageStrategy {
   constructor() {
     this.prefix = 'app_long_term_';
@@ -31,7 +31,7 @@ export class LocalStorageStrategy {
   }
 }
 
-// 数据校验类（增强）
+// 数据校验类
 export class DataValidator {
   // 校验单张卡片配置
   validateCard(card) {
@@ -45,7 +45,7 @@ export class DataValidator {
     }
 
     // 卡片标题校验
-    if (safeCard.data.title === undefined || safeCard.data.title === null || safeCard.data.title.trim() === '') {
+    if (safeCard.data.title === undefined || safeCard.data.title === null) {
       errors.push('卡片标题不能为空');
     }
 
@@ -62,7 +62,7 @@ export class DataValidator {
       const safeOpt = { ...opt };
       const optErrors = [];
       
-      if (safeOpt.name === undefined || safeOpt.name === null || safeOpt.name.trim() === '') {
+      if (safeOpt.name === undefined || safeOpt.name === null) {
         optErrors.push(`选项${index + 1}名称不能为空`);
       }
       if (safeOpt.value === undefined || safeOpt.value === null || isNaN(safeOpt.value)) {
@@ -70,7 +70,7 @@ export class DataValidator {
         safeOpt.value = 0; // 补充默认值
       }
       if (safeOpt.unit === undefined || safeOpt.unit === null) {
-        safeOpt.unit = ''; // 补充默认值
+        safeOpt.unit = null; // 补充默认值（保持null）
       }
 
       if (optErrors.length > 0) {
@@ -84,7 +84,7 @@ export class DataValidator {
       safeCard.data.selectOptions = []; // 补充默认值
     }
 
-    // 新增：UI配置和评分规则校验
+    // UI配置和评分规则校验
     if (safeCard.data.uiConfig === undefined || typeof safeCard.data.uiConfig !== 'object') {
       safeCard.data.uiConfig = {};
     }
@@ -115,7 +115,7 @@ export class DataValidator {
     if (!Array.isArray(question.options) || question.options.length === 0) {
       errors.push('题目必须包含选项');
     }
-    if (!question.correctAnswer) errors.push('题目必须设置正确答案');
+    if (question.correctAnswer === undefined || question.correctAnswer === null) errors.push('题目必须设置正确答案');
     
     // 环境配置校验
     if (!question.environmentConfig) {
@@ -167,7 +167,7 @@ export class DataValidator {
   }
 }
 
-// 核心管理器：按六个模块组织功能
+// 核心数据模块：负责数据存储和处理
 export default class DataManager {
   constructor(storageStrategy) {
     // 长期存储策略
@@ -176,8 +176,10 @@ export default class DataManager {
     this.validator = new DataValidator();
     // 主ID固定为root_admin（用于模式隔离）
     this.rootAdminId = 'root_admin';
+    // 当前模式ID
+    this.currentModeId = this.rootAdminId;
     
-    // 卡片数据结构模板（遵循八项内容规范）
+    // 卡片数据结构模板（遵循五项内容规范）
     this.CARD_DATA_TEMPLATE = {
       title: null,
       options: [
@@ -202,14 +204,87 @@ export default class DataManager {
       subModeInstances: 'submode_instances',
       syncHistory: 'sync_history',
       fieldAuthorizations: 'field_authorizations',
-      feedbackData: 'feedback_data'
+      feedbackData: 'feedback_data',
+      currentMode: 'current_mode'
     };
   }
 
   /**
-   * 存储层空值处理：将空字符转为null，确保字段存在
-   * @param {any} value - 原始值
-   * @returns {any} 处理后的值（空字符→null，保持其他类型）
+   * 初始化数据管理器
+   */
+  async initialize() {
+    // 加载当前模式
+    const savedMode = this.longTermStorage.getItem(this.storageKeys.currentMode);
+    if (savedMode) {
+      this.currentModeId = savedMode;
+    }
+    
+    // 确保基础数据结构存在
+    await this.loadQuestionBank();
+    await this.loadEnvironmentConfigs();
+    await this.loadSubModeInstances();
+  }
+
+  /**
+   * 获取当前模式ID
+   */
+  getCurrentModeId() {
+    return this.currentModeId;
+  }
+
+  /**
+   * 设置当前模式
+   */
+  setCurrentMode(modeId) {
+    this.currentModeId = modeId;
+    this.longTermStorage.setItem(this.storageKeys.currentMode, modeId);
+  }
+
+  /**
+   * 获取指定模式的数据
+   */
+  getMode(modeId) {
+    const modes = this.loadSubModeInstances();
+    if (modeId === this.rootAdminId) {
+      return {
+        id: this.rootAdminId,
+        name: '主模式',
+        description: '系统主模式，包含所有源数据',
+        isRoot: true,
+        permissions: {
+          card: { editOptions: true },
+          data: { save: true }
+        }
+      };
+    }
+    return modes.find(mode => mode.id === modeId) || null;
+  }
+
+  /**
+   * 获取同步状态
+   */
+  getSyncStatus(itemId) {
+    const syncHistory = this.loadSyncHistory();
+    const latestSync = syncHistory
+      .filter(entry => entry.cardIds.includes(itemId))
+      .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))[0];
+      
+    if (!latestSync) {
+      return { hasSync: false, hasConflict: false };
+    }
+    
+    // 简单判断是否有冲突（实际项目中可能需要更复杂的逻辑）
+    return {
+      hasSync: true,
+      hasConflict: false,
+      lastSync: latestSync.timestamp
+    };
+  }
+
+  /**
+   * 正向解析：将UI层数据转换为数据层格式（空字符→null）
+   * @param {any} value - UI层原始值
+   * @returns {any} 数据层值（空字符→null，保持其他类型）
    */
   normalizeNullValue(value) {
     if (typeof value === 'string' && value.trim() === '') return null;
@@ -262,41 +337,29 @@ export default class DataManager {
   }
 
   /**
-   * 将存储层数据转换为展示层格式（null→空字符）
-   * @param {Array} dataList - 存储层数据数组
-   * @param {string} dataType - 数据类型（config/question）
-   * @param {string} typeText - 类型显示文本
-   * @returns {Array} 展示层数据
+   * 标准化卡片数据用于存储
+   * @param {Object} card - 卡片数据
+   * @returns {Object} 标准化后的卡片数据
    */
-  formatForDisplay(dataList, dataType, typeText) {
-    return (dataList || []).map(item => {
-      // 展示层转换：null→空字符
-      const title = item.title === null ? '' : item.title;
-      
-      // 生成摘要
-      let summary = title || '未命名';
-      summary += ` (选项: ${item.options?.length || 0})`;
-      
-      return {
-        ...item,
-        dataType,
-        typeText,
-        summary: summary.length > 50 ? `${summary.substring(0, 50)}...` : summary,
-        timestamp: item.updatedAt ? new Date(item.updatedAt).getTime() : item.id
-      };
+  normalizeCardForStorage(card) {
+    return this.normalizeDataStructure(card, {
+      id: '',
+      modeId: '',
+      storageLevel: '',
+      isTitleEditing: false,
+      isOptionsEditing: false,
+      isSelectEditing: false,
+      isPresetEditing: false,
+      showDropdown: false,
+      syncStatus: this.CARD_DATA_TEMPLATE.syncStatus,
+      data: this.CARD_DATA_TEMPLATE,
+      editableFields: {}
     });
   }
 
+  // 1. 主模式数据处理
   /**
-   * 提供外部调用的校验接口
-   */
-  validateConfig(cards) {
-    return this.validator.validateConfig(cards);
-  }
-
-  // 1. 主模式运行模块 - 数据处理
-  /**
-   * 保存主模式配置（不包含临时数据）
+   * 保存主模式配置
    */
   saveRootModeConfig(config) {
     return this.longTermStorage.setItem('root_mode_config', {
@@ -312,16 +375,17 @@ export default class DataManager {
     return this.longTermStorage.getItem('root_mode_config') || {};
   }
 
-  // 2. 题库管理模块 - 数据处理
+  // 2. 题库管理
   /**
    * 加载题库数据
    */
   async loadQuestionBank() {
-    return this.longTermStorage.getItem(this.storageKeys.questionBank) || {
+    const bank = this.longTermStorage.getItem(this.storageKeys.questionBank) || {
       questions: [],
       categories: [],
       lastUpdated: null
     };
+    return bank;
   }
   
   /**
@@ -340,12 +404,12 @@ export default class DataManager {
   normalizeQuestion(questionData) {
     return {
       id: questionData.id || `q_${Date.now()}`,
-      content: questionData.content || '',
-      explanation: questionData.explanation || '',
+      content: this.normalizeNullValue(questionData.content),
+      explanation: this.normalizeNullValue(questionData.explanation),
       categories: questionData.categories || [],
       difficulty: questionData.difficulty || 'medium',
       options: questionData.options || [],
-      correctAnswer: questionData.correctAnswer || null,
+      correctAnswer: this.normalizeNullValue(questionData.correctAnswer),
       environmentConfig: questionData.environmentConfig || {
         uiConfig: {},
         scoringRules: [],
@@ -356,16 +420,17 @@ export default class DataManager {
     };
   }
 
-  // 3. 环境配置模块 - 数据处理
+  // 3. 环境配置管理
   /**
    * 加载环境配置
    */
   async loadEnvironmentConfigs() {
-    return this.longTermStorage.getItem(this.storageKeys.environmentConfigs) || {
+    const configs = this.longTermStorage.getItem(this.storageKeys.environmentConfigs) || {
       uiPresets: [],
       scoringRules: [],
       contextTemplates: []
     };
+    return configs;
   }
   
   /**
@@ -384,8 +449,8 @@ export default class DataManager {
   createScoringRule(ruleData) {
     return {
       id: ruleData.id || `rule_${Date.now()}`,
-      name: ruleData.name || '',
-      description: ruleData.description || '',
+      name: this.normalizeNullValue(ruleData.name),
+      description: this.normalizeNullValue(ruleData.description),
       type: ruleData.type || 'exact_match', // 精确匹配/部分匹配/范围匹配等
       parameters: ruleData.parameters || {},
       score: ruleData.score || 0,
@@ -393,7 +458,7 @@ export default class DataManager {
     };
   }
 
-  // 4. 联动同步模块 - 数据处理
+  // 4. 联动同步管理
   /**
    * 保存同步历史
    */
@@ -406,6 +471,21 @@ export default class DataManager {
    */
   loadSyncHistory() {
     return this.longTermStorage.getItem(this.storageKeys.syncHistory) || [];
+  }
+  
+  /**
+   * 创建同步历史记录项
+   */
+  createSyncHistoryEntry(syncData) {
+    return {
+      id: `sync_${Date.now()}`,
+      sourceModeId: syncData.sourceModeId,
+      targetModeId: syncData.targetModeId,
+      cardIds: syncData.cardIds,
+      fields: syncData.fields,
+      timestamp: new Date().toISOString(),
+      status: syncData.status || 'completed'
+    };
   }
   
   /**
@@ -438,7 +518,7 @@ export default class DataManager {
     return filtered;
   }
 
-  // 5. 子模式运行模块 - 数据处理
+  // 5. 子模式管理
   /**
    * 保存子模式实例
    */
@@ -461,7 +541,7 @@ export default class DataManager {
     return JSON.parse(JSON.stringify(sourceData));
   }
 
-  // 6. 匹配反馈模块 - 数据处理
+  // 6. 匹配反馈管理
   /**
    * 保存反馈数据
    */
@@ -611,13 +691,162 @@ export default class DataManager {
     return feedback;
   }
 
-  // 通用功能：长期存储操作
+  generateTooltip(item) {
+    if (!item) return '无数据';
+
+    // 卡片类型提示
+    if (item.id && item.data?.title) {
+      const lines = [`卡片 ID: ${item.id}`, `标题: ${item.data.title || '未设置'}`];
+      
+      // 补充选项数量信息
+      if (Array.isArray(item.data.options)) {
+        lines.push(`选项数量: ${item.data.options.length}`);
+      }
+      
+      // 补充同步状态信息
+      if (item.syncStatus) {
+        const syncStatus = item.syncStatus.title.hasSync ? '已同步' : '未同步';
+        lines.push(`同步状态: ${syncStatus}`);
+      }
+      
+      return lines.join('\n');
+    }
+
+    // 选项类型提示
+    if (item.name !== undefined || item.value !== undefined) {
+      const lines = [];
+      if (item.id) lines.push(`选项 ID: ${item.id}`);
+      if (item.name !== null) lines.push(`名称: ${item.name}`);
+      if (item.value !== null) lines.push(`值: ${item.value}${item.unit || ''}`);
+      return lines.join('\n') || '无选项信息';
+    }
+
+    // 其他类型默认提示
+    return '数据信息未定义';
+  }
+
+  // ID生成与比较（Excel样式）
   /**
-   * 保存数据到长期存储（localStorage）
+   * 比较两个卡片ID的大小
+   * @param {string} id1 - 卡片ID
+   * @param {string} id2 - 卡片ID
+   * @returns {number} 比较结果
+   */
+  compareCardIds(id1, id2) {
+    if (id1.length !== id2.length) return id1.length - id2.length;
+    return id1.localeCompare(id2);
+  }
+  
+  /**
+   * 生成下一个卡片ID（Excel样式）
+   * @param {Set} usedIds - 已使用的ID集合
+   * @returns {string} 新卡片ID
+   */
+  generateNextCardId(usedIds) {
+    // 找出当前最大的ID
+    let currentMax = '';
+    if (usedIds.size > 0) {
+      for (const id of usedIds) {
+        if (this.isValidCardId(id) && this.compareCardIds(id, currentMax) > 0) {
+          currentMax = id;
+        }
+      }
+    }
+    
+    // 生成下一个ID
+    if (!currentMax) return 'A';
+    
+    const chars = currentMax.split('');
+    let i = chars.length - 1;
+    
+    while (i >= 0 && chars[i] === 'Z') {
+      chars[i] = 'A';
+      i--;
+    }
+    
+    if (i < 0) {
+      chars.unshift('A');
+    } else {
+      chars[i] = String.fromCharCode(chars[i].charCodeAt(0) + 1);
+    }
+    
+    return chars.join('');
+  }
+  
+  /**
+   * 生成下一个选项ID
+   * @param {Array} existingOptions - 现有选项ID数组
+   * @returns {string} 新选项ID
+   */
+  generateNextOptionId(existingOptions) {
+    if (!existingOptions || existingOptions.length === 0) return '1';
+    
+    const maxId = existingOptions.reduce((max, id) => {
+      const num = parseInt(id, 10);
+      return num > max ? num : max;
+    }, 0);
+    
+    return (maxId + 1).toString();
+  }
+  
+  /**
+   * 验证卡片ID格式
+   * @param {string} id - 卡片ID
+   * @returns {boolean} 是否有效
+   */
+  isValidCardId(id) {
+    return /^[A-Z]+$/.test(id);
+  }
+
+  /**
+   * 准备同步的卡片数据
+   */
+  prepareSyncCardData(card, config) {
+    const {
+      targetModeId,
+      titleSync, titleAuth,
+      nameSync, nameAuth,
+      valueSync, valueAuth,
+      unitSync, unitAuth,
+      uiSync
+    } = config;
+
+    return {
+      ...card,
+      modeId: targetModeId,
+      sourceModeId: 'root_admin',
+      syncStatus: {
+        title: { hasSync: titleSync, isAuthorized: titleAuth },
+        options: {
+          name: { hasSync: nameSync, isAuthorized: nameAuth },
+          value: { hasSync: valueSync, isAuthorized: valueAuth },
+          unit: { hasSync: unitSync, isAuthorized: unitAuth }
+        },
+        selectOptions: { hasSync: true, isAuthorized: false },
+        uiConfig: { hasSync: uiSync, isAuthorized: false }
+      },
+      data: {
+        ...card.data,
+        title: titleSync ? card.data.title : null,
+        options: card.data.options.map(option => ({
+          ...option,
+          name: nameSync ? option.name : null,
+          value: valueSync ? option.value : null,
+          unit: unitSync ? option.unit : null
+        })),
+        uiConfig: uiSync ? card.data.uiConfig : {}
+      },
+      syncTime: new Date().toISOString()
+    };
+  }
+
+  // 长期存储操作
+  /**
+   * 保存数据到长期存储
    * @param {string} modeId - 模式ID
    * @param {string} namespace - 数据分类
    * @param {string} dataId - 数据唯一标识
-   * @param {object} data - 要存储的数据（会先校验）
+   * @param {object} data - 要存储的数据
    */
   saveToLongTerm(modeId, namespace, dataId, data) {
     // 保存前先校验
@@ -638,9 +867,6 @@ export default class DataManager {
 
   /**
    * 从长期存储读取数据
-   * @param {string} modeId - 模式ID
-   * @param {string} namespace - 数据分类
-   * @param {string} dataId - 数据唯一标识
    */
   getFromLongTerm(modeId, namespace, dataId) {
     const storageKey = `long-term:${modeId}:${namespace}:${dataId}`;
@@ -649,9 +875,6 @@ export default class DataManager {
 
   /**
    * 从长期存储删除数据
-   * @param {string} modeId - 模式ID
-   * @param {string} namespace - 数据分类
-   * @param {string} dataId - 数据唯一标识
    */
   deleteFromLongTerm(modeId, namespace, dataId) {
     const storageKey = `long-term:${modeId}:${namespace}:${dataId}`;
@@ -660,7 +883,6 @@ export default class DataManager {
 
   /**
    * 清空指定模式的长期存储数据
-   * @param {string} modeId - 模式ID
    */
   clearLongTermByMode(modeId) {
     if (modeId === this.rootAdminId) {
@@ -679,8 +901,6 @@ export default class DataManager {
   // 导入导出功能
   /**
    * 导出数据为JSON文件
-   * @param {string} modeId - 模式ID
-   * @param {string} fileName - 导出文件名
    */
   async exportData(modeId = null, fileName = 'data_export.json') {
     // 收集要导出的数据
@@ -714,7 +934,6 @@ export default class DataManager {
   
   /**
    * 从JSON文件导入数据
-   * @param {File} file - 导入的文件
    */
   importFromFile(file) {
     return new Promise((resolve, reject) => {
@@ -736,9 +955,6 @@ export default class DataManager {
 
   /**
    * 从文件导入并保存到长期存储
-   * @param {File} file - 导入的文件
-   * @param {string} modeId - 目标模式ID
-   * @param {string} namespace - 数据分类
    */
   async importToLongTerm(file, modeId, namespace) {
     try {
@@ -769,55 +985,6 @@ export default class DataManager {
     } catch (error) {
       throw new Error(`导入失败: ${error.message}`);
     }
-  }
-
-  /**
-   * 生成数据项的悬停提示文本
-   * @param {Object} item - 数据项
-   * @param {boolean} isRootMode - 是否为主模式
-   * @returns {string} 提示文本
-   */
-  generateTooltip(item, isRootMode) {
-    const details = [];
-    details.push(`ID: ${item.id || '未定义'}`);
-    details.push(`类型: ${item.typeText}`);
-
-    // 同步状态信息
-    if (item.syncStatus) {
-      const titleSync = item.syncStatus.title?.hasSync ? '已同步' : '未同步';
-      const titleAuth = item.syncStatus.title?.isAuthorized ? '已授权' : '未授权';
-      details.push(`标题: ${titleSync}/${titleAuth}`);
-    }
-
-    details.push(`所属模式: ${item.modeId || '全局'}`);
-    return details.join(' | ');
-  }
-
-  /**
-   * 检查同步状态是否匹配筛选条件
-   * @param {Object} syncStatus - 同步状态对象
-   * @param {string} filter - 筛选条件（synced/unsynced/conflict）
-   * @returns {boolean} 是否匹配
-   */
-  checkSyncStatus(syncStatus, filter) {
-    if (filter === 'synced') return syncStatus?.title?.hasSync === true;
-    if (filter === 'unsynced') return syncStatus?.title?.hasSync === false;
-    if (filter === 'conflict') return syncStatus?.isConflict === true;
-    return true;
-  }
-
-  /**
-   * 转换同步状态为显示文本
-   * @param {string} status - 状态标识
-   * @returns {string} 显示文本
-   */
-  getSyncText(status) {
-    const syncMap = {
-      synced: '已同步',
-      unsynced: '未同步',
-      conflict: '冲突'
-    };
-    return syncMap[status] || '未知';
   }
 }
     

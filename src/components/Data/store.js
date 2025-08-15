@@ -1,61 +1,63 @@
 import { defineStore } from 'pinia';
-import DataManager, { LocalStorageStrategy } from './manager';
+import DataManager from './manager';
 import { v4 as uuidv4 } from 'uuid';
 
-// 存储策略初始化
-const longTermStorage = new LocalStorageStrategy();
-const dataManager = new DataManager(longTermStorage);
-
-// 会话级存储增强
-const sessionStorageEnhancer = {
-  get sessionId() {
-    let sessionId = sessionStorage.getItem('app_session_id');
-    if (!sessionId) {
-      sessionId = `session_${uuidv4()}`;
-      sessionStorage.setItem('app_session_id', sessionId);
-    }
-    return sessionId;
-  },
-  getStorageKey(modeId, type) {
-    return `${this.sessionId}_${modeId}_${type}`;
-  },
-  save(modeId, type, data) {
-    const key = this.getStorageKey(modeId, type);
-    sessionStorage.setItem(key, JSON.stringify(data));
-  },
-  load(modeId, type) {
-    const key = this.getStorageKey(modeId, type);
-    const data = sessionStorage.getItem(key);
-    return data ? JSON.parse(data) : [];
-  },
-  clear(modeId, type) {
-    const key = this.getStorageKey(modeId, type);
-    sessionStorage.removeItem(key);
+// 会话存储增强器
+export class SessionStorageEnhancer {
+  constructor(sessionId) {
+    this.sessionId = sessionId || `session_${Date.now()}`;
+    this.prefix = `${this.sessionId}:`;
   }
-};
 
-// 字段标识
+  // 加载指定模式下的指定类型数据
+  load(modeId, dataType) {
+    const key = `${this.prefix}${modeId}:${dataType}`;
+    const data = sessionStorage.getItem(key);
+    return data ? JSON.parse(data) : null;
+  }
+
+  // 保存数据到指定模式和类型
+  save(modeId, dataType, data) {
+    const key = `${this.prefix}${modeId}:${dataType}`;
+    sessionStorage.setItem(key, JSON.stringify(data));
+    return true;
+  }
+
+  // 清除指定模式的数据
+  clear(modeId) {
+    Object.keys(sessionStorage).forEach(key => {
+      if (key.startsWith(`${this.prefix}${modeId}:`)) {
+        sessionStorage.removeItem(key);
+      }
+    });
+  }
+
+  // 清除所有会话数据
+  clearAll() {
+    Object.keys(sessionStorage).forEach(key => {
+      if (key.startsWith(this.prefix)) {
+        sessionStorage.removeItem(key);
+      }
+    });
+  }
+}
+
+// 字段ID常量定义
 export const FIELD_IDS = {
-  CARD_COUNT: 'cardCount',
-  CARD_ORDER: 'cardOrder',
-  CARD_TITLE: 'title',
-  OPTIONS: 'options',
-  OPTION_NAME: 'optionName',
-  OPTION_VALUE: 'optionValue',
-  OPTION_UNIT: 'optionUnit',
-  SELECT_OPTIONS: 'selectOptions',
-  SCORE_RULES: 'scoreRules',
-  UI_CONFIG: 'uiConfig',
-  CHECKBOX: 'checkbox'
+  CARD_TITLE: 'card_title',
+  OPTION_NAME: 'option_name',
+  OPTION_VALUE: 'option_value',
+  OPTION_UNIT: 'option_unit',
+  UI_CONFIG: 'ui_config',
+  SELECT_OPTIONS: 'select_options'
 };
 
+// 固定同步字段
 export const FIXED_SYNC_FIELDS = [
-  FIELD_IDS.OPTIONS,
-  FIELD_IDS.SELECT_OPTIONS,
-  FIELD_IDS.CARD_COUNT,
-  FIELD_IDS.CARD_ORDER
+  FIELD_IDS.SELECT_OPTIONS
 ];
 
+// 可配置同步字段
 export const CONFIGURABLE_SYNC_FIELDS = [
   FIELD_IDS.CARD_TITLE,
   FIELD_IDS.OPTION_NAME,
@@ -64,27 +66,18 @@ export const CONFIGURABLE_SYNC_FIELDS = [
   FIELD_IDS.UI_CONFIG
 ];
 
+// 可授权字段
 export const AUTHORIZABLE_FIELDS = [
-  FIELD_IDS.CARD_TITLE,
-  FIELD_IDS.OPTION_NAME,
-  FIELD_IDS.OPTION_VALUE,
-  FIELD_IDS.OPTION_UNIT,
-  FIELD_IDS.CHECKBOX
+  ...CONFIGURABLE_SYNC_FIELDS
 ];
 
-export const useCardStore = defineStore('card', {
+// 创建数据管理器实例
+const dataManager = new DataManager();
+
+export const useCardStore = defineStore('data', {
   state: () => ({
-    // 1) root_admin模式区 — 标准源头
+    // 1) 主模式（root_admin）
     rootMode: {
-      id: 'root_admin',
-      name: '根模式（源数据区）',
-      level: 1,
-      permissions: {
-        card: { addCard: true, deleteCard: true, editTitle: true, editOptions: true },
-        data: { view: true, save: true, export: true, import: true },
-        mode: { create: true, delete: true, assignPermissions: true, sync: true },
-        authorize: { canAuthorize: true }
-      },
       tempOperations: {
         currentEditingQuestion: null,
         configStep: 0,
@@ -153,7 +146,9 @@ export const useCardStore = defineStore('card', {
     modes: [],
     currentModeId: 'root_admin',
 
-    sessionStorageEnhancer,
+    // 初始化数据管理器和会话存储增强器
+    sessionStorageEnhancer: new SessionStorageEnhancer(),
+    dataManager: dataManager,
     FIELD_IDS,
     FIXED_SYNC_FIELDS,
     CONFIGURABLE_SYNC_FIELDS,
@@ -232,8 +227,14 @@ export const useCardStore = defineStore('card', {
   actions: {
     // 初始化
     async initialize() {
-      this.loading = true; this.error = null;
+      this.loading = true;
+      this.error = null;
       try {
+        // 确保数据管理器已正确初始化
+        if (!this.dataManager) {
+          this.dataManager = new DataManager();
+        }
+        
         const storedModes = localStorage.getItem('app_user_modes');
         this.modes = storedModes ? JSON.parse(storedModes) : [];
         this.initRootMode();
@@ -302,8 +303,7 @@ export const useCardStore = defineStore('card', {
 
     // Excel 风格卡片ID生成
     compareCardIds(id1, id2) {
-      if (id1.length !== id2.length) return id1.length - id2.length;
-      return id1.localeCompare(id2);
+      return this.dataManager.compareCardIds(id1, id2);
     },
     getAllUsedCardIds() {
       const set = new Set();
@@ -312,49 +312,15 @@ export const useCardStore = defineStore('card', {
       (this.tempCards || []).forEach(c => c?.id && set.add(c.id));
       return set;
     },
-    nextExcelId(id) {
-      if (!id) return 'A';
-      const nums = id.split('').map(c => c.charCodeAt(0) - 65);
-      let i = nums.length - 1;
-      
-      while (i >= 0 && nums[i] === 25) {
-        nums[i] = 0;
-        i--;
-      }
-      
-      if (i < 0) {
-        nums.unshift(0);
-      } else {
-        nums[i] += 1;
-      }
-      
-      return nums.map(n => String.fromCharCode(n + 65)).join('');
-    },
     generateNextCardId() {
       const used = this.getAllUsedCardIds();
-      // 若一个都没有，从 A 开始
-      let currentMax = 'A';
-      // 先找出集合内的“最大”ExcelID（按长度+字典序）
-      for (const id of used) {
-      if (!this.isValidCardId(id)) continue;
-      const better =
-      (id.length > currentMax.length) ||
-      (id.length === currentMax.length && id.localeCompare(currentMax) > 0);
-      if (better) currentMax = id;
-      }
-      // 从最大值开始 +1，直到找出未占用的
-      let candidate = used.size === 0 ? 'A' : this.nextExcelId(currentMax);
-      while (used.has(candidate)) candidate = this.nextExcelId(candidate);
-      return candidate;
+      return this.dataManager.generateNextCardId(used);
     },
     generateNextOptionId(cardId) {
       if (!this.isValidCardId(cardId)) { console.error(`卡片ID ${cardId} 不符合标准格式`); return '1'; }
-      const keys = Object.keys(this.environmentConfigs.options || {}).filter(k => k.startsWith(cardId));
-      if (keys.length === 0) return '1';
-      const max = Math.max(...keys.map(k => parseInt(k.replace(cardId, ''), 10)).filter(n => !Number.isNaN(n)));
-      const id = String((max || 0) + 1);
-      if (!this.isValidOptionId(id)) { console.error(`生成的选项ID ${id} 不符合标准格式`); return '1'; }
-      return id;
+      const options = this.getOptionsByCardId(cardId);
+      const existingIds = options.map(opt => opt.id);
+      return this.dataManager.generateNextOptionId(existingIds);
     },
     // 对外标准接口：root_admin 垄断
     generateCardId() { return this.generateNextCardId(); },
@@ -362,7 +328,7 @@ export const useCardStore = defineStore('card', {
 
     // 2) 环境配置区
     async loadEnvironmentConfigs() {
-      const configs = await dataManager.loadEnvironmentConfigs();
+      const configs = await this.dataManager.loadEnvironmentConfigs();
       this.environmentConfigs = {
         cards: this.normalizeCards(configs.cards || {}),
         options: this.normalizeOptions(configs.options || {}),
@@ -395,7 +361,7 @@ export const useCardStore = defineStore('card', {
       };
       this.environmentConfigs = normalizedConfigs;
       this.notifyEnvConfigChanged();
-      return dataManager.saveEnvironmentConfigs(normalizedConfigs);
+      return this.dataManager.saveEnvironmentConfigs(normalizedConfigs);
     },
     getAllOptionsByCardId(cardId) {
       return Object.entries(this.environmentConfigs.options)
@@ -413,7 +379,7 @@ export const useCardStore = defineStore('card', {
       const idx = this.environmentConfigs.contextTemplates.findIndex(t => t.questionId === questionId);
       if (idx >= 0) this.environmentConfigs.contextTemplates[idx] = context;
       else this.environmentConfigs.contextTemplates.push(context);
-      dataManager.saveEnvironmentConfigs(this.environmentConfigs);
+      this.dataManager.saveEnvironmentConfigs(this.environmentConfigs);
       return context;
     },
     getQuestionContext(questionId) {
@@ -422,7 +388,7 @@ export const useCardStore = defineStore('card', {
 
     // 3) 题库区
     async loadQuestionBank() {
-      const bankData = await dataManager.loadQuestionBank();
+      const bankData = await this.dataManager.loadQuestionBank();
       const valid = bankData.questions?.filter(q => {
         if (!this.isQuestionExpressionValid(q.expression)) { console.warn(`题目 ${q.id} 表达式无效，跳过`); return false; }
         const ids = q.expression.match(/[A-Z]+\d+/g) || [];
@@ -444,20 +410,20 @@ export const useCardStore = defineStore('card', {
       for (const fid of ids) {
         if (!this.getOptionByFullId(fid)) { this.error = `表达式中引用的选项 ${fid} 不存在`; return false; }
       }
-      const normalizedQuestion = dataManager.normalizeQuestion(questionData);
-      const validation = dataManager.validator.validateQuestion(normalizedQuestion);
+      const normalizedQuestion = this.dataManager.normalizeQuestion(questionData);
+      const validation = this.dataManager.validator.validateQuestion(normalizedQuestion);
       if (!validation.pass) { this.error = `题目验证失败: ${validation.errors.join(', ')}`; return false; }
       const idx = this.questionBank.questions.findIndex(q => q.id === normalizedQuestion.id);
       if (idx >= 0) this.questionBank.questions[idx] = normalizedQuestion;
       else this.questionBank.questions.push(normalizedQuestion);
       this.questionBank.lastUpdated = new Date().toISOString();
-      dataManager.saveQuestionBank(this.questionBank);
+      this.dataManager.saveQuestionBank(this.questionBank);
       return true;
     },
     removeQuestionFromBank(questionId) {
       this.questionBank.questions = this.questionBank.questions.filter(q => q.id !== questionId);
       this.questionBank.lastUpdated = new Date().toISOString();
-      dataManager.saveQuestionBank(this.questionBank);
+      this.dataManager.saveQuestionBank(this.questionBank);
       return true;
     },
 
@@ -468,25 +434,16 @@ export const useCardStore = defineStore('card', {
       }
       const key = `${sourceModeId}_${targetModeId}_${field}`;
       this.linkageSync.fieldAuthorizations[key] = !!authorized;
-      dataManager.saveFieldAuthorizations(this.linkageSync.fieldAuthorizations);
+      this.dataManager.saveFieldAuthorizations(this.linkageSync.fieldAuthorizations);
       return true;
     },
     recordSyncHistory(syncData) {
-      const entry = {
-        id: `sync_${uuidv4()}`,
-        sourceModeId: syncData.sourceModeId,
-        targetModeId: syncData.targetModeId,
-        cardIds: syncData.cardIds,
-        fields: syncData.fields,
-        timestamp: new Date().toISOString(),
-        status: syncData.status || 'completed'
-      };
-      // 修复：写入正确的数组属性
+      const entry = this.dataManager.createSyncHistoryEntry(syncData);
       this.linkageSync.syncHistory.unshift(entry);
       if (this.linkageSync.syncHistory.length > 50) {
         this.linkageSync.syncHistory.pop();
       }
-      dataManager.saveSyncHistory(this.linkageSync.syncHistory);
+      this.dataManager.saveSyncHistory(this.linkageSync.syncHistory);
       return entry;
     },
     async syncData(cardIdList, targetModeId, { sync = [], auth = [] } = {}) {
@@ -498,7 +455,7 @@ export const useCardStore = defineStore('card', {
 
     // 5) 其他模式
     async loadSubModeInstances() {
-      const instances = await dataManager.loadSubModeInstances();
+      const instances = await this.dataManager.loadSubModeInstances();
       this.subModes.instances = instances || [];
       this.subModes.instances.forEach(inst => this.parseSubModeData(inst.id));
     },
@@ -550,14 +507,14 @@ export const useCardStore = defineStore('card', {
         status: 'pending'
       };
       this.matchingFeedback.submissionHistory.push(submission);
-      const feedback = dataManager.matchResultsWithQuestionBank(results, this.questionBank.questions);
+      const feedback = this.dataManager.matchResultsWithQuestionBank(results, this.questionBank.questions);
       this.matchingFeedback.feedbackResults.push({
         ...feedback,
         submissionId: submission.id,
         generatedAt: new Date().toISOString()
       });
       submission.status = 'completed';
-      dataManager.saveFeedbackData({
+      this.dataManager.saveFeedbackData({
         submissions: this.matchingFeedback.submissionHistory,
         feedbacks: this.matchingFeedback.feedbackResults
       });
@@ -595,7 +552,6 @@ export const useCardStore = defineStore('card', {
         checked: true
       }));
       this.presetMappings[cardId][selectOptionId] = {
-        // 修复变量名错误
         checkedOptionIds: checkedOptions.map(option => option.id),
         optionsData
       };
@@ -722,61 +678,34 @@ export const useCardStore = defineStore('card', {
         ...((this.tempCards || []).map(c => c?.id).filter(Boolean))
       ]);
 
-      // 本地辅助：Excel ID 自增（A..Z->AA..）
-      const nextExcelIdLocal = (id) => {
-        if (!id) return 'A';
-        const nums = id.split('').map(c => c.charCodeAt(0) - 65);
-        let i = nums.length - 1;
-        
-        while (i >= 0 && nums[i] === 25) {
-          nums[i] = 0;
-          i--;
-        }
-        
-        if (i < 0) {
-          nums.unshift(0);
-        } else {
-          nums[i] += 1;
-        }
-        
-        return nums.map(n => String.fromCharCode(n + 65)).join('');
-      };
-
-      // 1) 确定新卡 ID：优先使用外部提供且合法且未占用，否则按 Excel 递增直到未占用
+      // 确定新卡 ID
       let newCardId = null;
       const requestedId = cardData?.id;
       
       if (requestedId && this.isValidCardId(requestedId) && !usedIds.has(requestedId)) {
         newCardId = requestedId;
       } else {
-        // 先用生成器给一个起点（通常是 A 或最大+1），然后确保避开已用集合
-        let candidate = this.generateCardId ? this.generateCardId() : 'A';
-        
-        while (usedIds.has(candidate)) {
-          candidate = nextExcelIdLocal(candidate);
-        }
-        
-        newCardId = candidate;
+        newCardId = this.generateCardId();
       }
 
-      // 2) 规范化会话结构（保留你传入的 options/selectOptions，不清空）
+      // 规范化会话结构
       const normalized = this.normalizeCardStructure({
         ...cardData,
         storageLevel: 'session',
         id: newCardId
       });
 
-      // 3) 放入会话列表
+      // 放入会话列表
       this.sessionCards.push(normalized);
 
-      // 4) 环境配置：仅标准字段
+      // 环境配置：仅标准字段
       this.environmentConfigs.cards[newCardId] = {
         id: newCardId,
         name: normalized.data.title ?? null,
         dropdown: (normalized.data.selectOptions || []).map(opt => opt?.label ?? null)
       };
 
-      // 将已有选项写入环境配置（id 已被 normalize 为数字字符串）
+      // 将已有选项写入环境配置
       (normalized.data.options || []).forEach(opt => {
         const fullId = `${newCardId}${opt.id}`;
         if (this.isValidFullOptionId(fullId)) {
@@ -788,14 +717,14 @@ export const useCardStore = defineStore('card', {
         }
       });
 
-      // 5) 选中
+      // 选中
       this.selectedCardId = newCardId;
 
       if (this.isRootMode) {
         this.recordRootTempOperation('add_card', { cardId: newCardId });
       }
 
-      // 6) 通知模式解析
+      // 通知模式解析
       this.notifyEnvConfigChanged();
       return normalized;
     },
@@ -899,7 +828,7 @@ export const useCardStore = defineStore('card', {
         console.error(`卡片ID ${cardId} 不符合标准格式，无法添加选项`);
         return;
       }
-      // 新增选项ID：基于环境配置的最大+1，删除不补位
+      // 新增选项ID
       const newOptionNumericId = this.generateOptionId(cardId);
       const fullId = `${cardId}${newOptionNumericId}`;
       const newOption = {
@@ -1108,7 +1037,14 @@ export const useCardStore = defineStore('card', {
 
     // 持久化当前会话卡片
     saveSessionCards(modeId) {
-      const validation = dataManager.validateConfig(this.sessionCards);
+      // 确保dataManager已正确初始化
+      if (!this.dataManager || !this.dataManager.validator) {
+        console.error('数据管理器未正确初始化');
+        this.error = '数据存储失败：内部错误';
+        return false;
+      }
+      
+      const validation = this.dataManager.validator.validateConfig(this.sessionCards);
       if (validation.pass) {
         this.sessionStorageEnhancer.save(modeId, 'cards', validation.validCards);
         return true;
@@ -1117,7 +1053,7 @@ export const useCardStore = defineStore('card', {
     },
 
     validateConfiguration() {
-      return dataManager.validateConfig(this.sessionCards);
+      return this.dataManager.validator.validateConfig(this.sessionCards);
     },
 
     loadAllMediumCards() {
@@ -1129,7 +1065,7 @@ export const useCardStore = defineStore('card', {
       const currentMode = this.currentMode;
       if (!currentMode) return [];
 
-      const validation = dataManager.validateConfig(this.sessionCards);
+      const validation = this.dataManager.validator.validateConfig(this.sessionCards);
       if (!validation.pass) {
         this.error = '数据校验失败，无法保存到中期存储';
         console.error('中期存储校验失败:', validation.errors);
@@ -1257,7 +1193,7 @@ export const useCardStore = defineStore('card', {
           this.applyPresetToCard(cardId, selectedOption.id);
         }
 
-        // 同步环境配置 dropdown（selectedValue 不入环境配置标准字段）
+        // 同步环境配置 dropdown
         if (this.environmentConfigs.cards[cardId]) {
           this.environmentConfigs.cards[cardId].dropdown =
             this.sessionCards[sessionIndex].data.selectOptions.map(opt => opt.label ?? null);
@@ -1271,12 +1207,12 @@ export const useCardStore = defineStore('card', {
     },
 
     exportData(fileName = 'card_data.json') {
-      return dataManager.exportData(this.currentModeId, fileName);
+      return this.dataManager.exportData(this.currentModeId, fileName);
     },
 
     async importData(file) {
       try {
-        const importedData = await dataManager.importFromFile(file);
+        const importedData = await this.dataManager.importFromFile(file);
         const safeData = importedData.map(card => this.normalizeCardStructure({
           ...card,
           modeId: this.currentModeId,
@@ -1286,7 +1222,7 @@ export const useCardStore = defineStore('card', {
         this.sessionCards = [...this.sessionCards, ...safeData];
         this.saveSessionCards(this.currentModeId);
 
-        // 同步到环境配置（仅标准字段）
+        // 同步到环境配置
         safeData.forEach(card => {
           this.environmentConfigs.cards[card.id] = {
             id: card.id,
@@ -1361,7 +1297,7 @@ export const useCardStore = defineStore('card', {
       this.selectedCardId = null;
     },
 
-    // 联动同步（主接口），UI 可继续调用该方法；也可通过 syncData 包装调用
+    // 联动同步（主接口）
     syncToMode(targetModeId, cardIds, syncConfig) {
       if (!targetModeId || targetModeId === 'root_admin') {
         this.error = '不能向主模式推送数据';
@@ -1373,7 +1309,7 @@ export const useCardStore = defineStore('card', {
       }
 
       const { syncFields = [], authFields = [] } = syncConfig || {};
-      const validation = dataManager.validateConfig(this.sessionCards);
+      const validation = this.dataManager.validator.validateConfig(this.sessionCards);
 
       if (!validation.pass) {
         this.error = '源数据校验失败，无法同步';
@@ -1383,51 +1319,17 @@ export const useCardStore = defineStore('card', {
       const sourceCards = validation.validCards
         .filter(card => cardIds.includes(card.id))
         .map(card => {
-          const titleSync = syncFields.includes(this.FIELD_IDS.CARD_TITLE);
-          const titleAuth = authFields.includes(this.FIELD_IDS.CARD_TITLE);
-          const nameSync = syncFields.includes(this.FIELD_IDS.OPTION_NAME);
-          const nameAuth = authFields.includes(this.FIELD_IDS.OPTION_NAME);
-          const valueSync = syncFields.includes(this.FIELD_IDS.OPTION_VALUE);
-          const valueAuth = authFields.includes(this.FIELD_IDS.OPTION_VALUE);
-          const unitSync = syncFields.includes(this.FIELD_IDS.OPTION_UNIT);
-          const unitAuth = authFields.includes(this.FIELD_IDS.OPTION_UNIT);
-          const uiSync = syncFields.includes(this.FIELD_IDS.UI_CONFIG);
-
-          // 记录授权（按字段）
-          authFields.forEach(field => {
-            this.setFieldAuthorization('root_admin', targetModeId, field, true);
-          });
-
-          // 根据同步字段裁剪数据（不改变本地源卡）
-          return this.normalizeCardStructure({
-            ...card,
-            modeId: targetModeId,
-            sourceModeId: 'root_admin',
-            syncStatus: {
-              title: { hasSync: titleSync, isAuthorized: titleAuth },
-              options: {
-                name: { hasSync: nameSync, isAuthorized: nameAuth },
-                value: { hasSync: valueSync, isAuthorized: valueAuth },
-                unit:  { hasSync: unitSync,  isAuthorized: unitAuth }
-              },
-              selectOptions: { hasSync: true, isAuthorized: false },
-              uiConfig: { hasSync: uiSync, isAuthorized: false }
-            },
-            data: {
-              ...card.data,
-              title: titleSync ? card.data.title : null,
-              options: card.data.options.map(option => ({
-                ...option,
-                name: nameSync ? option.name : null,
-                value: valueSync ? option.value : null,
-                unit: unitSync ? option.unit : null,
-                localName: null,
-                localValue: null,
-                localUnit: null
-              })),
-              uiConfig: uiSync ? card.data.uiConfig : {}
-            },
-            syncTime: new Date().toISOString()
+          return this.dataManager.prepareSyncCardData(card, {
+            targetModeId,
+            titleSync: syncFields.includes(this.FIELD_IDS.CARD_TITLE),
+            titleAuth: authFields.includes(this.FIELD_IDS.CARD_TITLE),
+            nameSync: syncFields.includes(this.FIELD_IDS.OPTION_NAME),
+            nameAuth: authFields.includes(this.FIELD_IDS.OPTION_NAME),
+            valueSync: syncFields.includes(this.FIELD_IDS.OPTION_VALUE),
+            valueAuth: authFields.includes(this.FIELD_IDS.OPTION_VALUE),
+            unitSync: syncFields.includes(this.FIELD_IDS.OPTION_UNIT),
+            unitAuth: authFields.includes(this.FIELD_IDS.OPTION_UNIT),
+            uiSync: syncFields.includes(this.FIELD_IDS.UI_CONFIG)
           });
         });
       const cardPresets = {};
@@ -1547,3 +1449,4 @@ export const useCardStore = defineStore('card', {
     }
   }
 });
+    
