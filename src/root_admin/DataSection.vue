@@ -152,10 +152,10 @@
 
 <script setup>
 import { ref, onMounted, inject, watch } from 'vue';
-import { useDataSectionStore } from '../components/Data/store/DataSectionStore';
+import { useCardStore } from '@/components/Data/store';
 
 // 注入和初始化
-const store = useDataSectionStore();
+const store = useCardStore();
 const router = inject('router');
 const fileInput = ref(null);
 

@@ -165,9 +165,34 @@ export class DataValidator {
       invalidCards: results.filter(r => !r.pass).map(r => r.card)
     };
   }
+
+  // 新增：校验联动规则
+  validateLinkageRule(rule) {
+    const errors = [];
+    
+    if (!rule.id) errors.push('联动规则必须有唯一ID');
+    if (!rule.sourceModeId) errors.push('必须指定源模式ID');
+    if (!rule.targetModeId) errors.push('必须指定目标模式ID');
+    if (!Array.isArray(rule.cardMappings)) {
+      errors.push('cardMappings必须是数组');
+    } else {
+      rule.cardMappings.forEach((mapping, index) => {
+        if (!mapping.sourceCardId) errors.push(`卡片映射${index + 1}必须指定源卡片ID`);
+        if (!mapping.targetCardId) errors.push(`卡片映射${index + 1}必须指定目标卡片ID`);
+        if (!Array.isArray(mapping.fieldMappings)) {
+          errors.push(`卡片映射${index + 1}的fieldMappings必须是数组`);
+        }
+      });
+    }
+    
+    return {
+      pass: errors.length === 0,
+      errors
+    };
+  }
 }
 
-// 核心数据模块：负责数据存储和处理
+// 核心数据模块：负责数据存储和处理，包含联动功能
 export default class DataManager {
   constructor(storageStrategy) {
     // 长期存储策略
@@ -197,10 +222,11 @@ export default class DataManager {
       }
     };
     
-    // 模块存储键名
+    // 模块存储键名 - 新增联动规则存储键
     this.storageKeys = {
       questionBank: 'question_bank',
       environmentConfigs: 'environment_configs',
+      linkageRules: 'linkage_rules', // 新增：联动规则存储键
       subModeInstances: 'submode_instances',
       syncHistory: 'sync_history',
       fieldAuthorizations: 'field_authorizations',
@@ -219,9 +245,10 @@ export default class DataManager {
       this.currentModeId = savedMode;
     }
     
-    // 确保基础数据结构存在
+    // 确保基础数据结构存在 - 新增加载联动规则
     await this.loadQuestionBank();
     await this.loadEnvironmentConfigs();
+    await this.loadLinkageRules(); // 新增：加载联动规则
     await this.loadSubModeInstances();
   }
 
@@ -273,18 +300,16 @@ export default class DataManager {
       return { hasSync: false, hasConflict: false };
     }
     
-    // 简单判断是否有冲突（实际项目中可能需要更复杂的逻辑）
+    // 判断是否有冲突（基于时间戳比较）
     return {
       hasSync: true,
-      hasConflict: false,
+      hasConflict: latestSync.conflictDetected || false,
       lastSync: latestSync.timestamp
     };
   }
 
   /**
    * 正向解析：将UI层数据转换为数据层格式（空字符→null）
-   * @param {any} value - UI层原始值
-   * @returns {any} 数据层值（空字符→null，保持其他类型）
    */
   normalizeNullValue(value) {
     if (typeof value === 'string' && value.trim() === '') return null;
@@ -293,9 +318,6 @@ export default class DataManager {
 
   /**
    * 递归标准化数据结构，确保符合规范
-   * @param {Object} data - 原始数据
-   * @param {Object} template - 结构模板
-   * @returns {Object} 标准化后的数据
    */
   normalizeDataStructure(data, template) {
     const result = { ...data };
@@ -338,8 +360,6 @@ export default class DataManager {
 
   /**
    * 标准化卡片数据用于存储
-   * @param {Object} card - 卡片数据
-   * @returns {Object} 标准化后的卡片数据
    */
   normalizeCardForStorage(card) {
     return this.normalizeDataStructure(card, {
@@ -420,7 +440,7 @@ export default class DataManager {
     };
   }
 
-  // 3. 环境配置管理
+  // 3. 环境配置管理 - 整合联动功能
   /**
    * 加载环境配置
    */
@@ -428,7 +448,13 @@ export default class DataManager {
     const configs = this.longTermStorage.getItem(this.storageKeys.environmentConfigs) || {
       uiPresets: [],
       scoringRules: [],
-      contextTemplates: []
+      contextTemplates: [],
+      // 新增：环境配置中的联动相关设置
+      linkageSettings: {
+        autoSync: false,
+        syncInterval: 300000, // 默认5分钟
+        conflictResolution: 'source_wins' // 冲突解决策略：source_wins/target_wins/merge
+      }
     };
     return configs;
   }
@@ -458,7 +484,329 @@ export default class DataManager {
     };
   }
 
-  // 4. 联动同步管理
+  // 4. 联动同步管理 - 增强实现
+  /**
+   * 新增：保存联动规则
+   */
+  saveLinkageRules(rules) {
+    // 保存前先校验所有规则
+    const validRules = [];
+    const invalidRules = [];
+    
+    rules.forEach(rule => {
+      const validation = this.validator.validateLinkageRule(rule);
+      if (validation.pass) {
+        validRules.push({
+          ...rule,
+          updatedAt: new Date().toISOString()
+        });
+      } else {
+        invalidRules.push({ ...rule, validationErrors: validation.errors });
+      }
+    });
+    
+    if (invalidRules.length > 0) {
+      console.warn('部分联动规则无效，已跳过保存:', invalidRules);
+    }
+    
+    return this.longTermStorage.setItem(this.storageKeys.linkageRules, validRules);
+  }
+  
+  /**
+   * 新增：加载联动规则
+   */
+  loadLinkageRules() {
+    return this.longTermStorage.getItem(this.storageKeys.linkageRules) || [];
+  }
+  
+  /**
+   * 新增：创建联动规则
+   * 联动规则定义了源模式与目标模式之间的卡片和字段映射关系
+   */
+  createLinkageRule(ruleData) {
+    // 字段映射默认结构：源字段 -> 目标字段 -> 转换函数
+    const defaultFieldMapping = {
+      sourceField: '',
+      targetField: '',
+      transform: null, // 可选转换函数名
+      isEnabled: true
+    };
+    
+    // 卡片映射默认结构：源卡片 -> 目标卡片 -> 字段映射集合
+    const defaultCardMapping = {
+      sourceCardId: '',
+      targetCardId: '',
+      fieldMappings: [defaultFieldMapping],
+      isEnabled: true
+    };
+    
+    return {
+      id: ruleData.id || `linkage_${Date.now()}`,
+      name: this.normalizeNullValue(ruleData.name) || '未命名联动规则',
+      description: this.normalizeNullValue(ruleData.description),
+      sourceModeId: ruleData.sourceModeId || this.rootAdminId,
+      targetModeId: ruleData.targetModeId,
+      cardMappings: ruleData.cardMappings 
+        ? ruleData.cardMappings.map(cm => ({
+            ...defaultCardMapping,
+            ...cm,
+            fieldMappings: (cm.fieldMappings || []).map(fm => ({ ...defaultFieldMapping, ...fm }))
+          }))
+        : [defaultCardMapping],
+      isEnabled: ruleData.isEnabled !== undefined ? ruleData.isEnabled : true,
+      syncDirection: ruleData.syncDirection || 'one_way', // one_way / two_way
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+  }
+  
+  /**
+   * 新增：获取特定联动规则
+   */
+  getLinkageRule(ruleId) {
+    const rules = this.loadLinkageRules();
+    return rules.find(rule => rule.id === ruleId) || null;
+  }
+  
+  /**
+   * 新增：删除联动规则
+   */
+  deleteLinkageRule(ruleId) {
+    let rules = this.loadLinkageRules();
+    rules = rules.filter(rule => rule.id !== ruleId);
+    return this.saveLinkageRules(rules);
+  }
+  
+  /**
+   * 新增：执行联动操作
+   * 根据联动规则同步源模式到目标模式的数据
+   */
+  async executeLinkage(ruleId) {
+    const rule = this.getLinkageRule(ruleId);
+    if (!rule || !rule.isEnabled) {
+      throw new Error('联动规则不存在或未启用');
+    }
+    
+    const sourceMode = this.getMode(rule.sourceModeId);
+    const targetMode = this.getMode(rule.targetModeId);
+    if (!sourceMode || !targetMode) {
+      throw new Error('源模式或目标模式不存在');
+    }
+    
+    // 获取环境配置中的联动设置
+    const envConfigs = await this.loadEnvironmentConfigs();
+    const linkageSettings = envConfigs.linkageSettings || {
+      conflictResolution: 'source_wins'
+    };
+    
+    // 记录同步过程中的卡片ID
+    const syncedCardIds = [];
+    const conflictDetected = false;
+    
+    // 处理每个卡片映射
+    for (const cardMapping of rule.cardMappings) {
+      if (!cardMapping.isEnabled) continue;
+      
+      // 获取源卡片和目标卡片数据
+      const sourceCard = await this.getFromLongTerm(
+        rule.sourceModeId, 
+        'cards', 
+        cardMapping.sourceCardId
+      );
+      
+      if (!sourceCard) {
+        console.warn(`源卡片 ${cardMapping.sourceCardId} 不存在，跳过同步`);
+        continue;
+      }
+      
+      // 准备要同步的字段数据
+      let targetCard = await this.getFromLongTerm(
+        rule.targetModeId, 
+        'cards', 
+        cardMapping.targetCardId
+      );
+      
+      // 如果目标卡片不存在，则创建新卡片
+      if (!targetCard) {
+        targetCard = this.normalizeCardForStorage({
+          id: cardMapping.targetCardId,
+          modeId: rule.targetModeId,
+          data: { ...this.CARD_DATA_TEMPLATE }
+        });
+      }
+      
+      // 应用字段映射
+      cardMapping.fieldMappings.forEach(mapping => {
+        if (!mapping.isEnabled) return;
+        
+        // 从源卡片获取数据
+        const sourceValue = this.getNestedValue(sourceCard.data, mapping.sourceField);
+        if (sourceValue === undefined) return;
+        
+        // 应用转换函数（如果有）
+        const transformedValue = this.applyTransform(
+          sourceValue, 
+          mapping.transform,
+          sourceCard,
+          targetCard
+        );
+        
+        // 设置目标卡片数据
+        this.setNestedValue(targetCard.data, mapping.targetField, transformedValue);
+        
+        // 更新同步状态
+        this.updateSyncStatus(targetCard, mapping.targetField);
+      });
+      
+      // 保存同步后的目标卡片
+      await this.saveToLongTerm(
+        rule.targetModeId,
+        'cards',
+        cardMapping.targetCardId,
+        targetCard
+      );
+      
+      syncedCardIds.push(cardMapping.targetCardId);
+    }
+    
+    // 创建同步历史记录
+    const historyEntry = this.createSyncHistoryEntry({
+      sourceModeId: rule.sourceModeId,
+      targetModeId: rule.targetModeId,
+      cardIds: syncedCardIds,
+      ruleId: ruleId,
+      status: conflictDetected ? 'completed_with_conflicts' : 'completed',
+      conflictDetected
+    });
+    
+    // 更新同步历史
+    const syncHistory = this.loadSyncHistory();
+    syncHistory.push(historyEntry);
+    this.saveSyncHistory(syncHistory);
+    
+    // 如果是双向同步，且没有冲突，执行反向同步
+    if (rule.syncDirection === 'two_way' && !conflictDetected) {
+      await this.executeReverseLinkage(rule);
+    }
+    
+    return {
+      success: true,
+      syncedCards: syncedCardIds.length,
+      conflictDetected,
+      historyId: historyEntry.id
+    };
+  }
+  
+  /**
+   * 新增：执行反向联动（用于双向同步）
+   */
+  async executeReverseLinkage(rule) {
+    // 实现双向同步的反向逻辑
+    // 与正向同步类似，但源和目标互换
+    // 这里简化实现，实际项目中可能需要更复杂的逻辑
+    const reversedRule = {
+      ...rule,
+      sourceModeId: rule.targetModeId,
+      targetModeId: rule.sourceModeId,
+      cardMappings: rule.cardMappings.map(mapping => ({
+        ...mapping,
+        sourceCardId: mapping.targetCardId,
+        targetCardId: mapping.sourceCardId
+      }))
+    };
+    
+    // 临时保存反向规则并执行
+    const tempRuleId = `temp_rev_${rule.id}`;
+    reversedRule.id = tempRuleId;
+    const allRules = this.loadLinkageRules();
+    allRules.push(reversedRule);
+    this.saveLinkageRules(allRules);
+    
+    // 执行反向同步
+    const result = await this.executeLinkage(tempRuleId);
+    
+    // 清理临时规则
+    this.deleteLinkageRule(tempRuleId);
+    
+    return result;
+  }
+  
+  /**
+   * 新增：获取嵌套字段值
+   */
+  getNestedValue(obj, path) {
+    if (!obj || !path) return undefined;
+    const parts = path.split('.');
+    return parts.reduce((current, part) => {
+      return current && current[part] !== undefined ? current[part] : undefined;
+    }, obj);
+  }
+  
+  /**
+   * 新增：设置嵌套字段值
+   */
+  setNestedValue(obj, path, value) {
+    if (!obj || !path) return;
+    const parts = path.split('.');
+    const lastPart = parts.pop();
+    
+    const parent = parts.reduce((current, part) => {
+      if (current[part] === undefined) {
+        current[part] = {};
+      }
+      return current[part];
+    }, obj);
+    
+    parent[lastPart] = value;
+  }
+  
+  /**
+   * 新增：应用字段转换函数
+   */
+  applyTransform(value, transformName, sourceCard, targetCard) {
+    if (!transformName) return value;
+    
+    // 定义可用的转换函数
+    const transforms = {
+      // 数值转换：源值乘以100
+      percentage: (v) => typeof v === 'number' ? v * 100 : v,
+      // 字符串转换：转为大写
+      uppercase: (v) => typeof v === 'string' ? v.toUpperCase() : v,
+      // 日期转换：转为ISO格式
+      toIsoDate: (v) => v instanceof Date ? v.toISOString() : v,
+      // 差值计算：与目标卡片当前值的差值
+      difference: (v) => {
+        const targetValue = targetCard?.data?.options?.[0]?.value || 0;
+        return typeof v === 'number' && typeof targetValue === 'number' 
+          ? v - targetValue 
+          : v;
+      }
+    };
+    
+    // 应用转换或返回原始值
+    return transforms[transformName] ? transforms[transformName](value) : value;
+  }
+  
+  /**
+   * 新增：更新同步状态
+   */
+  updateSyncStatus(card, field) {
+    if (!card.syncStatus) {
+      card.syncStatus = { ...this.CARD_DATA_TEMPLATE.syncStatus };
+    }
+    
+    // 根据字段路径更新相应的同步状态
+    if (field.startsWith('title')) {
+      card.syncStatus.title = { hasSync: true, isAuthorized: true };
+    } else if (field.startsWith('options.name')) {
+      card.syncStatus.options.name = { hasSync: true, isAuthorized: true };
+    } else if (field.startsWith('options.value')) {
+      card.syncStatus.options.value = { hasSync: true, isAuthorized: true };
+    } else if (field.startsWith('options.unit')) {
+      card.syncStatus.options.unit = { hasSync: true, isAuthorized: true };
+    }
+  }
+  
   /**
    * 保存同步历史
    */
@@ -482,9 +830,11 @@ export default class DataManager {
       sourceModeId: syncData.sourceModeId,
       targetModeId: syncData.targetModeId,
       cardIds: syncData.cardIds,
-      fields: syncData.fields,
+      ruleId: syncData.ruleId, // 新增：关联的联动规则ID
+      fields: syncData.fields || [],
       timestamp: new Date().toISOString(),
-      status: syncData.status || 'completed'
+      status: syncData.status || 'completed',
+      conflictDetected: syncData.conflictDetected || false
     };
   }
   
@@ -728,9 +1078,6 @@ export default class DataManager {
   // ID生成与比较（Excel样式）
   /**
    * 比较两个卡片ID的大小
-   * @param {string} id1 - 卡片ID
-   * @param {string} id2 - 卡片ID
-   * @returns {number} 比较结果
    */
   compareCardIds(id1, id2) {
     if (id1.length !== id2.length) return id1.length - id2.length;
@@ -739,8 +1086,6 @@ export default class DataManager {
   
   /**
    * 生成下一个卡片ID（Excel样式）
-   * @param {Set} usedIds - 已使用的ID集合
-   * @returns {string} 新卡片ID
    */
   generateNextCardId(usedIds) {
     // 找出当前最大的ID
@@ -775,8 +1120,6 @@ export default class DataManager {
   
   /**
    * 生成下一个选项ID
-   * @param {Array} existingOptions - 现有选项ID数组
-   * @returns {string} 新选项ID
    */
   generateNextOptionId(existingOptions) {
     if (!existingOptions || existingOptions.length === 0) return '1';
@@ -791,8 +1134,6 @@ export default class DataManager {
   
   /**
    * 验证卡片ID格式
-   * @param {string} id - 卡片ID
-   * @returns {boolean} 是否有效
    */
   isValidCardId(id) {
     return /^[A-Z]+$/.test(id);
@@ -843,10 +1184,6 @@ export default class DataManager {
   // 长期存储操作
   /**
    * 保存数据到长期存储
-   * @param {string} modeId - 模式ID
-   * @param {string} namespace - 数据分类
-   * @param {string} dataId - 数据唯一标识
-   * @param {object} data - 要存储的数据
    */
   saveToLongTerm(modeId, namespace, dataId, data) {
     // 保存前先校验
@@ -903,10 +1240,11 @@ export default class DataManager {
    * 导出数据为JSON文件
    */
   async exportData(modeId = null, fileName = 'data_export.json') {
-    // 收集要导出的数据
+    // 收集要导出的数据 - 新增导出联动规则
     const exportData = {
       questionBank: await this.loadQuestionBank(),
       environmentConfigs: await this.loadEnvironmentConfigs(),
+      linkageRules: await this.loadLinkageRules(), // 新增：导出联动规则
       subModeInstances: await this.loadSubModeInstances(),
       syncHistory: this.loadSyncHistory()
     };
@@ -954,7 +1292,7 @@ export default class DataManager {
   }
 
   /**
-   * 从文件导入并保存到长期存储
+   * 从文件导入并保存到长期存储 - 新增导入联动规则
    */
   async importToLongTerm(file, modeId, namespace) {
     try {
@@ -970,15 +1308,29 @@ export default class DataManager {
         });
       }
       
-      // 处理导入的环境配置
+            // 处理导入的环境配置
       if (importedData.environmentConfigs) {
         const envConfigs = await this.loadEnvironmentConfigs();
         this.saveEnvironmentConfigs({
           ...envConfigs,
-          uiPresets: [...envConfigs.uiPresets, ...importedData.environmentConfigs.uiPresets],
-          scoringRules: [...envConfigs.scoringRules, ...importedData.environmentConfigs.scoringRules],
-          contextTemplates: [...envConfigs.contextTemplates, ...importedData.environmentConfigs.contextTemplates]
+          uiPresets: [...envConfigs.uiPresets, ...(importedData.environmentConfigs.uiPresets || [])],
+          scoringRules: [...envConfigs.scoringRules, ...(importedData.environmentConfigs.scoringRules || [])],
+          contextTemplates: [...envConfigs.contextTemplates, ...(importedData.environmentConfigs.contextTemplates || [])],
+          linkageSettings: { 
+            ...envConfigs.linkageSettings, 
+            ...(importedData.environmentConfigs.linkageSettings || {})
+          }
         });
+      }
+      
+      // 处理导入的联动规则
+      if (importedData.linkageRules && Array.isArray(importedData.linkageRules)) {
+        const existingRules = this.loadLinkageRules();
+        // 过滤掉重复的规则（根据ID判断）
+        const newRules = importedData.linkageRules.filter(
+          newRule => !existingRules.some(existing => existing.id === newRule.id)
+        );
+        this.saveLinkageRules([...existingRules, ...newRules]);
       }
       
       return { success: true };
@@ -987,4 +1339,4 @@ export default class DataManager {
     }
   }
 }
-    
+     

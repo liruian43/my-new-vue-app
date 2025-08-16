@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia';
 import DataManager from './manager';
 import { v4 as uuidv4 } from 'uuid';
+import OtherModeTemplate from '../Othermodes/OtherModeTemplate.vue';
 
 // 会话存储增强器
 export class SessionStorageEnhancer {
@@ -42,34 +43,65 @@ export class SessionStorageEnhancer {
   }
 }
 
-// 字段ID常量定义
+// 常量定义：合并了DataSectionStore的字段标识
 export const FIELD_IDS = {
+  // 原有固定同步字段
+  CARD_COUNT: 'cardCount',
+  CARD_ORDER: 'cardOrder',
+  OPTIONS: 'options',
+  SELECT_OPTIONS: 'selectOptions',
+  
+  // 原有可配置同步+授权字段
   CARD_TITLE: 'card_title',
   OPTION_NAME: 'option_name',
   OPTION_VALUE: 'option_value',
   OPTION_UNIT: 'option_unit',
   UI_CONFIG: 'ui_config',
-  SELECT_OPTIONS: 'select_options'
+  CHECKBOX: 'checkbox',
+  
+  // 新增：DataSectionStore相关字段
+  DATA_SECTION_ID: 'data_section_id',
+  SECTION_TITLE: 'section_title',
+  SECTION_ITEMS: 'section_items',
+  SECTION_VALIDITY: 'section_validity',
+  SECTION_DEPENDENCIES: 'section_dependencies'
 };
 
-// 固定同步字段
+// 固定同步的字段（包含DataSectionStore的必要字段）
 export const FIXED_SYNC_FIELDS = [
-  FIELD_IDS.SELECT_OPTIONS
+  FIELD_IDS.OPTIONS, 
+  FIELD_IDS.SELECT_OPTIONS,
+  FIELD_IDS.CARD_COUNT,
+  FIELD_IDS.CARD_ORDER,
+  FIELD_IDS.DATA_SECTION_ID,
+  FIELD_IDS.SECTION_ITEMS
 ];
 
-// 可配置同步字段
+// 可配置同步的字段（扩展数据段相关）
 export const CONFIGURABLE_SYNC_FIELDS = [
   FIELD_IDS.CARD_TITLE,
   FIELD_IDS.OPTION_NAME,
   FIELD_IDS.OPTION_VALUE,
   FIELD_IDS.OPTION_UNIT,
-  FIELD_IDS.UI_CONFIG
+  FIELD_IDS.UI_CONFIG,
+  FIELD_IDS.SECTION_TITLE,
+  FIELD_IDS.SECTION_VALIDITY
 ];
 
-// 可授权字段
+// 可授权编辑的字段（扩展数据段相关）
 export const AUTHORIZABLE_FIELDS = [
-  ...CONFIGURABLE_SYNC_FIELDS
+  FIELD_IDS.CARD_TITLE,
+  FIELD_IDS.OPTION_NAME,
+  FIELD_IDS.OPTION_VALUE,
+  FIELD_IDS.OPTION_UNIT,
+  FIELD_IDS.UI_CONFIG,
+  FIELD_IDS.CHECKBOX,
+  FIELD_IDS.SECTION_TITLE,
+  FIELD_IDS.SECTION_ITEMS
 ];
+
+// 路由实例存储
+let routerInstance = null;
 
 // 创建数据管理器实例
 const dataManager = new DataManager();
@@ -100,7 +132,33 @@ export const useCardStore = defineStore('data', {
       options: {}, // { "A1": { name:"玄铁", value:"5", unit:"kg" } }
       uiPresets: [],
       scoringRules: [],
-      contextTemplates: []
+      contextTemplates: [],
+      
+      // 模式联动控制相关状态
+      linkageControl: {
+        isModeDropdownOpen: false,
+        selectedMode: '',
+        isInPrepareState: false,
+        
+        // 同步选项（控制是否展示内容）
+        syncOptions: [
+          { id: 1, name: '卡片标题', fieldId: FIELD_IDS.CARD_TITLE, checked: false },
+          { id: 2, name: '选项名称', fieldId: FIELD_IDS.OPTION_NAME, checked: false },
+          { id: 3, name: '选项值', fieldId: FIELD_IDS.OPTION_VALUE, checked: false },
+          { id: 4, name: '选项单位', fieldId: FIELD_IDS.OPTION_UNIT, checked: false },
+          { id: 5, name: '数据段标题', fieldId: FIELD_IDS.SECTION_TITLE, checked: false } // 新增
+        ],
+        
+        // 授权选项（控制是否允许编辑）
+        authOptions: [
+          { id: 1, name: '卡片标题', fieldId: FIELD_IDS.CARD_TITLE, checked: false },
+          { id: 2, name: '选项名称', fieldId: FIELD_IDS.OPTION_NAME, checked: false },
+          { id: 3, name: '选项值', fieldId: FIELD_IDS.OPTION_VALUE, checked: false },
+          { id: 4, name: '选项单位', fieldId: FIELD_IDS.OPTION_UNIT, checked: false },
+          { id: 5, name: '复选框', fieldId: FIELD_IDS.CHECKBOX, checked: false },
+          { id: 6, name: '数据段内容', fieldId: FIELD_IDS.SECTION_ITEMS, checked: false } // 新增
+        ]
+      }
     },
 
     // 3) 题库区
@@ -114,7 +172,8 @@ export const useCardStore = defineStore('data', {
     linkageSync: {
       syncHistory: [],
       fieldAuthorizations: {}, // key: `${sourceModeId}_${targetModeId}_${field}`
-      pendingSyncs: []
+      pendingSyncs: [],
+      currentLinkageConfig: null
     },
 
     // 5) 其他模式
@@ -132,6 +191,21 @@ export const useCardStore = defineStore('data', {
       scoringLogs: []
     },
 
+    // 7) 数据段管理区（来自DataSectionStore）
+    dataSection: {
+      // UI状态
+      isManager: false,
+      filterType: 'all',
+      syncFilter: 'all',
+      isPreview: false,
+      previewData: { configs: [], questions: [], totalCount: 0 },
+      selectAll: false,
+      selectedCount: 0,
+      
+      // 临时存储
+      tempSelected: []
+    },
+
     // 通用状态（服务 UniversalCard）
     tempCards: [],
     sessionCards: [],
@@ -145,7 +219,10 @@ export const useCardStore = defineStore('data', {
     storageType: localStorage.getItem('storageType') || 'local',
     modes: [],
     currentModeId: 'root_admin',
-
+    
+    // 路由管理相关状态
+    modeRoutes: {}, // 存储模式路由信息: { modeId: { routeName, path } }
+    
     // 初始化数据管理器和会话存储增强器
     sessionStorageEnhancer: new SessionStorageEnhancer(),
     dataManager: dataManager,
@@ -164,7 +241,7 @@ export const useCardStore = defineStore('data', {
     isValidOptionId: (s) => (id) => s.rootMode.dataStandards.optionIdPattern.test(id),
     isValidFullOptionId: (s) => (id) => s.rootMode.dataStandards.fullOptionIdPattern.test(id),
 
-    // 环境配置区接口（4.1）
+    // 环境配置区接口
     getCardById: (s) => (cardId) => s.environmentConfigs.cards[cardId] || null,
     getOptionByFullId: (s) => (fullId) => s.environmentConfigs.options[fullId] || null,
     getOptionsByCardId: (s) => (cardId) => {
@@ -177,13 +254,24 @@ export const useCardStore = defineStore('data', {
         }));
     },
 
+    // 模式联动控制相关计算属性
+    filteredModes: (s) => {
+      return s.modes.filter(mode => mode.id !== 'root_admin');
+    },
+    canConfirmLinkage: (s) => {
+      if (!s.environmentConfigs.linkageControl.isInPrepareState || 
+          !s.environmentConfigs.linkageControl.selectedMode || 
+          !s.currentModeId) return false;
+      return true;
+    },
+
     // 题库区
     allQuestionCategories() { return [...this.questionBank.categories]; },
-    getQuestionById: (s) => (id) => this.questionBank.questions.find(q => q.id === id),
+    getQuestionById: (s) => (id) => s.questionBank.questions.find(q => q.id === id),
     isQuestionExpressionValid: (s) => (expression) =>
       s.rootMode.dataStandards.questionExpressionPattern.test(expression),
 
-    // 联动授权读取（与 set 相同 key 规则）
+    // 联动授权读取
     getFieldAuthorization: (s) => (sourceModeId, targetModeId, field) => {
       const key = `${sourceModeId}_${targetModeId}_${field}`;
       return !!s.linkageSync.fieldAuthorizations[key];
@@ -197,7 +285,7 @@ export const useCardStore = defineStore('data', {
     getFeedbackBySubmission: (s) => (submissionId) =>
       s.matchingFeedback.feedbackResults.find(f => f.submissionId === submissionId),
 
-    // 原有
+    // 原有通用getters
     selectedCard() {
       let card = this.tempCards.find(c => c.id === this.selectedCardId);
       if (!card) card = this.sessionCards.find(c => c.id === this.selectedCardId);
@@ -221,10 +309,539 @@ export const useCardStore = defineStore('data', {
     },
     sortedSessionCards() { return [...this.sessionCards].sort((a, b) => this.compareCardIds(a.id, b.id)); },
     sortedTempCards() { return [...this.tempCards].sort((a, b) => this.compareCardIds(a.id, b.id)); },
-    sortedOptions(card) { return [...card.data.options].sort((a, b) => parseInt(a.id) - parseInt(b.id)); }
+    sortedOptions(card) { return [...card.data.options].sort((a, b) => parseInt(a.id) - parseInt(b.id)); },
+
+    // ------------------------------
+    // 数据段管理相关getters（来自DataSectionStore）
+    // ------------------------------
+    dataSectionIsRootMode() {
+      return dataManager.rootAdminId === this.currentModeId;
+    },
+    
+    dataSectionCurrentMode() {
+      return this.getMode(this.currentModeId);
+    },
+    
+    // 整合所有数据（按时间倒序）
+    allData() {
+      // 获取基础数据并添加默认值
+      const environmentConfigs = this.environmentConfigs || {};
+      const questionBank = this.questionBank || {};
+      const modes = this.subModes.instances || [];
+      
+      // 确保数组属性存在
+      const contextTemplates = Array.isArray(environmentConfigs.contextTemplates) 
+        ? environmentConfigs.contextTemplates 
+        : [];
+      const questions = Array.isArray(questionBank.questions) 
+        ? questionBank.questions 
+        : [];
+
+      // 环境配置数据
+      const configData = contextTemplates.map(item => ({
+        id: item.questionId,
+        dataType: 'config',
+        typeText: '环境配置',
+        summary: item.content?.length > 50 ? `${item.content.substring(0, 50)}...` : item.content || '',
+        modeId: this.currentModeId || '',
+        syncStatus: this.getCardSyncStatus(item.questionId) || {},
+        timestamp: item.createdAt ? new Date(item.createdAt).getTime() : new Date().getTime()
+      }));
+      
+      // 题库数据
+      const questionData = questions.map(item => ({
+        id: item.id,
+        dataType: 'question',
+        typeText: '资料题库',
+        summary: item.content?.length > 50 ? `${item.content.substring(0, 50)}...` : item.content || '',
+        modeId: this.currentModeId || '',
+        syncStatus: this.getCardSyncStatus(item.id) || {},
+        difficulty: item.difficulty || 'medium',
+        timestamp: item.createdAt ? new Date(item.createdAt).getTime() : new Date().getTime()
+      }));
+      
+      // 模式数据
+      const modeData = [
+        {
+          id: dataManager.rootAdminId || 'root_admin',
+          dataType: 'root',
+          typeText: '主模式',
+          summary: '系统主模式，包含所有源数据',
+          modeId: dataManager.rootAdminId || 'root_admin',
+          isModeData: true,
+          timestamp: new Date().getTime()
+        },
+        ...modes.map(item => ({
+          id: item.id,
+          dataType: 'other-mode',
+          typeText: '其他模式',
+          summary: item.description || '用户创建的子模式',
+          modeId: item.id,
+          isModeData: true,
+          timestamp: new Date().getTime() - (modes.indexOf(item) * 1000)
+        }))
+      ];
+      
+      // 按时间戳降序排序
+      return [...configData, ...questionData, ...modeData]
+        .sort((a, b) => b.timestamp - a.timestamp);
+    },
+    
+    // 筛选后的数据
+    filteredData() {
+      const sourceData = this.dataSection.isPreview 
+        ? [...this.dataSection.previewData.configs, ...this.dataSection.previewData.questions].map(item => ({
+            ...item,
+            summary: item.content || item.questionId || '未命名数据',
+            timestamp: item.timestamp || new Date().getTime()
+          }))
+        : this.allData;
+      
+      let result = [...sourceData];
+      
+      // 类型筛选
+      if (this.dataSection.filterType !== 'all') {
+        result = result.filter(item => item.dataType === this.dataSection.filterType);
+      }
+      
+      // 同步状态筛选
+      if (this.isRootMode && this.dataSection.syncFilter !== 'all') {
+        result = result.filter(item => 
+          this.checkSyncStatus(item.syncStatus, this.dataSection.syncFilter)
+        );
+      }
+      
+      return result.sort((a, b) => b.timestamp - a.timestamp);
+    },
+    
+    // 是否有选中的模式数据
+    hasModeDataSelected() {
+      return this.filteredData.some(item => item.selected && this.isModeData(item));
+    },
+    
+    // 是否有预览数据
+    hasPreview() {
+      return this.dataSection.previewData.totalCount > 0;
+    }
   },
 
   actions: {
+    // ------------------------------
+    // 整合modeUtils的路由与模式管理功能
+    // ------------------------------
+    
+    // 初始化路由实例
+    initRouter(router) {
+      routerInstance = router;
+    },
+
+    // 生成模式页面
+    generateModePage(mode) {
+      if (!routerInstance) {
+        console.error('路由实例未初始化，请先调用initRouter()');
+        return null;
+      }
+      
+      if (!mode || !mode.id) {
+        console.error('生成模式页面失败：缺少模式ID');
+        return null;
+      }
+      
+      // 标准化路由路径
+      const standardizedPath = `/mode/${mode.id}`;
+      const modeWithStandardPath = { ...mode, routePath: standardizedPath };
+      
+      const modeComponent = {
+        id: modeWithStandardPath.id,
+        name: `${modeWithStandardPath.id}-component`,
+        path: modeWithStandardPath.routePath,
+        component: this.createModeComponent(modeWithStandardPath)
+      };
+      
+      this.registerModeRoute(modeComponent);
+      this.saveGeneratedMode(modeComponent);
+      
+      console.log(`已生成模式页面: ${mode.name} (${mode.id})`);
+      return modeComponent;
+    },
+
+    // 创建模式组件
+    createModeComponent(mode) {
+      return {
+        template: `<OtherModeTemplate :mode-id="modeId" />`,
+        data() {
+          return { modeId: mode.id };
+        },
+        components: { OtherModeTemplate }
+      };
+    },
+
+    // 注册模式路由
+    registerModeRoute(modeComponent) {
+      if (!routerInstance) return;
+      
+      const routeExists = routerInstance.getRoutes().some(
+        route => route.path === modeComponent.path
+      );
+      
+      if (!routeExists) {
+        routerInstance.addRoute({
+          path: modeComponent.path,
+          name: modeComponent.name,
+          component: modeComponent.component,
+          meta: { modeId: modeComponent.id, requiresAuth: true }
+        });
+      }
+    },
+
+    // 保存生成的模式
+    saveGeneratedMode(modeComponent) {
+      let generatedModes = JSON.parse(localStorage.getItem('generated_modes') || '[]');
+      
+      const index = generatedModes.findIndex(m => m.id === modeComponent.id);
+      if (index !== -1) {
+        generatedModes[index] = modeComponent;
+      } else {
+        generatedModes.push({
+          id: modeComponent.id,
+          name: modeComponent.name,
+          path: modeComponent.path
+        });
+      }
+      
+      localStorage.setItem('generated_modes', JSON.stringify(generatedModes));
+    },
+
+    // 删除模式页面
+    deleteModePage(modeId) {
+      if (!routerInstance) return;
+      
+      // 从路由中移除
+      const route = routerInstance.getRoutes().find(r => r.meta?.modeId === modeId);
+      if (route) {
+        routerInstance.removeRoute(route.name);
+      }
+      
+      // 从存储中移除
+      let generatedModes = JSON.parse(localStorage.getItem('generated_modes') || '[]');
+      generatedModes = generatedModes.filter(m => m.id !== modeId);
+      localStorage.setItem('generated_modes', JSON.stringify(generatedModes));
+      
+      console.log(`已彻底删除模式页面数据: ${modeId}`);
+    },
+
+    // 加载已生成的模式
+    loadGeneratedModes() {
+      return JSON.parse(localStorage.getItem('generated_modes') || '[]');
+    },
+
+    // 跳转到模式页面
+    navigateToMode(modeId) {
+      if (!routerInstance) {
+        console.error('路由实例未初始化');
+        return;
+      }
+      
+      const targetPath = `/mode/${modeId}`;
+      routerInstance.push(targetPath).catch(err => {
+        if (!err.message.includes('Avoided redundant navigation')) {
+          console.error('导航到模式页面失败:', err);
+        }
+      });
+    },
+
+    // 发送反馈到主模式
+    sendFeedbackToRoot(modeId, feedback) {
+      const rootMode = this.getMode('root_admin');
+      
+      if (!rootMode.feedback) {
+        rootMode.feedback = {};
+      }
+      
+      if (!rootMode.feedback[modeId]) {
+        rootMode.feedback[modeId] = [];
+      }
+      
+      rootMode.feedback[modeId].push({
+        ...feedback,
+        timestamp: new Date().toISOString()
+      });
+      
+      this.saveModesToStorage();
+    },
+
+    // 校验同步权限
+    checkSyncPermission(sourceModeId, targetModeId) {
+      // 强制只有root_admin可以作为数据源
+      if (sourceModeId !== 'root_admin') {
+        console.warn('权限校验失败：只有root_admin可以作为同步源');
+        return false;
+      }
+      
+      // 不能同步到自己
+      if (sourceModeId === targetModeId) {
+        console.warn('权限校验失败：不能同步到自身模式');
+        return false;
+      }
+      
+      const targetMode = this.getMode(targetModeId);
+      if (!targetMode) {
+        console.warn(`权限校验失败：目标模式${targetModeId}不存在`);
+        return false;
+      }
+      
+      return true;
+    },
+
+    // 处理值
+    processValue(value) {
+      if (value === '' || value === undefined) {
+        return null;
+      }
+      if (typeof value === 'string' && value.trim().toLowerCase() === 'null') {
+        throw new Error('不允许输入"null"字符串，请留空表示空值');
+      }
+      return value;
+    },
+
+    // 检查字段是否同步
+    isFieldSynced(field, syncFields) {
+      if ([
+        FIELD_IDS.OPTIONS, 
+        FIELD_IDS.SELECT_OPTIONS,
+        FIELD_IDS.CARD_COUNT,
+        FIELD_IDS.CARD_ORDER,
+        FIELD_IDS.DATA_SECTION_ID,
+        FIELD_IDS.SECTION_ITEMS
+      ].includes(field)) {
+        return true;
+      }
+      return syncFields.includes(field);
+    },
+
+    // 主协调函数
+    coordinateMode(linkageConfig) {
+      const { 
+        sourceModeId, 
+        sourceData, 
+        targetModeIds, 
+        syncFields, 
+        authFields 
+      } = linkageConfig;
+      
+      // 初始化源数据（如果未提供）
+      const resolvedSourceData = sourceData || {
+        cards: this.sessionCards.map((card, index) => ({
+          id: card.id,
+          showDropdown: card.showDropdown,
+          data: {
+            title: card.data.title,
+            options: card.data.options,
+            selectOptions: card.data.selectOptions,
+            selectedValue: card.data.selectedValue,
+            showSelect: card.data.showSelect || true
+          },
+          cardIndex: index,
+          optionCount: card.data.options.length
+        })),
+        timestamp: new Date().toISOString()
+      };
+      
+      // 前置校验
+      if (sourceModeId !== 'root_admin') {
+        throw new Error('只有root_admin可以作为同步源');
+      }
+      if (!Array.isArray(targetModeIds) || targetModeIds.length === 0) {
+        throw new Error('目标模式列表不能为空');
+      }
+      if (!resolvedSourceData?.cards || !Array.isArray(resolvedSourceData.cards)) {
+        throw new Error('源数据格式错误，cards必须是数组');
+      }
+      
+      // 验证同步字段
+      const validSyncFields = [...Object.values(FIELD_IDS)];
+      syncFields.forEach(field => {
+        if (!validSyncFields.includes(field)) {
+          throw new Error(`无效的同步字段: ${field}，允许的字段：${validSyncFields.join(',')}`);
+        }
+      });
+      
+      let successCount = 0;
+      
+      // 同步到目标模式
+      targetModeIds.forEach(targetId => {
+        if (this.checkSyncPermission(sourceModeId, targetId)) {
+          try {
+            this.syncToTargetMode(
+              sourceModeId, 
+              targetId, 
+              resolvedSourceData, 
+              syncFields, 
+              authFields
+            );
+            dataManager.saveMode(targetId);
+            successCount++;
+            console.log(`已完成root_admin到${targetId}的完整同步`);
+          } catch (error) {
+            console.error(`同步到${targetId}失败：`, error);
+          }
+        }
+      });
+      
+      // 同步完成后通知dataManager
+      dataManager.syncComplete();
+      
+      return {
+        success: successCount > 0,
+        total: targetModeIds.length,
+        successCount: successCount
+      };
+    },
+
+    // 同步到目标模式
+    syncToTargetMode(sourceId, targetId, sourceData, syncFields, authFields) {
+      const targetMode = this.getMode(targetId);
+      
+      if (!targetMode) return;
+      
+      // 确保目标模式有cardData数组
+      if (!Array.isArray(targetMode.cardData)) {
+        targetMode.cardData = [];
+      }
+      
+      // 卡片数量同步
+      targetMode.cardData = targetMode.cardData.filter(targetCard => 
+        sourceData.cards.some(sourceCard => sourceCard.id === targetCard.id)
+      );
+      
+      // 同步每张卡片的数据
+      sourceData.cards.forEach((sourceCard, cardIndex) => {
+        const cardToSync = {
+          id: sourceCard.id,
+          showDropdown: sourceCard.showDropdown ?? false,
+          isTitleEditing: false,
+          isOptionsEditing: false,
+          isSelectEditing: false,
+          orderIndex: cardIndex,
+          editableFields: {
+            [FIELD_IDS.CARD_TITLE]: authFields.includes(FIELD_IDS.CARD_TITLE),
+            [FIELD_IDS.OPTION_NAME]: authFields.includes(FIELD_IDS.OPTION_NAME),
+            [FIELD_IDS.OPTION_VALUE]: authFields.includes(FIELD_IDS.OPTION_VALUE),
+            [FIELD_IDS.OPTION_UNIT]: authFields.includes(FIELD_IDS.OPTION_UNIT),
+            [FIELD_IDS.SECTION_TITLE]: authFields.includes(FIELD_IDS.SECTION_TITLE),
+            [FIELD_IDS.SECTION_ITEMS]: authFields.includes(FIELD_IDS.SECTION_ITEMS),
+            optionActions: false,
+            select: false
+          },
+          syncStatus: {
+            [FIELD_IDS.CARD_TITLE]: this.isFieldSynced(FIELD_IDS.CARD_TITLE, syncFields),
+            [FIELD_IDS.OPTION_NAME]: this.isFieldSynced(FIELD_IDS.OPTION_NAME, syncFields),
+            [FIELD_IDS.OPTION_VALUE]: this.isFieldSynced(FIELD_IDS.OPTION_VALUE, syncFields),
+            [FIELD_IDS.OPTION_UNIT]: this.isFieldSynced(FIELD_IDS.OPTION_UNIT, syncFields),
+            [FIELD_IDS.SECTION_TITLE]: this.isFieldSynced(FIELD_IDS.SECTION_TITLE, syncFields),
+            [FIELD_IDS.SECTION_ITEMS]: this.isFieldSynced(FIELD_IDS.SECTION_ITEMS, syncFields),
+            [FIELD_IDS.OPTIONS]: true,
+            [FIELD_IDS.SELECT_OPTIONS]: true,
+            [FIELD_IDS.CARD_COUNT]: true,
+            [FIELD_IDS.CARD_ORDER]: true
+          },
+          data: {
+            title: null,
+            options: [],
+            selectOptions: [],
+            selectedValue: sourceCard.data?.selectedValue ?? '',
+            showSelect: sourceCard.data?.showSelect ?? true
+          }
+        };
+        
+        // 处理现有目标卡片
+        const existingTargetCard = targetMode.cardData.find(c => c.id === sourceCard.id);
+        const targetOptions = existingTargetCard ? [...existingTargetCard.data.options] : [];
+        
+        // 选项数据同步
+        sourceCard.data.options.forEach(sourceOption => {
+          const existingOption = targetOptions.find(o => o.id === sourceOption.id);
+          
+          const processedOption = {
+            id: sourceOption.id || Date.now() + Math.random(),
+            name: this.isFieldSynced(FIELD_IDS.OPTION_NAME, syncFields)
+              ? this.processValue(sourceOption.name)
+              : (existingOption?.name ?? null),
+            value: this.isFieldSynced(FIELD_IDS.OPTION_VALUE, syncFields)
+              ? this.processValue(sourceOption.value)
+              : (existingOption?.value ?? null),
+            unit: this.isFieldSynced(FIELD_IDS.OPTION_UNIT, syncFields)
+              ? this.processValue(sourceOption.unit)
+              : (existingOption?.unit ?? null),
+            checked: sourceOption.checked !== undefined 
+              ? sourceOption.checked 
+              : (existingOption?.checked ?? false),
+            localName: existingOption?.localName ?? null,
+            localValue: existingOption?.localValue ?? null,
+            localUnit: existingOption?.localUnit ?? null
+          };
+          
+          if (existingOption) {
+            Object.assign(existingOption, processedOption);
+          } else {
+            targetOptions.push(processedOption);
+          }
+        });
+        
+        // 确保选项顺序
+        cardToSync.data.options = targetOptions.sort((a, b) => {
+          const indexA = sourceCard.data.options.findIndex(option => option.id === a.id);
+          const indexB = sourceCard.data.options.findIndex(option => option.id === b.id);
+          return indexA - indexB;
+        });
+        
+        // 下拉菜单同步
+        cardToSync.data.selectOptions = (sourceCard.data?.selectOptions || []).map(option => ({
+          id: option.id || Date.now() + Math.random(),
+          label: this.processValue(option.label),
+          localLabel: existingTargetCard?.data?.selectOptions?.find(o => o.id === option.id)?.localLabel ?? null
+        }));
+        
+        // 卡片标题同步
+        cardToSync.data.title = this.isFieldSynced(FIELD_IDS.CARD_TITLE, syncFields)
+          ? this.processValue(sourceCard.data?.title)
+          : (existingTargetCard?.data?.title ?? null);
+        cardToSync.data.localTitle = existingTargetCard?.data?.localTitle ?? null;
+        
+        // 更新或新增卡片
+        const targetCardIndex = targetMode.cardData.findIndex(c => c.id === sourceCard.id);
+        if (targetCardIndex > -1) {
+          targetMode.cardData[targetCardIndex] = {
+            ...targetMode.cardData[targetCardIndex],
+            ...cardToSync,
+            data: {
+              ...targetMode.cardData[targetCardIndex].data,
+              ...cardToSync.data
+            }
+          };
+        } else {
+          targetMode.cardData.push(cardToSync);
+        }
+      });
+      
+      // 确保卡片顺序
+      targetMode.cardData.sort((a, b) => a.orderIndex - b.orderIndex);
+      
+      // 更新模式元数据
+      targetMode.lastSynced = new Date().toISOString();
+      targetMode.source = 'root_admin';
+      targetMode.syncFields = [...syncFields];
+      targetMode.authFields = [...authFields];
+      targetMode.syncCompleted = true;
+      
+      // 保存更新后的模式
+      this.saveModesToStorage();
+    },
+
+    // ------------------------------
+    // 原有store.js的功能
+    // ------------------------------
+    
     // 初始化
     async initialize() {
       this.loading = true;
@@ -249,6 +866,9 @@ export const useCardStore = defineStore('data', {
         this.loadPresetMappings();
         this.tempCards = [];
 
+        // 初始化模式路由
+        this.initializeModeRoutes();
+
         window.addEventListener('storage', (e) => {
           if (e.key?.startsWith(this.sessionStorageEnhancer.sessionId) && e.key.includes(this.currentModeId)) {
             this.loadSessionCards(this.currentModeId);
@@ -261,6 +881,154 @@ export const useCardStore = defineStore('data', {
       } finally {
         this.loading = false;
       }
+    },
+
+    // 初始化模式路由
+    initializeModeRoutes() {
+      this.modes.forEach(mode => {
+        if (!this.modeRoutes[mode.id]) {
+          const routeName = `Mode-${mode.id}`;
+          const path = mode.path || `/mode/${mode.id}`;
+          this.modeRoutes[mode.id] = { routeName, path };
+        }
+      });
+    },
+
+    // 添加模式路由记录
+    addModeRoute(modeId, routeName, path) {
+      this.modeRoutes[modeId] = { routeName, path };
+    },
+
+    // 生成模式路由路径
+    generateModeRoutePath(modeId) {
+      return `/mode/${modeId}`;
+    },
+
+    // 获取模式路由信息
+    getModeRoute(modeId) {
+      return this.modeRoutes[modeId] || null;
+    },
+
+    // 模式联动控制相关方法
+    toggleModeDropdown() {
+      this.environmentConfigs.linkageControl.isModeDropdownOpen = 
+        !this.environmentConfigs.linkageControl.isModeDropdownOpen;
+    },
+    
+    selectMode(modeName) {
+      this.environmentConfigs.linkageControl.selectedMode = modeName;
+      this.environmentConfigs.linkageControl.isModeDropdownOpen = false;
+    },
+    
+    togglePrepareStatus() {
+      if (this.environmentConfigs.linkageControl.isInPrepareState) {
+        // 取消准备状态时重置选项
+        this.environmentConfigs.linkageControl.syncOptions.forEach(item => {
+          item.checked = false;
+        });
+        this.environmentConfigs.linkageControl.authOptions.forEach(item => {
+          item.checked = false;
+        });
+      }
+      this.environmentConfigs.linkageControl.isInPrepareState = 
+        !this.environmentConfigs.linkageControl.isInPrepareState;
+    },
+    
+    resetLinkageState() {
+      this.environmentConfigs.linkageControl.selectedMode = '';
+      this.environmentConfigs.linkageControl.isInPrepareState = false;
+      this.environmentConfigs.linkageControl.syncOptions.forEach(item => {
+        item.checked = false;
+      });
+      this.environmentConfigs.linkageControl.authOptions.forEach(item => {
+        item.checked = false;
+      });
+      this.linkageSync.currentLinkageConfig = null;
+    },
+    
+    confirmLinkage() {
+      // 找到目标模式ID
+      let targetModeIds = [];
+      if (this.environmentConfigs.linkageControl.selectedMode === '所有模式') {
+        targetModeIds = this.filteredModes.map(mode => mode.id);
+      } else {
+        const targetMode = this.modes.find(mode => mode.name === this.environmentConfigs.linkageControl.selectedMode);
+        if (targetMode) {
+          targetModeIds = [targetMode.id];
+        } else {
+          this.error = '未找到目标模式';
+          return null;
+        }
+      }
+      
+      // 构建联动配置
+      const linkageConfig = {
+        sourceModeId: this.currentModeId || 'root_admin',
+        targetMode: this.environmentConfigs.linkageControl.selectedMode,
+        targetModeIds: targetModeIds,
+        // 固定同步字段
+        fixedSync: FIXED_SYNC_FIELDS,
+        // 用户选择的同步字段（使用fieldId）
+        sync: this.environmentConfigs.linkageControl.syncOptions
+          .filter(item => item.checked)
+          .map(item => item.fieldId),
+        // 用户选择的授权字段（使用fieldId）
+        auth: this.environmentConfigs.linkageControl.authOptions
+          .filter(item => item.checked)
+          .map(item => item.fieldId),
+        timestamp: new Date().toISOString()
+      };
+      
+      // 保存当前联动配置
+      this.linkageSync.currentLinkageConfig = linkageConfig;
+      
+      // 执行同步 - 使用整合后的coordinateMode方法
+      const result = this.coordinateMode(linkageConfig);
+      
+      // 重置状态
+      this.resetLinkageState();
+      
+      return result;
+    },
+    
+    // 根据联动配置同步数据到目标模式
+    syncDataToTargets(linkageConfig) {
+      if (!linkageConfig || !linkageConfig.targetModeIds || linkageConfig.targetModeIds.length === 0) {
+        this.error = '无效的联动配置或目标模式';
+        return null;
+      }
+      
+      // 获取所有需要同步的卡片ID（当前会话中的所有卡片）
+      const cardIds = this.sessionCards.map(card => card.id);
+      
+      // 对每个目标模式执行同步
+      const results = [];
+      for (const targetModeId of linkageConfig.targetModeIds) {
+        const result = this.syncToMode(targetModeId, cardIds, {
+          sync: linkageConfig.sync,
+          auth: linkageConfig.auth
+        });
+        
+        if (result) {
+          results.push(result);
+        }
+      }
+      
+      // 记录同步历史
+      this.recordSyncHistory({
+        sourceModeId: linkageConfig.sourceModeId,
+        targetMode: linkageConfig.targetMode,
+        targetModeIds: linkageConfig.targetModeIds,
+        cardIds,
+        syncFields: linkageConfig.sync,
+        authFields: linkageConfig.auth
+      });
+      
+      return {
+        success: results.length > 0,
+        syncedModes: results.length,
+        details: results
+      };
     },
 
     // 1) root_admin
@@ -330,6 +1098,7 @@ export const useCardStore = defineStore('data', {
     async loadEnvironmentConfigs() {
       const configs = await this.dataManager.loadEnvironmentConfigs();
       this.environmentConfigs = {
+        ...this.environmentConfigs,
         cards: this.normalizeCards(configs.cards || {}),
         options: this.normalizeOptions(configs.options || {}),
         uiPresets: configs.uiPresets || [],
@@ -359,7 +1128,10 @@ export const useCardStore = defineStore('data', {
         cards: this.normalizeCards(configs.cards || this.environmentConfigs.cards),
         options: this.normalizeOptions(configs.options || this.environmentConfigs.options)
       };
-      this.environmentConfigs = normalizedConfigs;
+      this.environmentConfigs = {
+        ...this.environmentConfigs,
+        ...normalizedConfigs
+      };
       this.notifyEnvConfigChanged();
       return this.dataManager.saveEnvironmentConfigs(normalizedConfigs);
     },
@@ -555,7 +1327,7 @@ export const useCardStore = defineStore('data', {
         checkedOptionIds: checkedOptions.map(option => option.id),
         optionsData
       };
-      return this.savePresetMappings();
+      this.savePresetMappings();
     },
     applyPresetToCard(cardId, selectOptionId) {
       const cardPresets = this.presetMappings[cardId];
@@ -1249,6 +2021,7 @@ export const useCardStore = defineStore('data', {
       }
     },
 
+    // 添加模式
     addMode(modeData) {
       if (modeData.id === 'root_admin' || modeData.name === '根模式（源数据区）') {
         this.error = '不能创建与主模式同名或同ID的模式';
@@ -1267,15 +2040,33 @@ export const useCardStore = defineStore('data', {
         }
       };
       this.modes.push(newMode);
+      
+      // 为新模式创建路由
+      this.generateModePage(newMode);
+      
       localStorage.setItem('app_user_modes', JSON.stringify(this.modes));
       return newMode;
     },
 
+    // 删除模式
     deleteModes(modeIds) {
       const filteredIds = modeIds.filter(id => id !== 'root_admin');
       if (filteredIds.length === 0) return;
 
+      // 先删除相关路由
+      filteredIds.forEach(modeId => {
+        this.deleteModePage(modeId);
+      });
+
       this.modes = this.modes.filter(mode => !filteredIds.includes(mode.id));
+      
+      // 删除相关路由记录
+      filteredIds.forEach(modeId => {
+        if (this.modeRoutes[modeId]) {
+          delete this.modeRoutes[modeId];
+        }
+      });
+      
       localStorage.setItem('app_user_modes', JSON.stringify(this.modes));
 
       if (filteredIds.includes(this.currentModeId)) {
@@ -1283,18 +2074,21 @@ export const useCardStore = defineStore('data', {
       }
     },
 
-    setCurrentMode(modeId) {
-      const modeExists = modeId === 'root_admin' || this.modes.some(m => m.id === modeId);
-      if (!modeExists) return;
-
-      if (this.currentModeId) {
-        this.saveSessionCards(this.currentModeId);
+    // 获取模式
+    getMode(modeId) {
+      if (modeId === 'root_admin') {
+        return this.rootMode;
       }
+      return this.modes.find(mode => mode.id === modeId) || null;
+    },
 
-      this.currentModeId = modeId;
-      this.loadSessionCards(modeId);
-      this.tempCards = [];
-      this.selectedCardId = null;
+    // 保存模式到存储
+    saveModesToStorage() {
+      localStorage.setItem('app_user_modes', JSON.stringify(this.modes));
+      localStorage.setItem('root_mode_config', JSON.stringify({
+        cardData: this.rootMode.cardData, 
+        dataStandards: this.rootMode.dataStandards
+      }));
     },
 
     // 联动同步（主接口）
@@ -1446,7 +2240,258 @@ export const useCardStore = defineStore('data', {
 
       this.saveSessionCards(modeId);
       return true;
+    },
+
+    // ------------------------------
+    // 数据段管理相关方法（来自DataSectionStore）
+    // ------------------------------
+    
+    // 工具方法：判断是否为模式数据
+    isModeData(item) {
+      return item.isModeData || item.dataType === 'root' || item.dataType === 'other-mode';
+    },
+
+    // 生成数据项提示信息
+    generateTooltip(item) {
+      let tooltip = `ID: ${item.id}\n类型: ${item.typeText}\n模式: ${item.modeId}`;
+      
+      if (this.isRootMode && item.syncStatus) {
+        tooltip += `\n同步状态: ${this.getSyncText(item.syncStatus)}`;
+      }
+      
+      if (item.summary) {
+        tooltip += `\n内容: ${item.summary}`;
+      }
+      
+      return tooltip;
+    },
+
+    // 获取模式样式类名
+    getModeClass(item) {
+      if (item.dataType === 'root') return 'mode-root';
+      if (item.dataType === 'other-mode') return 'mode-other';
+      if (item.modeId === this.currentModeId) return 'mode-current';
+      return '';
+    },
+
+    // 获取同步状态文本
+    getSyncText(status) {
+      if (!status) return '未同步';
+      if (status.hasConflict) return '冲突';
+      return status.hasSync ? '已同步' : '未同步';
+    },
+
+    // 获取同步状态样式
+    getSyncClass(status) {
+      if (!status) return 'sync-unsynced';
+      if (status.hasConflict) return 'sync-conflict';
+      return status.hasSync ? 'sync-synced' : 'sync-unsynced';
+    },
+
+    // 检查是否可以编辑数据项
+    canEditItem(item) {
+      const currentMode = this.currentMode;
+      if (!currentMode || !currentMode.permissions) return false;
+      
+      if (item.dataType === 'question') {
+        return currentMode.permissions.card?.editOptions || false;
+      }
+      if (item.dataType === 'config') {
+        return currentMode.permissions.data?.save || false;
+      }
+      return false;
+    },
+
+    // 检查同步状态是否符合筛选条件
+    checkSyncStatus(syncStatus, filter) {
+      if (!syncStatus) return filter === 'unsynced';
+      
+      switch(filter) {
+        case 'synced':
+          return syncStatus.hasSync;
+        case 'unsynced':
+          return !syncStatus.hasSync;
+        case 'conflict':
+          return syncStatus.hasConflict;
+        default:
+          return true;
+      }
+    },
+
+    // 更新选中数量
+    updateSelected() {
+      const count = this.filteredData.filter(item => item.selected && !this.isModeData(item)).length;
+      this.dataSection.selectedCount = count;
+      this.dataSection.selectAll = count > 0 && count === this.filteredData.filter(item => !this.isModeData(item)).length;
+    },
+
+    // 全选/取消全选
+    handleSelectAll() {
+      this.filteredData.forEach(item => {
+        if (!this.isModeData(item)) item.selected = this.dataSection.selectAll;
+      });
+      this.updateSelected();
+    },
+
+    // 删除单个数据项
+    async deleteItem(item) {
+      if (this.isModeData(item)) return;
+      
+      if (confirm(`确定要删除 ${item.id || '该数据'} 吗？`)) {
+        if (item.dataType === 'config') {
+          const configs = await this.dataManager.loadEnvironmentConfigs();
+          configs.contextTemplates = configs.contextTemplates
+            .filter(template => template.questionId !== item.id);
+          await this.dataManager.saveEnvironmentConfigs(configs);
+          await this.loadEnvironmentConfigs(); // 重新加载配置
+        } else if (item.dataType === 'question') {
+          const bank = await this.dataManager.loadQuestionBank();
+          bank.questions = bank.questions.filter(q => q.id !== item.id);
+          await this.dataManager.saveQuestionBank(bank);
+          await this.loadQuestionBank(); // 重新加载题库
+        }
+      }
+    },
+
+    // 删除选中的数据项
+    async deleteSelected() {
+      if (this.dataSection.selectedCount === 0 || this.hasModeDataSelected) return;
+      
+      if (confirm(`确定要删除选中的 ${this.dataSection.selectedCount} 条数据吗？`)) {
+        // 加载当前数据
+        const configs = await this.dataManager.loadEnvironmentConfigs();
+        const bank = await this.dataManager.loadQuestionBank();
+        
+        // 处理删除
+        this.filteredData.forEach(item => {
+          if (item.selected && !this.isModeData(item)) {
+            if (item.dataType === 'config') {
+              configs.contextTemplates = configs.contextTemplates
+                .filter(template => template.questionId !== item.id);
+            } else if (item.dataType === 'question') {
+              bank.questions = bank.questions.filter(q => q.id !== item.id);
+            }
+          }
+        });
+        
+        // 保存更改
+        await this.dataManager.saveEnvironmentConfigs(configs);
+        await this.dataManager.saveQuestionBank(bank);
+        
+        // 重新加载数据
+        await this.loadEnvironmentConfigs();
+        await this.loadQuestionBank();
+        
+        this.dataSection.selectAll = false;
+        this.dataSection.selectedCount = 0;
+      }
+    },
+
+    // 从文件导入数据
+    async importDataFromFile(file) {
+      try {
+        const importedData = await this.dataManager.importFromFile(file);
+        let configs = [];
+        let questions = [];
+        
+        if (importedData.questions) {
+          questions = importedData.questions.map(q => this.normalizeQuestion(q));
+        }
+        
+        if (importedData.contextTemplates) {
+          configs = importedData.contextTemplates;
+        }
+        
+        this.dataSection.previewData = {
+          configs,
+          questions,
+          totalCount: configs.length + questions.length
+        };
+        this.dataSection.isPreview = true;
+        
+        return this.dataSection.previewData;
+      } catch (err) {
+        console.error('导入数据失败:', err);
+        throw new Error(`导入失败: ${err.message}`);
+      }
+    },
+
+    // 导出数据（复用原有方法，保持一致性）
+    async exportDataSection() {
+      return this.exportData(`data-section-export-${new Date().getTime()}.json`);
+    },
+
+    // 应用预览数据
+    async applyPreview() {
+      if (this.dataSection.previewData.totalCount === 0) return;
+      
+      // 加载当前数据
+      const bank = await this.dataManager.loadQuestionBank();
+      const configs = await this.dataManager.loadEnvironmentConfigs();
+      
+      if (this.dataSection.previewData.questions.length > 0) {
+        // 添加新题目
+        const normalizedQuestions = this.dataSection.previewData.questions.map(q => 
+          this.dataManager.normalizeQuestion(q)
+        );
+        bank.questions = [...bank.questions, ...normalizedQuestions];
+        await this.dataManager.saveQuestionBank(bank);
+        await this.dataManager.saveQuestionBank(bank);
+        await this.loadQuestionBank(); // 重新加载题库
+      }
+      
+      if (this.dataSection.previewData.configs.length > 0) {
+        // 添加或更新配置
+        this.dataSection.previewData.configs.forEach(config => {
+          const index = configs.contextTemplates
+            .findIndex(t => t.questionId === config.questionId);
+          
+          if (index >= 0) {
+            configs.contextTemplates[index] = config;
+          } else {
+            configs.contextTemplates.push(config);
+          }
+        });
+        await this.dataManager.saveEnvironmentConfigs(configs);
+        await this.loadEnvironmentConfigs(); // 重新加载配置
+      }
+      
+      this.dataSection.previewData = { configs: [], questions: [], totalCount: 0 };
+      this.dataSection.isPreview = false;
+      alert(`已导入 ${this.dataSection.previewData.questions.length} 条题目和 ${this.dataSection.previewData.configs.length} 条环境配置`);
+    },
+
+    // 取消预览
+    cancelPreview() {
+      this.dataSection.previewData = { configs: [], questions: [], totalCount: 0 };
+      this.dataSection.isPreview = false;
+    },
+
+    // 切换管理模式
+    toggleManager() {
+      this.dataSection.isManager = !this.dataSection.isManager;
+      if (!this.dataSection.isManager) {
+        this.filteredData.forEach(item => item.selected = false);
+        this.dataSection.selectAll = false;
+        this.dataSection.selectedCount = 0;
+      }
+    },
+
+    // 清除筛选条件
+    clearFilters() {
+      this.dataSection.filterType = 'all';
+      this.dataSection.syncFilter = 'all';
+    },
+
+    // 规范化题目数据
+    normalizeQuestion(question) {
+      return this.dataManager.normalizeQuestion(question);
+    },
+
+    // 设置当前模式（新增辅助方法，用于数据段管理）
+    setCurrentMode(modeId) {
+      this.currentModeId = modeId;
+      this.loadSessionCards(modeId);
     }
   }
 });
-    

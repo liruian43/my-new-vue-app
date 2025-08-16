@@ -2,8 +2,8 @@ import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 import router from './router'
 import App from './App.vue'
-// 导入路由初始化函数
-import { initRouter } from './utils/generateModePage'
+
+// 移除generateModePage相关导入
 
 const app = createApp(App)
 const pinia = createPinia()
@@ -11,7 +11,6 @@ const pinia = createPinia()
 app.use(pinia)
 app.use(router)
 
-// 初始化路由实例，供generateModePage使用
-initRouter(router)
+// 移除路由初始化调用
 
 app.mount('#app')

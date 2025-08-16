@@ -4,21 +4,21 @@
     <div class="mode-selector">
       <button 
         class="selector-button" 
-        @click="toggleModeDropdown"
+        @click="cardStore.toggleModeDropdown"
       >
-        {{ selectedMode || '选择模式' }}
-        <i class="fa fa-chevron-down" :class="{ 'rotate': isModeDropdownOpen }"></i>
+        {{ cardStore.environmentConfigs.linkageControl.selectedMode || '选择模式' }}
+        <i class="fa fa-chevron-down" :class="{ 'rotate': cardStore.environmentConfigs.linkageControl.isModeDropdownOpen }"></i>
       </button>
       
       <!-- 下拉菜单 -->
       <div 
         class="mode-dropdown" 
-        v-if="isModeDropdownOpen"
+        v-if="cardStore.environmentConfigs.linkageControl.isModeDropdownOpen"
       >
         <!-- 本组件特有的"所有模式"选项 -->
         <div 
           class="mode-option" 
-          @click="selectMode('所有模式')"
+          @click="cardStore.selectMode('所有模式')"
         >
           所有模式
         </div>
@@ -26,9 +26,9 @@
         <!-- 使用过滤过滤后的的模式列表 -->
         <div 
           class="mode-option" 
-          v-for="mode in filteredModes" 
+          v-for="mode in cardStore.filteredModes" 
           :key="mode.id"
-          @click="selectMode(mode.name)"
+          @click="cardStore.selectMode(mode.name)"
         >
           {{ mode.name }}
           <span v-if="mode.includeDataSection" class="data-badge">含数据</span>
@@ -39,10 +39,10 @@
     <!-- 准备/取消联动按钮 -->
     <button 
       class="action-button prepare-button"
-      :disabled="!selectedMode || !cardStore.currentModeId"
-      @click="togglePrepareStatus"
+      :disabled="!cardStore.environmentConfigs.linkageControl.selectedMode || !cardStore.currentModeId"
+      @click="cardStore.togglePrepareStatus"
     >
-      {{ isInPrepareState ? '取消联动' : '准备联动' }}
+      {{ cardStore.environmentConfigs.linkageControl.isInPrepareState ? '取消联动' : '准备联动' }}
     </button>
 
     <!-- 同步选项区域 -->
@@ -54,14 +54,14 @@
         </div>
         <div 
           class="option-item" 
-          v-for="syncItem in syncOptions" 
+          v-for="syncItem in cardStore.environmentConfigs.linkageControl.syncOptions" 
           :key="syncItem.id"
         >
           <input 
             type="checkbox" 
             :id="`sync-${syncItem.id}`"
             v-model="syncItem.checked"
-            :disabled="!isInPrepareState"
+            :disabled="!cardStore.environmentConfigs.linkageControl.isInPrepareState"
           >
           <label :for="`sync-${syncItem.id}`">{{ syncItem.name }}</label>
         </div>
@@ -72,14 +72,14 @@
         <span class="group-label">授权(控制编辑):</span>
         <div 
           class="option-item" 
-          v-for="authItem in authOptions" 
+          v-for="authItem in cardStore.environmentConfigs.linkageControl.authOptions" 
           :key="authItem.id"
         >
           <input 
             type="checkbox" 
             :id="`auth-${authItem.id}`"
             v-model="authItem.checked"
-            :disabled="!isInPrepareState"
+            :disabled="!cardStore.environmentConfigs.linkageControl.isInPrepareState"
           >
           <label :for="`auth-${authItem.id}`">{{ authItem.name }}</label>
         </div>
@@ -89,8 +89,8 @@
     <!-- 确认联动按钮 -->
     <button 
       class="action-button confirm-button"
-      :disabled="!canConfirmLinkage"
-      @click="confirmLinkage"
+      :disabled="!cardStore.canConfirmLinkage"
+      @click="handleConfirmLinkage"
     >
       确认联动
     </button>
@@ -98,125 +98,39 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, defineEmits } from 'vue';
-// 与App.vue完全相同的方式引入数据源
 import { useCardStore } from '@/components/Data/store';
+import { watch } from 'vue';
 
-// 与App.vue完全相同的方式获取store实例
+// 获取store实例
 const cardStore = useCardStore();
 
-// 组件内部独立状态（与App.vue无任何共享）
-const isModeDropdownOpen = ref(false);
-const selectedMode = ref('');
-const isInPrepareState = ref(false);
-
-// 与App.vue完全相同的方式获取模式列表
-const modes = computed(() => cardStore.modes);
-
-// 新增计算属性过滤掉ID为root_admin的模式
-const filteredModes = computed(() => {
-  return modes.value.filter(mode => mode.id !== 'root_admin');
-});
-
-// 同步选项（控制是否展示内容）- 新增fieldId映射系统允许的字段ID
-const syncOptions = ref([
-  { id: 1, name: '卡片标题', fieldId: 'title', checked: false },
-  { id: 2, name: '选项名称', fieldId: 'optionName', checked: false },
-  { id: 3, name: '选项值', fieldId: 'optionValue', checked: false },
-  { id: 4, name: '选项单位', fieldId: 'optionUnit', checked: false }
-]);
-
-// 授权选项（控制是否允许编辑）- 新增fieldId映射系统允许的字段ID
-const authOptions = ref([
-  { id: 1, name: '卡片标题', fieldId: 'title', checked: false },
-  { id: 2, name: '选项名称', fieldId: 'optionName', checked: false },
-  { id: 3, name: '选项值', fieldId: 'optionValue', checked: false },
-  { id: 4, name: '选项单位', fieldId: 'optionUnit', checked: false },
-  { id: 5, name: '复选框', fieldId: 'checkbox', checked: false }
-]);
-
-// 组件内部方法（不影响任何其他组件）
-const toggleModeDropdown = () => {
-  isModeDropdownOpen.value = !isModeDropdownOpen.value;
-};
-
-const selectMode = (modeName) => {
-  selectedMode.value = modeName;
-  isModeDropdownOpen.value = false;
-};
-
-const togglePrepareStatus = () => {
-  if (isInPrepareState.value) {
-    syncOptions.value.forEach(item => item.checked = false);
-    authOptions.value.forEach(item => item.checked = false);
+// 处理确认联动
+const handleConfirmLinkage = () => {
+  const result = cardStore.confirmLinkage();
+  if (result && result.success) {
+    alert(`已成功联动至 ${cardStore.environmentConfigs.linkageControl.selectedMode}`);
+  } else if (cardStore.error) {
+    alert(cardStore.error);
   }
-  isInPrepareState.value = !isInPrepareState.value;
-};
-
-const canConfirmLinkage = computed(() => {
-  if (!isInPrepareState.value || !selectedMode.value || !cardStore.currentModeId) return false;
-  
-  // 固定同步项无需勾选也可确认
-  return true;
-});
-
-const confirmLinkage = () => {
-  // 找到目标模式ID
-  let targetModeIds = [];
-  if (selectedMode.value === '所有模式') {
-    targetModeIds = filteredModes.value.map(mode => mode.id);
-  } else {
-    const targetMode = modes.value.find(mode => mode.name === selectedMode.value);
-    if (targetMode) {
-      targetModeIds = [targetMode.id];
-    } else {
-      alert('未找到目标模式');
-      return;
-    }
-  }
-  
-  // 构建联动配置，使用fieldId替代显示名称传递给协调器
-  const linkageConfig = {
-    sourceModeId: cardStore.currentModeId || 'root_admin',
-    targetMode: selectedMode.value,
-    targetModeIds: targetModeIds,
-    // 固定同步字段（映射为系统允许的ID）
-    fixedSync: ['cardCount', 'options', 'cardOrder', 'selectOptions'],
-    // 用户选择的同步字段（使用fieldId）
-    sync: syncOptions.value.filter(item => item.checked).map(item => item.fieldId),
-    // 用户选择的授权字段（使用fieldId）
-    auth: authOptions.value.filter(item => item.checked).map(item => item.fieldId),
-    timestamp: new Date().toISOString()
-  };
-  
-  emit('confirm-linkage', linkageConfig);
-  resetLinkageState();
-  alert(`已成功联动至 ${selectedMode.value}`);
-};
-
-const resetLinkageState = () => {
-  selectedMode.value = '';
-  isInPrepareState.value = false;
-  syncOptions.value.forEach(item => item.checked = false);
-  authOptions.value.forEach(item => item.checked = false);
 };
 
 // 监听过滤后的模式列表变化
-watch(filteredModes, (newModes) => {
-  if (selectedMode.value && selectedMode.value !== '所有模式') {
-    const modeExists = newModes.some(mode => mode.name === selectedMode.value);
-    if (!modeExists) {
-      selectedMode.value = '';
-      isInPrepareState.value = false;
+watch(
+  () => cardStore.filteredModes,
+  (newModes) => {
+    const selectedMode = cardStore.environmentConfigs.linkageControl.selectedMode;
+    if (selectedMode && selectedMode !== '所有模式') {
+      const modeExists = newModes.some(mode => mode.name === selectedMode);
+      if (!modeExists) {
+        cardStore.resetLinkageState();
+      }
     }
   }
-});
-
-const emit = defineEmits(['confirm-linkage']);
+);
 </script>
 
 <style scoped>
-/* 样式保持不变，仅添加固定同步提示样式 */
+/* 样式保持不变 */
 .mode-linkage-control {
   display: flex;
   align-items: center;
@@ -396,4 +310,3 @@ const emit = defineEmits(['confirm-linkage']);
   }
 }
 </style>
-    

@@ -82,11 +82,9 @@
 import { ref, computed, onMounted } from 'vue';
 import { useCardStore } from '../components/Data/store';
 import { v4 as uuidv4 } from 'uuid';
-import { generateModePage, deleteModePage } from '../utils/generateModePage';
-// 导入ModeLinkageControl组件
+// 移除直接的utils导入，改为通过store调用
 import ModeLinkageControl from '../components/ModeLinkageControl.vue';
 import { useRoute } from 'vue-router';
-import { coordinateMode } from '../utils/modeCoordinator';
 
 // 路由判断逻辑：仅匹配/root_admin及其所有子路径
 const route = useRoute();
@@ -161,9 +159,9 @@ const handleDeleteSelectedModes = () => {
     try {
       // 调用store删除模式（仅模式记录）
       cardStore.deleteModes(modesToDelete);
-      // 删除对应的模式页面文件
+      // 通过store删除对应的模式页面文件（原直接调用deleteModePage）
       modesToDelete.forEach(modeId => {
-        deleteModePage(modeId);
+        cardStore.deleteModePage(modeId);
       });
       // 重置状态
       selectedModeIds.value = [];
@@ -203,8 +201,8 @@ const createMode = () => {
     // 添加到存储
     const createdMode = cardStore.addMode(newMode);
     if (createdMode) {
-      // 生成模式页面
-      generateModePage(createdMode);
+      // 通过store生成模式页面（原直接调用generateModePage）
+      cardStore.generateModePage(createdMode);
       // 重置表单
       newModeName.value = '';
       isCreating.value = false;
@@ -255,7 +253,8 @@ const handleLinkage = (config) => {
     timestamp: new Date().toISOString()
   };
   
-  coordinateMode({
+  // 通过store调用联动处理（原直接调用coordinateMode）
+  cardStore.coordinateMode({
     sourceModeId: 'root_admin',
     sourceData: sourceData,
     targetMode: config.targetMode,

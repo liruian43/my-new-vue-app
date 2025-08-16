@@ -120,7 +120,6 @@
 import { ref, computed, onMounted } from 'vue';
 import { useCardStore } from '../Data/store';
 import UniversalCard from '../UniversalCard/UniversalCard.vue';
-import { FIELD_IDS } from '../../utils/constants';
 
 // 接收从路由传入的模式ID
 const props = defineProps({
