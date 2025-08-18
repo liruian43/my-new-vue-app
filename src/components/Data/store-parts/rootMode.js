@@ -1,3 +1,5 @@
+// src/components/Data/store-parts/rootMode.js
+
 export function initRootMode(store) {
   const storedRootConfig = localStorage.getItem('root_mode_config')
   if (storedRootConfig) {
@@ -8,6 +10,19 @@ export function initRootMode(store) {
         store.rootMode.dataStandards = { ...store.rootMode.dataStandards, ...config.dataStandards }
       }
     } catch (e) { console.error('加载主模式配置失败:', e) }
+  }
+  // 兜底：确保 tempOperations 存在
+  if (!store.rootMode) store.rootMode = {}
+  if (!store.rootMode.tempOperations || typeof store.rootMode.tempOperations !== 'object') {
+    store.rootMode.tempOperations = {
+      currentEditingQuestion: null,
+      configStep: 0,
+      validationStatus: {},
+      unsavedHistory: []
+    }
+  }
+  if (!Array.isArray(store.rootMode.tempOperations.unsavedHistory)) {
+    store.rootMode.tempOperations.unsavedHistory = []
   }
 }
 
@@ -20,6 +35,20 @@ export function saveDataStandards(store, standards) {
 }
 
 export function recordRootTempOperation(store, actionType, data) {
+  // 兜底初始化，避免未定义
+  if (!store.rootMode) store.rootMode = {}
+  if (!store.rootMode.tempOperations || typeof store.rootMode.tempOperations !== 'object') {
+    store.rootMode.tempOperations = {
+      currentEditingQuestion: null,
+      configStep: 0,
+      validationStatus: {},
+      unsavedHistory: []
+    }
+  }
+  if (!Array.isArray(store.rootMode.tempOperations.unsavedHistory)) {
+    store.rootMode.tempOperations.unsavedHistory = []
+  }
+
   store.rootMode.tempOperations.unsavedHistory.push({
     id: Date.now(), actionType, data, timestamp: new Date().toISOString()
   })
@@ -43,9 +72,9 @@ export function compareCardIds(store, id1, id2) {
   return store.dataManager.compareCardIds(id1, id2)
 }
 
+// 关键：只看当前操作台（会话+临时），确保 A/B/C…顺序
 export function getAllUsedCardIds(store) {
   const set = new Set()
-  Object.keys(store.environmentConfigs.cards || {}).forEach(id => set.add(id))
   ;(store.sessionCards || []).forEach(c => c?.id && set.add(c.id))
   ;(store.tempCards || []).forEach(c => c?.id && set.add(c.id))
   return set

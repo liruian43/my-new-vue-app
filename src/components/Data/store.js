@@ -5,8 +5,6 @@ import DataManager from './manager'
 // store-parts 模块聚合导入
 import * as RoutingPart from './store-parts/routing'
 import * as LinkagePart from './store-parts/linkage'
-import * as EnvPart from './store-parts/envConfigs'
-import * as QuestionsPart from './store-parts/questions'
 import * as RootPart from './store-parts/rootMode'
 import * as PresetsPart from './store-parts/presets'
 import * as CardsPart from './store-parts/cards'
@@ -16,6 +14,8 @@ import * as DataSectionPart from './store-parts/dataSection'
 import * as ModesPart from './store-parts/modes'
 import * as InitPart from './store-parts/init'
 import * as ModeLocalEditPart from './store-parts/modeLocalEdit'
+import * as EnvPart from './store-parts/envConfigs'  // 环境配置/全量环境
+import * as QuestionsPart from './store-parts/questions'   // 题库
 
 // 会话存储增强器（保持原实现）
 export class SessionStorageEnhancer {
@@ -107,20 +107,14 @@ export const useCardStore = defineStore('data', {
   state: () => ({
     // 1) 主模式（root_admin）
     rootMode: {
-      tempOperations: {
-        currentEditingQuestion: null,
-        configStep: 0,
-        validationStatus: {},
-        unsavedHistory: []
-      },
       dataStandards: {
-        cardIdPattern: /^[A-Z]+$/, // A, B, AA...
-        optionIdPattern: /^\d+$/, // 1,2,3...
-        fullOptionIdPattern: /^[A-Z]+\d+$/, // A1, B2...
-        requiredOptionFields: ['name', 'value', 'unit'],
-        questionExpressionPattern: /^([A-Z]+\d+)([+-/][A-Z]+\d+)→$/ // 支持多运算符
+        cardIdPattern: /^[A-Z]+$/,
+        optionIdPattern: /^\d+$/,
+        fullOptionIdPattern: /^[A-Z]+\d+$/,
+        // 改成支持多项前缀：A1(+B2…)+→
+        questionExpressionPattern: /^[A-Z]+\d+(?:[+\-\/][A-Z]+\d+)*→$/
       },
-      cardData: []
+      // ...
     },
 
     // 2) 环境配置区 — 标准容器（仅标准字段）
@@ -410,7 +404,7 @@ export const useCardStore = defineStore('data', {
     // ------------------------------
     initRouter(router) { return RoutingPart.initRouter(this, router) },
     generateModePage(mode) { return RoutingPart.generateModePage(this, mode) },
-    createModeComponent(mode) { return RoutingPart.createModeComponent(mode) },
+    createModeComponent(mode) { return RoutingPart.createModeComponent(this, mode) },
     registerModeRoute(modeComponent) { return RoutingPart.registerModeRoute(modeComponent) },
     saveGeneratedMode(modeComponent) { return RoutingPart.saveGeneratedMode(modeComponent) },
     deleteModePage(modeId) { return RoutingPart.deleteModePage(this, modeId) },
@@ -474,14 +468,26 @@ export const useCardStore = defineStore('data', {
     getAllOptionsByCardId(cardId) { return EnvPart.getAllOptionsByCardId(this, cardId) },
     saveQuestionContext(questionId, contextData) { return EnvPart.saveQuestionContext(this, questionId, contextData) },
     getQuestionContext(questionId) { return EnvPart.getQuestionContext(this, questionId) },
-    notifyEnvConfigChanged() { return EnvPart.notifyEnvConfigChanged(this) },
+    // 兜底：如果 envConfigs.js 未导出 notifyEnvConfigChanged，不报错
+    notifyEnvConfigChanged() {
+      return typeof EnvPart.notifyEnvConfigChanged === 'function'
+        ? EnvPart.notifyEnvConfigChanged(this)
+        : true
+    },
 
     // ------------------------------
-    // 题库
+    // 全量环境（版本化）
     // ------------------------------
-    async loadQuestionBank() { return QuestionsPart.loadQuestionBank(this) },
-    addQuestionToBank(questionData) { return QuestionsPart.addQuestionToBank(this, questionData) },
-    removeQuestionFromBank(questionId) { return QuestionsPart.removeQuestionFromBank(this, questionId) },
+    listEnvFullSnapshots() { return EnvPart.listEnvFullSnapshots(this) },
+    saveEnvFullSnapshot(versionLabel) { return EnvPart.saveEnvFullSnapshot(this, versionLabel) },
+    applyEnvFullSnapshot(versionLabel) { return EnvPart.applyEnvFullSnapshot(this, versionLabel) }, // 占位：当前不做加载
+
+    // ------------------------------
+    // 题库（版本 + 表达式 + hash）
+    // ------------------------------
+    loadQuestionBank() { return QuestionsPart.loadQuestionBank(this) },
+    addQuestionToBank(payload) { return QuestionsPart.addQuestionToBank(this, payload) },
+    removeQuestionFromBank(id) { return QuestionsPart.removeQuestionFromBank(this, id) },
 
     // ------------------------------
     // 子模式

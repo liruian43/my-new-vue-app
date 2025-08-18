@@ -1,4 +1,30 @@
+// src/components/Data/store-parts/cards.js
 // 会话卡片/临时卡片/选项/下拉/编辑态/导入导出等
+
+// 工具：把某卡片的选项 id 强制重排为 1..N（字符串）
+function renumberOptions1toN(card) {
+  const opts = Array.isArray(card?.data?.options) ? card.data.options : []
+  opts.forEach((o, i) => { o.id = String(i + 1) })
+}
+
+// 工具：按 1..N 重建某卡在 environmentConfigs.options 下的 A1/A2… 映射
+function rebuildEnvOptionsForCard(store, cardId, card) {
+  const cid = String(cardId)
+  // 先清空该卡原有的 A* 项
+  Object.keys(store.environmentConfigs.options || {}).forEach(fullId => {
+    if (fullId.startsWith(cid)) delete store.environmentConfigs.options[fullId]
+  })
+  // 再按 1..N 写入
+  const opts = Array.isArray(card?.data?.options) ? card.data.options : []
+  opts.forEach((o, i) => {
+    const fullId = `${cid}${i + 1}`
+    store.environmentConfigs.options[fullId] = {
+      name: o?.name ?? null,
+      value: o?.value ?? null,
+      unit: o?.unit ?? null
+    }
+  })
+}
 
 export function loadSessionCards(store, modeId) {
   const rawCards = store.sessionStorageEnhancer.load(modeId, 'cards') || []
@@ -8,11 +34,8 @@ export function loadSessionCards(store, modeId) {
 export function normalizeCardStructure(store, card) {
   const normalizeOptions = (options) => {
     const list = Array.isArray(options) ? options : []
-    return list.map((opt, idx) => {
-      const idStr = (opt && typeof opt.id !== 'undefined') ? String(opt.id) : String(idx + 1)
-      const numeric = /^\d+$/.test(idStr) ? idStr : String(idx + 1)
-      return { ...opt, id: numeric }
-    })
+    // 强制：忽略外部传入的 id，按位置编号为 1..N（字符串）
+    return list.map((opt, idx) => ({ ...opt, id: String(idx + 1) }))
   }
   const normalizeSelectOptions = (options) => {
     const list = Array.isArray(options) ? options : []
@@ -113,16 +136,8 @@ export function addCard(store, cardData) {
     dropdown: (normalized.data.selectOptions || []).map(opt => opt?.label ?? null)
   }
 
-  ;(normalized.data.options || []).forEach(opt => {
-    const fullId = `${newCardId}${opt.id}`
-    if (store.isValidFullOptionId(fullId)) {
-      store.environmentConfigs.options[fullId] = {
-        name: opt.name ?? null,
-        value: opt.value ?? null,
-        unit: opt.unit ?? null
-      }
-    }
-  })
+  // 关键：用 1..N 重建 A1/A2… 映射
+  rebuildEnvOptionsForCard(store, newCardId, normalized)
 
   store.selectedCardId = newCardId
 
@@ -202,19 +217,12 @@ export function updateCardTitle(store, cardId, newTitle) {
 
 export function updateCardOptions(store, cardId, updatedOptions) {
   const assignTo = (card) => {
-    card.data.options = updatedOptions
-    updatedOptions.forEach(option => {
-      const fullId = `${cardId}${option.id}`
-      if (!store.isValidFullOptionId(fullId)) {
-        console.warn(`选项ID ${fullId} 不符合标准格式，未更新到环境配置`)
-        return
-      }
-      store.environmentConfigs.options[fullId] = {
-        name: option.name ?? null,
-        value: option.value ?? null,
-        unit: option.unit ?? null
-      }
-    })
+    // 强制重排为 1..N
+    const safe = (Array.isArray(updatedOptions) ? updatedOptions : []).map((o, i) => ({ ...o, id: String(i + 1) }))
+    card.data.options = safe
+
+    // 统一重建环境映射（清 A* -> 写入 1..N）
+    rebuildEnvOptionsForCard(store, cardId, card)
     store.notifyEnvConfigChanged()
     return card
   }
@@ -230,17 +238,16 @@ export function addOption(store, cardId, afterId) {
     console.error(`卡片ID ${cardId} 不符合标准格式，无法添加选项`)
     return
   }
-  const newOptionNumericId = store.generateOptionId(cardId)
-  const fullId = `${cardId}${newOptionNumericId}`
+
   const newOption = {
-    id: newOptionNumericId,
+    id: '0', // 占位，稍后重排为 1..N
     name: null, value: null, unit: null,
     checked: false,
     localName: null, localValue: null, localUnit: null
   }
 
   const insertTo = (card) => {
-    const options = [...card.data.options]
+    const options = Array.isArray(card.data.options) ? [...card.data.options] : []
     if (afterId) {
       const index = options.findIndex(o => o.id === afterId)
       if (index !== -1) options.splice(index + 1, 0, newOption)
@@ -249,6 +256,11 @@ export function addOption(store, cardId, afterId) {
       options.push(newOption)
     }
     card.data.options = options
+
+    // 插入后重排 1..N，并重建 A1/A2…
+    renumberOptions1toN(card)
+    rebuildEnvOptionsForCard(store, cardId, card)
+    store.notifyEnvConfigChanged()
   }
 
   const tempCard = store.tempCards.find(c => c.id === cardId)
@@ -258,8 +270,6 @@ export function addOption(store, cardId, afterId) {
     const sIdx = store.sessionCards.findIndex(c => c.id === cardId)
     if (sIdx !== -1) {
       insertTo(store.sessionCards[sIdx])
-      store.environmentConfigs.options[fullId] = { name: null, value: null, unit: null }
-      store.notifyEnvConfigChanged()
     }
   }
 }
@@ -267,21 +277,18 @@ export function addOption(store, cardId, afterId) {
 export function deleteOption(store, cardId, optionId) {
   if (!store.isValidCardId(cardId)) { console.error(`卡片ID ${cardId} 不符合标准格式`); return }
   if (!store.isValidOptionId(optionId)) { console.error(`选项ID ${optionId} 不符合标准格式`); return }
-  const fullId = `${cardId}${optionId}`
+
+  const apply = (card) => {
+    card.data.options = (Array.isArray(card.data.options) ? card.data.options : []).filter(o => o.id !== optionId)
+    renumberOptions1toN(card)
+    rebuildEnvOptionsForCard(store, cardId, card)
+    store.notifyEnvConfigChanged()
+  }
+
   const tempCard = store.tempCards.find(c => c.id === cardId)
-  if (tempCard) {
-    tempCard.data.options = tempCard.data.options.filter(o => o.id !== optionId)
-    return
-  }
+  if (tempCard) return apply(tempCard)
   const sIdx = store.sessionCards.findIndex(c => c.id === cardId)
-  if (sIdx !== -1) {
-    const card = store.sessionCards[sIdx]
-    card.data.options = card.data.options.filter(o => o.id !== optionId)
-    if (store.environmentConfigs.options[fullId]) {
-      delete store.environmentConfigs.options[fullId]
-      store.notifyEnvConfigChanged()
-    }
-  }
+  if (sIdx !== -1) apply(store.sessionCards[sIdx])
 }
 
 export function addSelectOption(store, cardId, label) {
@@ -532,16 +539,8 @@ export function promoteToSession(store, cardIds) {
       name: card.data.title ?? null,
       dropdown: (card.data.selectOptions || []).map(opt => opt?.label ?? null)
     }
-    ;(card.data.options || []).forEach(opt => {
-      const fullId = `${card.id}${opt.id}`
-      if (store.isValidFullOptionId(fullId)) {
-        store.environmentConfigs.options[fullId] = {
-          name: opt.name ?? null,
-          value: opt.value ?? null,
-          unit: opt.unit ?? null
-        }
-      }
-    })
+    // 统一重建 A1/A2…
+    rebuildEnvOptionsForCard(store, card.id, card)
   })
 
   store.saveSessionCards(store.currentModeId)
@@ -601,16 +600,8 @@ export async function importData(store, file) {
         name: card.data.title ?? null,
         dropdown: (card.data.selectOptions || []).map(opt => opt?.label ?? null)
       }
-      ;(card.data.options || []).forEach(option => {
-        const fullId = `${card.id}${option.id}`
-        if (store.isValidFullOptionId(fullId)) {
-          store.environmentConfigs.options[fullId] = {
-            name: option.name ?? null,
-            value: option.value ?? null,
-            unit: option.unit ?? null
-          }
-        }
-      })
+      // 统一重建 A1/A2…
+      rebuildEnvOptionsForCard(store, card.id, card)
     })
 
     store.notifyEnvConfigChanged()
@@ -619,4 +610,129 @@ export async function importData(store, file) {
     store.error = `导入失败：${err.message}`
     return { success: false, error: store.error }
   }
+}
+
+// ============ 全量库 版本盘（本地） ============
+
+function _loadEnvBank() {
+  try {
+    const raw = localStorage.getItem('env_bank')
+    const obj = raw ? JSON.parse(raw) : null
+    if (obj && typeof obj === 'object' && obj.versions && typeof obj.versions === 'object') {
+      return obj
+    }
+  } catch (e) {}
+  return { versions: {}, lastUpdated: null }
+}
+
+function _saveEnvBank(bank) {
+  bank.lastUpdated = new Date().toISOString()
+  localStorage.setItem('env_bank', JSON.stringify(bank))
+  return bank
+}
+
+function _buildOptionsIndexFromCards(cards) {
+  // cards 已经是 A/B/C… + 每卡 1..N
+  const index = {}
+  ;(Array.isArray(cards) ? cards : []).forEach(card => {
+    const cid = String(card.id || '')
+    const opts = Array.isArray(card?.data?.options) ? card.data.options : []
+    opts.forEach(o => {
+      const key = `${cid}${o.id}` // 形如 A1、B2
+      index[key] = {
+        name: o?.name ?? null,
+        value: o?.value ?? null,
+        unit: o?.unit ?? null
+      }
+    })
+  })
+  return index
+}
+
+// 保存当前操作台为“全量库的一个版本”
+// 若该版本已存在，则被覆盖（这正是“唯一指向性”：版本内 A1/A2… 唯一）
+export function saveFullVersionFromSession(store, version) {
+  const v = String(version || '').trim()
+  if (!v) { store.error = '版本号不能为空'; return false }
+
+  // 1) 取当前操作台的卡片，确保编号规范（我们前面的逻辑已保证）
+  // 若你不放心，可再排序一次
+  store.sessionCards.sort((a, b) => store.compareCardIds(a.id, b.id))
+
+  // 2) 构造一个“干净快照”：卡片 A/B/C…，选项 1..N
+  const snapshotCards = (store.sessionCards || []).map(c => ({
+    id: c.id,
+    data: {
+      title: c.data?.title ?? null,
+      options: (Array.isArray(c.data?.options) ? c.data.options : []).map((o, i) => ({
+        id: String(i + 1),
+        name: o?.name ?? null,
+        value: o?.value ?? null,
+        unit: o?.unit ?? null
+      })),
+      selectOptions: (Array.isArray(c.data?.selectOptions) ? c.data.selectOptions : []).map((s, i) => ({
+        id: /^\d+$/.test(String(s?.id)) ? String(s.id) : String(i + 1),
+        label: s?.label ?? null
+      }))
+    }
+  }))
+
+  // 3) 构建“版本内 ExcelID -> 值”的索引（A1/A2…）
+  const optionsIndex = _buildOptionsIndexFromCards(snapshotCards)
+
+  // 4) 写入版本盘（覆盖式）
+  const bank = _loadEnvBank()
+  bank.versions[v] = {
+    version: v,
+    cards: snapshotCards,
+    optionsIndex, // 唯一指向性键：A1/A2… -> 值
+    savedAt: new Date().toISOString()
+  }
+  _saveEnvBank(bank)
+  return true
+}
+
+// 从“全量库的一个版本”加载到操作台（覆盖操作台）
+// editMode: 'none'（默认全部编辑关闭） | 'checkbox'（只开复选框）
+export function loadFullVersion(store, version, { editMode = 'none' } = {}) {
+  const v = String(version || '').trim()
+  if (!v) { store.error = '版本号不能为空'; return false }
+
+  const bank = _loadEnvBank()
+  const snap = bank.versions[v]
+  if (!snap) {
+    store.error = `未找到版本：${v}`
+    return false
+  }
+
+  // 用 replaceSessionWithCards 覆盖操作台，并根据 editMode 设置默认编辑态
+  store.replaceSessionWithCards(
+    // 转回 replaceSessionWithCards 期待的结构
+    snap.cards.map(c => ({
+      id: c.id,
+      data: {
+        title: c.data?.title ?? null,
+        options: c.data?.options || [],
+        selectOptions: c.data?.selectOptions || []
+      }
+    })),
+    { editMode }
+  )
+  return true
+}
+
+export function listFullVersions() {
+  const bank = _loadEnvBank()
+  return Object.keys(bank.versions)
+}
+
+export function deleteFullVersion(version) {
+  const v = String(version || '').trim()
+  const bank = _loadEnvBank()
+  if (bank.versions[v]) {
+    delete bank.versions[v]
+    _saveEnvBank(bank)
+    return true
+  }
+  return false
 }

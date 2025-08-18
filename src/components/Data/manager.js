@@ -222,11 +222,12 @@ export default class DataManager {
       }
     };
     
-    // 模块存储键名 - 新增联动规则存储键
+    // 模块存储键名 - 新增环境快照存储键
     this.storageKeys = {
       questionBank: 'question_bank',
       environmentConfigs: 'environment_configs',
-      linkageRules: 'linkage_rules', // 新增：联动规则存储键
+      envFullSnapshots: 'env_full_snapshots', // 新增：环境全量快照存储键
+      linkageRules: 'linkage_rules',
       subModeInstances: 'submode_instances',
       syncHistory: 'sync_history',
       fieldAuthorizations: 'field_authorizations',
@@ -245,11 +246,12 @@ export default class DataManager {
       this.currentModeId = savedMode;
     }
     
-    // 确保基础数据结构存在 - 新增加载联动规则
+    // 确保基础数据结构存在 - 增加加载环境快照
     await this.loadQuestionBank();
     await this.loadEnvironmentConfigs();
-    await this.loadLinkageRules(); // 新增：加载联动规则
+    await this.loadLinkageRules();
     await this.loadSubModeInstances();
+    await this.loadEnvFullSnapshots(); // 新增：加载环境全量快照
   }
 
   /**
@@ -411,7 +413,7 @@ export default class DataManager {
   /**
    * 保存题库数据
    */
-  saveQuestionBank(bankData) {
+  async saveQuestionBank(bankData) {
     return this.longTermStorage.setItem(this.storageKeys.questionBank, {
       ...bankData,
       lastUpdated: new Date().toISOString()
@@ -482,6 +484,38 @@ export default class DataManager {
       score: ruleData.score || 0,
       createdAt: new Date().toISOString()
     };
+  }
+
+  // 新增：环境全量快照管理接口
+  /**
+   * 加载环境全量快照
+   */
+  async loadEnvFullSnapshots() {
+    const snapshots = this.longTermStorage.getItem(this.storageKeys.envFullSnapshots) || [];
+    // 确保返回正确的结构
+    return snapshots.map(snap => ({
+      version: snap.version || '',
+      timestamp: snap.timestamp || Date.now(),
+      hash: snap.hash || '',
+      environment: snap.environment || {},
+      fullConfigs: snap.fullConfigs || {}
+    }));
+  }
+  
+  /**
+   * 保存环境全量快照
+   */
+  async saveEnvFullSnapshots(snaps) {
+    // 验证快照结构并保存
+    const validatedSnaps = snaps.map(snap => ({
+      version: snap.version || '',
+      timestamp: snap.timestamp || Date.now(),
+      hash: snap.hash || '',
+      environment: snap.environment || {},
+      fullConfigs: snap.fullConfigs || {}
+    }));
+    
+    this.longTermStorage.setItem(this.storageKeys.envFullSnapshots, validatedSnaps);
   }
 
   // 4. 联动同步管理 - 增强实现
@@ -1240,11 +1274,11 @@ export default class DataManager {
    * 导出数据为JSON文件
    */
   async exportData(modeId = null, fileName = 'data_export.json') {
-    // 收集要导出的数据 - 新增导出联动规则
+    // 收集要导出的数据
     const exportData = {
       questionBank: await this.loadQuestionBank(),
       environmentConfigs: await this.loadEnvironmentConfigs(),
-      linkageRules: await this.loadLinkageRules(), // 新增：导出联动规则
+      linkageRules: await this.loadLinkageRules(),
       subModeInstances: await this.loadSubModeInstances(),
       syncHistory: this.loadSyncHistory()
     };
@@ -1292,7 +1326,7 @@ export default class DataManager {
   }
 
   /**
-   * 从文件导入并保存到长期存储 - 新增导入联动规则
+   * 从文件导入并保存到长期存储
    */
   async importToLongTerm(file, modeId, namespace) {
     try {
@@ -1339,4 +1373,3 @@ export default class DataManager {
     }
   }
 }
-     
