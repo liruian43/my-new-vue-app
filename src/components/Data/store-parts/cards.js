@@ -1,5 +1,42 @@
 // src/components/Data/store-parts/cards.js
 // 会话卡片/临时卡片/选项/下拉/编辑态/导入导出等
+// 合并版本：保留原A.js拆分版本和B.js拆分版本的所有功能
+
+import { normalizeDataStructure } from './normalize';
+
+// ================ 新增内容（来自新拆分版本） ================
+export const CARD_DATA_TEMPLATE = {
+  title: null,
+  options: [{ name: null, value: null, unit: null }],
+  selectOptions: [],
+  syncStatus: {
+    title: { hasSync: false, isAuthorized: false },
+    options: {
+      name: { hasSync: false, isAuthorized: false },
+      value: { hasSync: false, isAuthorized: false },
+      unit: { hasSync: false, isAuthorized: false }
+    },
+    selectOptions: { hasSync: true, isAuthorized: false }
+  }
+};
+
+export function normalizeCardForStorage(card) {
+  return normalizeDataStructure(card, {
+    id: '',
+    modeId: '',
+    storageLevel: '',
+    isTitleEditing: false,
+    isOptionsEditing: false,
+    isSelectEditing: false,
+    isPresetEditing: false,
+    showDropdown: false,
+    syncStatus: CARD_DATA_TEMPLATE.syncStatus,
+    data: CARD_DATA_TEMPLATE,
+    editableFields: {}
+  });
+}
+
+// ================ 原有内容（来自上个版本） ================
 
 // 工具：把某卡片的选项 id 强制重排为 1..N（字符串）
 function renumberOptions1toN(card) {
@@ -736,3 +773,4 @@ export function deleteFullVersion(version) {
   }
   return false
 }
+    
