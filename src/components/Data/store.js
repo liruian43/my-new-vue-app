@@ -16,6 +16,12 @@ import * as InitPart from './store-parts/init'
 import * as ModeLocalEditPart from './store-parts/modeLocalEdit'
 import * as EnvPart from './store-parts/envConfigs'  // 环境配置/全量环境
 import * as QuestionsPart from './store-parts/questions'   // 题库
+import * as Sync from './store-parts/sync'
+import * as Normalize from './store-parts/normalize'
+import * as LongTerm from './services/longTerm'
+import * as IO from './services/io'
+import * as IdSvc from './services/id'
+import { DataValidator } from './validators/dataValidator'
 
 // 会话存储增强器（保持原实现）
 export class SessionStorageEnhancer {
@@ -102,6 +108,7 @@ export const AUTHORIZABLE_FIELDS = [
 
 // 创建数据管理器实例（保持原实现）
 const dataManager = new DataManager()
+const validator = new DataValidator()
 
 export const useCardStore = defineStore('data', {
   state: () => ({
@@ -213,6 +220,8 @@ export const useCardStore = defineStore('data', {
     // 初始化依赖
     sessionStorageEnhancer: new SessionStorageEnhancer(),
     dataManager: dataManager,
+    validator: validator,
+    longTermStorage: dataManager.longTermStorage,
     FIELD_IDS,
     FIXED_SYNC_FIELDS,
     CONFIGURABLE_SYNC_FIELDS,
@@ -451,20 +460,23 @@ export const useCardStore = defineStore('data', {
     clearRootTempData() { return RootPart.clearRootTempData(this) },
     updateRootConfigStep(step, validationStatus = {}) { return RootPart.updateRootConfigStep(this, step, validationStatus) },
 
-    compareCardIds(id1, id2) { return RootPart.compareCardIds(this, id1, id2) },
+    compareCardIds(id1, id2) { return IdSvc.compareCardIds(id1, id2) },
     getAllUsedCardIds() { return RootPart.getAllUsedCardIds(this) },
-    generateNextCardId() { return RootPart.generateNextCardId(this) },
-    generateNextOptionId(cardId) { return RootPart.generateNextOptionId(this, cardId) },
+    generateNextCardId() { return IdSvc.generateNextCardId(this.getAllUsedCardIds()) },
+    generateNextOptionId(cardId) { 
+      const options = this.getOptionsByCardId(cardId)
+      return IdSvc.generateNextOptionId(options) 
+    },
     generateCardId() { return RootPart.generateCardId(this) },
     generateOptionId(cardId) { return RootPart.generateOptionId(this, cardId) },
 
     // ------------------------------
     // 环境配置（标准字段）
     // ------------------------------
-    async loadEnvironmentConfigs() { return EnvPart.loadEnvironmentConfigs(this) },
+    async loadEnvironmentConfigs() { return EnvPart.loadEnvironmentConfigs(this.longTermStorage) },
     normalizeCards(cards) { return EnvPart.normalizeCards(this, cards) },
     normalizeOptions(options) { return EnvPart.normalizeOptions(this, options) },
-    saveEnvironmentConfigs(configs) { return EnvPart.saveEnvironmentConfigs(this, configs) },
+    saveEnvironmentConfigs(configs) { return EnvPart.saveEnvironmentConfigs(this.longTermStorage, configs) },
     getAllOptionsByCardId(cardId) { return EnvPart.getAllOptionsByCardId(this, cardId) },
     saveQuestionContext(questionId, contextData) { return EnvPart.saveQuestionContext(this, questionId, contextData) },
     getQuestionContext(questionId) { return EnvPart.getQuestionContext(this, questionId) },
@@ -476,23 +488,63 @@ export const useCardStore = defineStore('data', {
     },
 
     // ------------------------------
-    // 全量环境（版本化）
+    // 全量环境（版本化）- 保留通过manager.js
     // ------------------------------
-    listEnvFullSnapshots() { return EnvPart.listEnvFullSnapshots(this) },
-    saveEnvFullSnapshot(versionLabel) { return EnvPart.saveEnvFullSnapshot(this, versionLabel) },
-    applyEnvFullSnapshot(versionLabel) { return EnvPart.applyEnvFullSnapshot(this, versionLabel) }, // 占位：当前不做加载
+    async listEnvFullSnapshots() { 
+      const snapshots = await this.dataManager.loadEnvFullSnapshots()
+      return snapshots
+    },
+    async saveEnvFullSnapshot(versionLabel) { 
+      const currentSnapshots = await this.dataManager.loadEnvFullSnapshots()
+      const newSnapshot = {
+        version: versionLabel,
+        timestamp: Date.now(),
+        hash: '',
+        environment: this.environmentConfigs,
+        fullConfigs: {}
+      }
+      const updatedSnapshots = [...currentSnapshots, newSnapshot]
+      await this.dataManager.saveEnvFullSnapshots(updatedSnapshots)
+      return newSnapshot
+    },
+    async applyEnvFullSnapshot(versionLabel) { 
+      const snapshots = await this.dataManager.loadEnvFullSnapshots()
+      const snapshot = snapshots.find(s => s.version === versionLabel)
+      if (snapshot) {
+        this.environmentConfigs = snapshot.environment
+        return true
+      }
+      return false
+    },
 
     // ------------------------------
-    // 题库（版本 + 表达式 + hash）
+    // 题库（版本 + 表达式 + hash）- 保留通过manager.js
     // ------------------------------
-    loadQuestionBank() { return QuestionsPart.loadQuestionBank(this) },
-    addQuestionToBank(payload) { return QuestionsPart.addQuestionToBank(this, payload) },
-    removeQuestionFromBank(id) { return QuestionsPart.removeQuestionFromBank(this, id) },
+    async loadQuestionBank() { 
+      const bank = await this.dataManager.loadQuestionBank()
+      this.questionBank = bank
+      return bank
+    },
+    async addQuestionToBank(payload) { 
+      const normalizedQuestion = this.dataManager.normalizeQuestion(payload)
+      const bank = await this.dataManager.loadQuestionBank()
+      bank.questions.push(normalizedQuestion)
+      await this.dataManager.saveQuestionBank(bank)
+      this.questionBank = bank
+      return normalizedQuestion
+    },
+    async removeQuestionFromBank(id) { 
+      const bank = await this.dataManager.loadQuestionBank()
+      bank.questions = bank.questions.filter(q => q.id !== id)
+      await this.dataManager.saveQuestionBank(bank)
+      this.questionBank = bank
+      return true
+    },
 
     // ------------------------------
     // 子模式
     // ------------------------------
-    async loadSubModeInstances() { return SubModesPart.loadSubModeInstances(this) },
+    async loadSubModeInstances() { return SubModesPart.loadSubModeInstances(this.longTermStorage) },
     parseSubModeData(instanceId) { return SubModesPart.parseSubModeData(this, instanceId) },
 
     // ------------------------------
@@ -540,15 +592,15 @@ export const useCardStore = defineStore('data', {
     updateTempCard(updatedCard) { return CardsPart.updateTempCard(this, updatedCard) },
     promoteToSession(cardIds) { return CardsPart.promoteToSession(this, cardIds) },
     updateCardSelectedValue(cardId, newValue) { return CardsPart.updateCardSelectedValue(this, cardId, newValue) },
-    exportData(fileName = 'card_data.json') { return CardsPart.exportData(this, fileName) },
-    async importData(file) { return CardsPart.importData(this, file) },
+    exportData(fileName = 'card_data.json') { return IO.exportData(this.longTermStorage, { modeId: this.currentModeId, fileName }) },
+    async importData(file) { return IO.importFromFile(file).then(data => IO.importToLongTerm(this.longTermStorage, data, { modeId: this.currentModeId })) },
 
     // ------------------------------
     // 模式（添加/删除/获取/保存）
     // ------------------------------
     addMode(modeData) { return ModesPart.addMode(this, modeData) },
     deleteModes(modeIds) { return ModesPart.deleteModes(this, modeIds) },
-    getMode(modeId) { return ModesPart.getMode(this, modeId) },
+    getMode(modeId) { return ModesPart.getMode(this.longTermStorage, modeId, dataManager.rootAdminId) },
     saveModesToStorage() { return ModesPart.saveModesToStorage(this) },
 
     // ------------------------------
@@ -571,8 +623,11 @@ export const useCardStore = defineStore('data', {
     cancelPreview() { return DataSectionPart.cancelPreview(this) },
     toggleManager() { return DataSectionPart.toggleManager(this) },
     clearFilters() { return DataSectionPart.clearFilters(this) },
-    normalizeQuestion(question) { return DataSectionPart.normalizeQuestion(this, question) },
-    setCurrentMode(modeId) { return DataSectionPart.setCurrentMode(this, modeId) },
+    normalizeQuestion(question) { return this.dataManager.normalizeQuestion(question) },
+    setCurrentMode(modeId) { 
+      this.currentModeId = modeId;
+      this.dataManager.setCurrentMode(modeId);
+    },
 
     // ------------------------------
     // 模式内本地编辑（授权位）
@@ -598,6 +653,62 @@ export const useCardStore = defineStore('data', {
         timestamp: new Date().toISOString()
       })
       this.saveModesToStorage()
+    },
+
+    // ------------------------------
+    // 同步相关功能 - 直接调用Sync模块
+    // ------------------------------
+    getSyncStatus(itemId) {
+      return Sync.getSyncStatus(this.longTermStorage, itemId)
+    },
+    saveSyncHistory(history) {
+      return Sync.saveSyncHistory(this.longTermStorage, history)
+    },
+    loadSyncHistory() {
+      return Sync.loadSyncHistory(this.longTermStorage)
+    },
+    createSyncHistoryEntry(data) {
+      return Sync.createSyncHistoryEntry(data)
+    },
+    updateSyncStatus(card, field) {
+      return Sync.updateCardSyncStatus(card, field)
+    },
+
+    // 字段授权
+    saveFieldAuthorizations(authorizations) {
+      return Sync.saveFieldAuthorizations(this.longTermStorage, authorizations)
+    },
+    loadFieldAuthorizations() {
+      return Sync.loadFieldAuthorizations(this.longTermStorage)
+    },
+    filterSyncFields(sourceData, authorizedFields) {
+      return Sync.filterSyncFields(sourceData, authorizedFields)
+    },
+
+    // ------------------------------
+    // 工具方法 - 直接调用Normalize模块
+    // ------------------------------
+    normalizeNullValue(value) {
+      return Normalize.normalizeNullValue(value)
+    },
+    normalizeDataStructure(data, template) {
+      return Normalize.normalizeDataStructure(data, template)
+    },
+
+    // ------------------------------
+    // 长期存储 - 直接调用LongTerm模块
+    // ------------------------------
+    saveToLongTerm(modeId, namespace, dataId, data) {
+      return LongTerm.saveToLongTerm(this.longTermStorage, modeId, namespace, dataId, data, this.validator)
+    },
+    getFromLongTerm(modeId, namespace, dataId) {
+      return LongTerm.getFromLongTerm(this.longTermStorage, modeId, namespace, dataId)
+    },
+    deleteFromLongTerm(modeId, namespace, dataId) {
+      return LongTerm.deleteFromLongTerm(this.longTermStorage, modeId, namespace, dataId)
+    },
+    clearLongTermByMode(modeId) {
+      return LongTerm.clearLongTermByMode(this.longTermStorage, modeId, dataManager.rootAdminId)
     }
   }
 })
