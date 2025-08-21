@@ -1,7 +1,7 @@
 // src/components/Data/services/io.js
 import { LocalStorageStrategy } from '../storage/LocalStorageStrategy';
 import { loadEnvironmentConfigs, saveEnvironmentConfigs } from '../store-parts/envConfigs';
-import { loadLinkageRules, saveLinkageRules } from '../store-parts/linkage';
+import { loadLinkageRules, saveLinkageRules } from '../store-parts/linkage-new';
 
 function ensureStorage(storage) {
   return storage && storage.prefix && typeof storage.getItem === 'function'

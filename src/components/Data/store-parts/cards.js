@@ -3,6 +3,23 @@
 // 合并版本：保留原A.js拆分版本和B.js拆分版本的所有功能
 
 import { normalizeDataStructure } from './normalize';
+// 导入新的ID生成服务
+import { generateNextCardId } from '../services/id.js';
+
+// 从store中获取下一个可用的卡片ID（仅使用新方法）
+function nextCardIdFromStore(store) {
+  // 提取当前所有已使用的卡片ID（包括会话卡片、临时卡片和中期存储卡片）
+  const used = new Set(
+    [
+      ...(store.sessionCards || []),
+      ...(store.tempCards || []),
+      ...(store.mediumCards || [])
+    ]
+      .map(c => (c.id || '').toString().toUpperCase())
+      .filter(Boolean)
+  );
+  return generateNextCardId(used);
+}
 
 // ================ 新增内容（来自新拆分版本） ================
 export const CARD_DATA_TEMPLATE = {
@@ -83,9 +100,10 @@ export function normalizeCardStructure(store, card) {
     })
   }
 
+  // 完全使用新的ID生成方式，不依赖旧方法
   let cardId = card.id
   if (!cardId || !store.rootMode.dataStandards.cardIdPattern.test(cardId)) {
-    cardId = store.generateCardId()
+    cardId = nextCardIdFromStore(store);
   }
 
   return {
@@ -144,19 +162,31 @@ export function normalizeCardStructure(store, card) {
 }
 
 export function addCard(store, cardData) {
-  const usedIds = new Set([
-    ...Object.keys(store.environmentConfigs.cards || {}),
-    ...((store.sessionCards || []).map(c => c?.id).filter(Boolean)),
-    ...((store.tempCards || []).map(c => c?.id).filter(Boolean))
-  ])
-
+  // 完全移除旧的ID生成方法，只使用新服务
   let newCardId = null
   const requestedId = cardData?.id
 
-  if (requestedId && store.isValidCardId(requestedId) && !usedIds.has(requestedId)) {
-    newCardId = requestedId
+  // 检查请求的ID是否有效且未被使用
+  if (requestedId && store.isValidCardId(requestedId)) {
+    const usedIds = new Set(
+      [
+        ...(store.sessionCards || []),
+        ...(store.tempCards || []),
+        ...(store.mediumCards || [])
+      ]
+        .map(c => c.id)
+        .filter(Boolean)
+    );
+    
+    if (!usedIds.has(requestedId)) {
+      newCardId = requestedId
+    } else {
+      // 请求的ID已被使用，生成新的ID
+      newCardId = nextCardIdFromStore(store);
+    }
   } else {
-    newCardId = store.generateCardId()
+    // 生成新的卡片ID
+    newCardId = nextCardIdFromStore(store);
   }
 
   const normalized = normalizeCardStructure(store, {
@@ -530,12 +560,15 @@ export function loadFromMedium(store, mediumCardIds) {
 }
 
 export function addTempCard(store, initialData = {}) {
+  // 只使用新的ID生成方式
+  const cardId = initialData?.id && store.rootMode.dataStandards.cardIdPattern.test(initialData.id)
+    ? initialData.id
+    : nextCardIdFromStore(store);
+    
   const newCard = normalizeCardStructure(store, {
     ...initialData,
     storageLevel: 'temp',
-    id: store.rootMode.dataStandards.cardIdPattern.test(initialData?.id || '')
-      ? initialData.id
-      : store.generateCardId()
+    id: cardId
   })
   store.tempCards.push(newCard)
   store.selectedCardId = newCard.id
@@ -773,4 +806,3 @@ export function deleteFullVersion(version) {
   }
   return false
 }
-    
