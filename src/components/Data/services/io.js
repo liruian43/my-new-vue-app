@@ -1,23 +1,54 @@
-// src/components/Data/services/io.js
-import { LocalStorageStrategy } from '../storage/LocalStorageStrategy';
+import { buildKey, TYPES, getSystemPrefix } from './id.js';
 import { loadEnvironmentConfigs, saveEnvironmentConfigs } from '../store-parts/envConfigs';
 import { loadLinkageRules, saveLinkageRules } from '../store-parts/linkage-new';
 
+// 定义基础存储键的配置
+const STORAGE_CONFIGS = {
+  questionBank: {
+    version: 'V1',
+    type: TYPES.QUESTION_BANK,
+    excelId: 'ROOT'
+  },
+  subModeInstances: {
+    version: 'V1',
+    type: TYPES.ENV_FULL,
+    excelId: 'SUBMODES'
+  },
+  syncHistory: {
+    version: 'V1',
+    type: TYPES.ENV_FULL,
+    excelId: 'SYNCHISTORY'
+  }
+};
+
+// 生成存储键
+function getStorageKey(config) {
+  return buildKey({
+    prefix: getSystemPrefix(),
+    version: config.version,
+    type: config.type,
+    excelId: config.excelId
+  });
+}
+
+// 确保使用正确的存储对象（现在直接使用localStorage）
 function ensureStorage(storage) {
-  return storage && storage.prefix && typeof storage.getItem === 'function'
-    ? storage
-    : new LocalStorageStrategy();
+  if (storage && storage.getItem && storage.setItem) {
+    return storage;
+  }
+  return window.localStorage;
 }
 
 export async function exportData(storage, { modeId = null, fileName = 'data_export.json' } = {}) {
   const s = ensureStorage(storage);
 
+  // 使用新的键生成方式获取数据
   const exportData = {
-    questionBank: s.getItem('question_bank') || { questions: [], categories: [], lastUpdated: null },
+    questionBank: JSON.parse(s.getItem(getStorageKey(STORAGE_CONFIGS.questionBank)) || '{"questions":[],"categories":[],"lastUpdated":null}'),
     environmentConfigs: await loadEnvironmentConfigs(s),
     linkageRules: loadLinkageRules(s),
-    subModeInstances: s.getItem('submode_instances') || [],
-    syncHistory: s.getItem('sync_history') || []
+    subModeInstances: JSON.parse(s.getItem(getStorageKey(STORAGE_CONFIGS.subModeInstances)) || '[]'),
+    syncHistory: JSON.parse(s.getItem(getStorageKey(STORAGE_CONFIGS.syncHistory)) || '[]')
   };
 
   if (modeId && modeId !== 'root_admin') {
@@ -60,13 +91,15 @@ export async function importToLongTerm(storage, file, { modeId, namespace } = {}
 
     // 题库合并
     if (importedData.questionBank) {
-      const bank = s.getItem('question_bank') || { questions: [], categories: [], lastUpdated: null };
-      s.setItem('question_bank', {
-        ...bank,
-        questions: [...(bank.questions || []), ...(importedData.questionBank.questions || [])],
-        categories: Array.from(new Set([...(bank.categories || []), ...(importedData.questionBank.categories || [])])),
+      const bankKey = getStorageKey(STORAGE_CONFIGS.questionBank);
+      const existingBank = JSON.parse(s.getItem(bankKey) || '{"questions":[],"categories":[],"lastUpdated":null}');
+      
+      s.setItem(bankKey, JSON.stringify({
+        ...existingBank,
+        questions: [...(existingBank.questions || []), ...(importedData.questionBank.questions || [])],
+        categories: Array.from(new Set([...(existingBank.categories || []), ...(importedData.questionBank.categories || [])])),
         lastUpdated: new Date().toISOString()
-      });
+      }));
     }
 
     // 环境配置合并

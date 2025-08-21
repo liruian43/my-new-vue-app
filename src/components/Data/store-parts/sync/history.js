@@ -1,12 +1,30 @@
 // src/components/Data/store-parts/sync/history.js
-import { LocalStorageStrategy } from '../../storage/LocalStorageStrategy';
+import { buildKey, getSystemPrefix } from '../../services/id.js';
 
-const STORAGE_KEY = 'sync_history';
+// 使用 id.js 构建存储键，遵循四段式规则
+const STORAGE_KEY = buildKey({
+  version: 'sync',
+  type: 'envFull',
+  excelId: 'history'
+});
 
+// 确保使用正确的存储对象（这里直接使用 localStorage）
 function ensureStorage(storage) {
-  return storage && storage.prefix && typeof storage.getItem === 'function'
-    ? storage
-    : new LocalStorageStrategy();
+  if (storage && storage.prefix && typeof storage.getItem === 'function') {
+    return storage;
+  }
+  
+  // 创建基础的 localStorage 包装器，使用系统前缀
+  return {
+    prefix: getSystemPrefix(),
+    getItem: (key) => {
+      const value = localStorage.getItem(key);
+      return value ? JSON.parse(value) : null;
+    },
+    setItem: (key, value) => {
+      localStorage.setItem(key, JSON.stringify(value));
+    }
+  };
 }
 
 export function saveSyncHistory(storage, history) {

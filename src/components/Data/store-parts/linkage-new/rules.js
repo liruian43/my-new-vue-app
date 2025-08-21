@@ -1,17 +1,29 @@
-// src/components/Data/store-parts/linkage/rules.js
-import { LocalStorageStrategy } from '../../storage/LocalStorageStrategy';
+// src/components/Data/store-parts/linkage-new/rules.js
+import { buildKey, getSystemPrefix } from '../../services/id.js';
 
-const STORAGE_KEY = 'linkage_rules';
+// 使用系统前缀构建存储键
+const STORAGE_KEY = buildKey({
+  version: 'linkage',
+  type: 'envFull',
+  excelId: 'rules'
+});
 
+// 确保使用有效的存储对象，默认为localStorage
 function ensureStorage(storage) {
-  return storage && storage.prefix && typeof storage.getItem === 'function'
+  return storage && typeof storage.getItem === 'function' && typeof storage.setItem === 'function'
     ? storage
-    : new LocalStorageStrategy();
+    : localStorage;
 }
 
 export function loadLinkageRules(storage) {
   const s = ensureStorage(storage);
-  return s.getItem(STORAGE_KEY) || [];
+  try {
+    const data = s.getItem(STORAGE_KEY);
+    return data ? JSON.parse(data) : [];
+  } catch (error) {
+    console.error('加载联动规则失败:', error);
+    return [];
+  }
 }
 
 export function saveLinkageRules(storage, rules, validator /* 可选 */) {
@@ -44,7 +56,11 @@ export function saveLinkageRules(storage, rules, validator /* 可选 */) {
     console.warn('部分联动规则无效，已跳过保存:', invalid);
   }
 
-  s.setItem(STORAGE_KEY, valid);
+  try {
+    s.setItem(STORAGE_KEY, JSON.stringify(valid));
+  } catch (error) {
+    console.error('保存联动规则失败:', error);
+  }
   return valid;
 }
 
@@ -99,6 +115,11 @@ export function deleteLinkageRule(storage, ruleId) {
   const s = ensureStorage(storage);
   const rules = loadLinkageRules(s);
   const next = rules.filter(r => r.id !== ruleId);
-  s.setItem(STORAGE_KEY, next);
+  try {
+    s.setItem(STORAGE_KEY, JSON.stringify(next));
+  } catch (error) {
+    console.error('删除联动规则失败:', error);
+    return false;
+  }
   return true;
 }

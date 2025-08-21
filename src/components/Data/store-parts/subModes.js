@@ -1,39 +1,46 @@
 // src/components/Data/store-parts/subModes.js
-// 合并版：兼容 A 版（store.dataManager）与 B 版（storage），并处理原生 localStorage 与 LocalStorageStrategy 的差异
+// 新版：使用id.js处理存储键，直接操作原生localStorage
 
-import { LocalStorageStrategy } from '../storage/LocalStorageStrategy';
+import { buildMetaKey } from '../services/id.js';
 
-const STORAGE_KEY = 'submode_instances';
+// 使用id.js构建元数据存储键
+const STORAGE_KEY = buildMetaKey({
+  version: 'V1',
+  name: 'submode_instances'
+});
 
 // 工具：检测与读写JSON
 function isStorage(obj) {
   return obj && typeof obj.getItem === 'function' && typeof obj.setItem === 'function';
 }
+
 function resolveStorage(storageOrStore) {
   if (isStorage(storageOrStore)) return storageOrStore;
   if (storageOrStore && isStorage(storageOrStore.storage)) return storageOrStore.storage;
   if (storageOrStore?.dataManager?.longTermStorage) return storageOrStore.dataManager.longTermStorage;
-  return null;
+  // 默认为localStorage
+  return window.localStorage;
 }
+
+// 处理原生localStorage的JSON读写
 function getJSON(storage, key) {
   if (!storage) return null;
   const val = storage.getItem(key);
-  // LocalStorageStrategy.getItem 已经做了 JSON.parse
-  if (storage.prefix) return val || null;
-  // 原生 localStorage 的字符串
   if (typeof val === 'string') {
     try { return JSON.parse(val); } catch { return null; }
   }
   return val || null;
 }
+
 function setJSON(storage, key, value) {
   if (!storage) return false;
-  if (storage.prefix) {
-    // LocalStorageStrategy 会 JSON.stringify
-    return storage.setItem(key, value);
+  try {
+    storage.setItem(key, JSON.stringify(value));
+    return true;
+  } catch (e) {
+    console.error('Failed to set JSON in storage:', e);
+    return false;
   }
-  // 原生 localStorage 需要手动 stringify
-  return storage.setItem(key, JSON.stringify(value));
 }
 
 /**
@@ -43,29 +50,28 @@ function setJSON(storage, key, value) {
  * @returns {void}
  */
 export function saveSubModeInstances(storageOrStore, instances) {
-  const s = resolveStorage(storageOrStore) || new LocalStorageStrategy();
-  return setJSON(s, STORAGE_KEY, instances);
+  const storage = resolveStorage(storageOrStore);
+  return setJSON(storage, STORAGE_KEY, instances);
 }
 
 /**
- * 从存储加载子模式实例（兼容A版和B版）
+ * 从存储加载子模式实例
  * @param {Object|Storage} storageOrStore - 存储对象或 store
- * @param {Object} [store] - 状态存储对象（A版兼容，保持原有第二参数）
+ * @param {Object} [store] - 状态存储对象
  * @returns {Promise<Array>} 子模式实例数组
  */
 export async function loadSubModeInstances(storageOrStore, store) {
-  // A版：如果提供了store且存在 dataManager，使用 dataManager 加载
+  // A版兼容逻辑保留
   if (store && store.dataManager && typeof store.dataManager.loadSubModeInstances === 'function') {
     const instances = await store.dataManager.loadSubModeInstances();
     store.subModes.instances = instances || [];
-    // 如果 store 上存在 parseSubModeData 方法，按你原有逻辑调用
     if (typeof store.parseSubModeData === 'function') {
       store.subModes.instances.forEach(inst => store.parseSubModeData(inst.id));
     }
     return instances || [];
   }
 
-  // 兼容：如果第一个参数就是 store（带 dataManager），也走 A 版
+  // 兼容：如果第一个参数就是带dataManager的store
   if (storageOrStore && storageOrStore.dataManager && typeof storageOrStore.dataManager.loadSubModeInstances === 'function') {
     const instances = await storageOrStore.dataManager.loadSubModeInstances();
     storageOrStore.subModes.instances = instances || [];
@@ -75,13 +81,13 @@ export async function loadSubModeInstances(storageOrStore, store) {
     return instances || [];
   }
 
-  // B版：使用存储直读
-  const s = resolveStorage(storageOrStore) || new LocalStorageStrategy();
-  return getJSON(s, STORAGE_KEY) || [];
+  // 新版：使用存储直读
+  const storage = resolveStorage(storageOrStore);
+  return getJSON(storage, STORAGE_KEY) || [];
 }
 
 /**
- * 解析子模式数据（保留你原先签名）
+ * 解析子模式数据
  * @param {Object} store - 状态存储对象
  * @param {string} instanceId - 实例ID
  * @returns {Object|null} 解析后的数据

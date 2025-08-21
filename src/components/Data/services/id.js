@@ -240,6 +240,45 @@ export function parseKey(key) {
 }
 
 // -----------------------------
+// Meta Key（非卡片/选项级数据，如 submode_instances 等）
+// 形态：prefix:version:@meta:name
+// 说明：不走 type(questionBank/envFull) 与 excelId 校验，避免与卡片数据冲突。
+// -----------------------------
+export function normalizeMetaName(name) {
+  const s = String(name ?? '').trim()
+  if (!s) throw new Error('meta name 不能为空')
+  return s
+}
+
+export function buildMetaKey({ version, name, prefix }) {
+  const p = String(prefix || SYSTEM_PREFIX).trim()
+  if (!p) throw new Error('prefix 不能为空')
+
+  const v = normalizeVersionLabel(version)
+  if (!isValidVersionLabel(v)) throw new Error('版本号不能为空')
+
+  const n = normalizeMetaName(name)
+  return `${enc(p)}:${enc(v)}:${enc('@meta')}:${enc(n)}`
+}
+
+export function parseMetaKey(key) {
+  const s = String(key || '')
+  const parts = s.split(':')
+  if (parts.length !== 4) return { valid: false }
+  const [p, v, t, n] = parts
+  const prefix = dec(p)
+  const version = dec(v)
+  const tag = dec(t)
+  const name = dec(n)
+  const valid =
+    !!prefix &&
+    isValidVersionLabel(version) &&
+    tag === '@meta' &&
+    !!name
+  return { valid, prefix, version, name }
+}
+
+// -----------------------------
 // 导出聚合对象（可选，便于“一个对象全用”）
 // 你也可以只按需导入上面的任意函数。
 // -----------------------------
@@ -276,5 +315,10 @@ export const ID = Object.freeze({
 
   // Key（固定四段）
   buildKey,
-  parseKey
+  parseKey,
+
+  // Meta - 已添加到聚合对象中，无需单独导出
+  buildMetaKey,
+  parseMetaKey,
+  normalizeMetaName
 })

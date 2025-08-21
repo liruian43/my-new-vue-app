@@ -1,5 +1,12 @@
 // src/components/Data/store-parts/questions.js
 
+// 导入ID规则中心提供的工具函数
+import {
+  isOptionExcelId,
+  normalizeExcelId,
+  compareFullOptionIds
+} from '../services/id.js'
+
 // 简单字符串哈希（djb2）
 function hashString(str) {
   let h = 5381
@@ -10,28 +17,6 @@ function hashString(str) {
   return ('00000000' + (h >>> 0).toString(16)).slice(-8)
 }
 
-// A..Z, AA.. -> 序号（用于排序）
-function lettersToIndex(letters) {
-  let n = 0
-  for (let i = 0; i < letters.length; i++) {
-    n = n * 26 + (letters.charCodeAt(i) - 64)
-  }
-  return n
-}
-
-// 比较 'A1' / 'AA12' 这种 Excel ID（先列再行）
-function compareFullOptionId(a, b) {
-  const ma = String(a).match(/^([A-Z]+)(\d+)$/)
-  const mb = String(b).match(/^([A-Z]+)(\d+)$/)
-  if (!ma || !mb) return String(a).localeCompare(String(b))
-  const [ , ca, ra ] = ma
-  const [ , cb, rb ] = mb
-  const ai = lettersToIndex(ca)
-  const bi = lettersToIndex(cb)
-  if (ai !== bi) return ai - bi
-  return parseInt(ra, 10) - parseInt(rb, 10)
-}
-
 // 规范化“左侧表达式”：大写、去空格、过滤非法、去重并排序；输出 A1+B2+...
 function canonicalizeLeft(input) {
   const s0 = String(input || '')
@@ -40,10 +25,17 @@ function canonicalizeLeft(input) {
   const left = up.includes('→') ? up.split('→')[0] : up
   if (!left) return ''
   const parts = left.split('+').filter(Boolean)
-  const fullId = /^[A-Z]+\d+$/
-  const tokens = parts.filter(t => fullId.test(t))
+
+  // 仅接受“选项级”ExcelID（如 A6、AA12），用中心规则校验与规范化
+  const tokens = parts
+    .map(t => t.trim())
+    .filter(t => isOptionExcelId(t))   // 只要字母+数字
+    .map(normalizeExcelId)             // 统一成大写规范形式（如 a6 -> A6）
+
+  // 去重 + 统一排序
   const unique = Array.from(new Set(tokens))
-  unique.sort(compareFullOptionId)
+  unique.sort(compareFullOptionIds)    // 先按列（A..Z..AA..），再按行（数字）
+
   return unique.join('+')
 }
 

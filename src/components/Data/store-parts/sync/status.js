@@ -1,12 +1,31 @@
-// src/components/Data/store-parts/sync/status.js
-import { LocalStorageStrategy } from '../../storage/LocalStorageStrategy';
+import { getSystemPrefix } from '../../services/id.js';
 import { loadSyncHistory } from './history';
 import { CARD_DATA_TEMPLATE } from '../cards';
 
+// 确保存储对象有效，使用浏览器本地存储
 function ensureStorage(storage) {
-  return storage && storage.prefix && typeof storage.getItem === 'function'
-    ? storage
-    : new LocalStorageStrategy();
+  // 检查传入的storage是否有效，无效则使用默认localStorage
+  if (storage && storage.prefix && typeof storage.getItem === 'function') {
+    return storage;
+  }
+  
+  // 创建基于localStorage的默认存储对象
+  const prefix = getSystemPrefix();
+  return {
+    prefix,
+    getItem: (key) => {
+      const fullKey = `${prefix}:${key}`;
+      return localStorage.getItem(fullKey);
+    },
+    setItem: (key, value) => {
+      const fullKey = `${prefix}:${key}`;
+      return localStorage.setItem(fullKey, value);
+    },
+    removeItem: (key) => {
+      const fullKey = `${prefix}:${key}`;
+      return localStorage.removeItem(fullKey);
+    }
+  };
 }
 
 export function getSyncStatus(storage, itemId) {

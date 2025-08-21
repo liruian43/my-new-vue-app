@@ -1,43 +1,49 @@
 // src/components/Data/store-parts/feedback.js
-// 合并版：保留你原有的 submitForMatching 与匹配/评分方法；
-// 读写存储时兼容 LocalStorageStrategy 与原生 localStorage
+// 合并版：保留原有的 submitForMatching 与匹配/评分方法；
+// 使用原生localStorage配合id.js进行存储操作
 
 import { v4 as uuidv4 } from 'uuid';
-import { LocalStorageStrategy } from '../storage/LocalStorageStrategy';
+import { buildMetaKey, ID } from '../services/id.js'; // 只导入需要的方法，移除buildKey和parseKey
 
-const STORAGE_KEY = 'feedback_data';
+// 使用id.js的元数据方法构建存储键（修复核心）
+// 原错误：使用buildKey处理非ExcelID格式的标识
+const STORAGE_KEY = buildMetaKey({
+  version: 'V1',
+  name: 'FEEDBACK_DATA' // 使用name参数存储自定义标识，无需遵循ExcelID格式
+});
 
 function isStorage(obj) {
   return obj && typeof obj.getItem === 'function' && typeof obj.setItem === 'function';
 }
+
 function resolveStorage(storageOrStore) {
   if (isStorage(storageOrStore)) return storageOrStore;
   if (storageOrStore && isStorage(storageOrStore.storage)) return storageOrStore.storage;
   if (storageOrStore?.dataManager?.longTermStorage) return storageOrStore.dataManager.longTermStorage;
-  return null;
+  //  fallback到localStorage
+  return localStorage;
 }
+
 function getJSON(storage, key) {
   if (!storage) return null;
   const val = storage.getItem(key);
-  if (storage.prefix) return val || null;
   if (typeof val === 'string') {
     try { return JSON.parse(val); } catch { return null; }
   }
   return val || null;
 }
+
 function setJSON(storage, key, value) {
   if (!storage) return false;
-  if (storage.prefix) return storage.setItem(key, value);
   return storage.setItem(key, JSON.stringify(value));
 }
 
 /**
- * 提交匹配结果并处理反馈（保留你的原有签名与流程）
- * 注意：原代码直接把 localStorage 传进 saveFeedbackData，现在这里做了 JSON 兼容
+ * 提交匹配结果并处理反馈
  */
 export function submitForMatching(store, instanceId, results) {
-  // 验证选项ID格式
-  const invalidIds = (results || []).filter(it => !store.isValidFullOptionId(it.optionId)).map(it => it.optionId);
+  // 验证选项ID格式（使用id.js中的方法）
+  const invalidIds = (results || []).filter(it => !ID.isValidExcelId(it.optionId)).map(it => it.optionId);
   if (invalidIds.length > 0) {
     store.error = `以下选项ID不符合标准格式：${invalidIds.join(', ')}`;
     return null;
@@ -64,8 +70,8 @@ export function submitForMatching(store, instanceId, results) {
   // 更新提交状态并保存反馈数据
   submission.status = 'completed';
 
-  // 这里按你原先调用传 localStorage 的方式兼容：我们封装 setJSON 处理 stringify
-  const s = resolveStorage(store) || new LocalStorageStrategy();
+  // 使用新的存储逻辑
+  const s = resolveStorage(store);
   saveFeedbackData(s, {
     submissions: store.matchingFeedback.submissionHistory,
     feedbacks: store.matchingFeedback.feedbackResults
@@ -81,7 +87,7 @@ export function submitForMatching(store, instanceId, results) {
  * @returns {void}
  */
 export function saveFeedbackData(storageOrStore, feedbackData) {
-  const s = resolveStorage(storageOrStore) || new LocalStorageStrategy();
+  const s = resolveStorage(storageOrStore);
   return setJSON(s, STORAGE_KEY, {
     ...feedbackData,
     updatedAt: new Date().toISOString()
@@ -94,7 +100,7 @@ export function saveFeedbackData(storageOrStore, feedbackData) {
  * @returns {Object} 反馈数据对象
  */
 export function loadFeedbackData(storageOrStore) {
-  const s = resolveStorage(storageOrStore) || new LocalStorageStrategy();
+  const s = resolveStorage(storageOrStore);
   return getJSON(s, STORAGE_KEY) || {
     submissions: [],
     feedbacks: []

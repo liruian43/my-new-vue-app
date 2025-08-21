@@ -1,11 +1,58 @@
 // src/components/Data/manager.js
-import { LocalStorageStrategy } from './storage/LocalStorageStrategy'
 import * as Normalize from './store-parts/normalize'
 import * as IdSvc from './services/id' // 统一 ID/Key 规则来源
 
+// 本地存储实现类，替代原LocalStorageStrategy
+class BrowserLocalStorage {
+  // 获取存储的项
+  getItem(key) {
+    try {
+      const value = localStorage.getItem(key)
+      return value ? JSON.parse(value) : null
+    } catch (error) {
+      console.error(`获取本地存储项 ${key} 失败:`, error)
+      return null
+    }
+  }
+
+  // 设置存储的项
+  setItem(key, value) {
+    try {
+      localStorage.setItem(key, JSON.stringify(value))
+      return true
+    } catch (error) {
+      console.error(`设置本地存储项 ${key} 失败:`, error)
+      return false
+    }
+  }
+
+  // 移除存储的项
+  removeItem(key) {
+    try {
+      localStorage.removeItem(key)
+      return true
+    } catch (error) {
+      console.error(`移除本地存储项 ${key} 失败:`, error)
+      return false
+    }
+  }
+
+  // 清除所有存储的项（可选实现）
+  clear() {
+    try {
+      localStorage.clear()
+      return true
+    } catch (error) {
+      console.error('清除本地存储失败:', error)
+      return false
+    }
+  }
+}
+
 export default class DataManager {
   constructor(storageStrategy) {
-    this.longTermStorage = storageStrategy || new LocalStorageStrategy()
+    // 使用新的本地存储实现替代LocalStorageStrategy
+    this.longTermStorage = storageStrategy || new BrowserLocalStorage()
     this.rootAdminId = 'root_admin'
     this.currentModeId = this.rootAdminId
 

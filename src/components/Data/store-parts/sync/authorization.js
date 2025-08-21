@@ -1,12 +1,31 @@
 // src/components/Data/store-parts/sync/authorization.js
-import { LocalStorageStrategy } from '../../storage/LocalStorageStrategy';
+import { buildMetaKey, getSystemPrefix } from '../../services/id.js'; // 替换buildKey为buildMetaKey
 
-const STORAGE_KEY = 'field_authorizations';
+// 使用id.js的元数据方法构建存储键（修复核心）
+const STORAGE_KEY = buildMetaKey({
+  version: 'sync',
+  name: 'field_authorizations' // 用name参数存储自定义标识，支持任意格式
+});
 
+// 确保使用正确的本地存储实现
 function ensureStorage(storage) {
-  return storage && storage.prefix && typeof storage.getItem === 'function'
-    ? storage
-    : new LocalStorageStrategy();
+  // 如果提供了有效的存储对象则使用它，否则使用默认的localStorage
+  if (storage && typeof storage.getItem === 'function' && typeof storage.setItem === 'function') {
+    return storage;
+  }
+  
+  // 默认使用localStorage，并添加前缀支持
+  return {
+    prefix: getSystemPrefix(),
+    getItem: (key) => {
+      const value = localStorage.getItem(key);
+      return value ? JSON.parse(value) : null;
+    },
+    setItem: (key, value) => {
+      localStorage.setItem(key, JSON.stringify(value));
+      return value;
+    }
+  };
 }
 
 export function saveFieldAuthorizations(storage, authorizations) {

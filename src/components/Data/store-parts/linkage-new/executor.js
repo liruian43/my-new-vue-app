@@ -1,15 +1,58 @@
-// src/components/Data/store-parts/linkage/executor.js
-import { LocalStorageStrategy } from '../../storage/LocalStorageStrategy';
 import { getLinkageRule } from './rules';
 import { applyTransform } from './transforms';
 import { getNestedValue, setNestedValue } from '../../utils/objectPath';
 import * as Sync from '../sync';
 import * as LongTerm from '../../services/longTerm';
+// 导入id.js中的方法替代LocalStorageStrategy
+import { buildKey, getSystemPrefix } from '../../services/id.js';
 
+// 实现基础的localStorage操作，使用id.js生成键名
+const storageOperations = {
+  // 获取系统前缀作为存储命名空间
+  getPrefix: () => getSystemPrefix(),
+  
+  // 使用id.js的buildKey生成规范的存储键
+  getItem: (keyConfig) => {
+    try {
+      const key = buildKey(keyConfig);
+      const value = localStorage.getItem(key);
+      return value ? JSON.parse(value) : null;
+    } catch (error) {
+      console.error('获取存储数据失败:', error);
+      return null;
+    }
+  },
+  
+  // 存储数据
+  setItem: (keyConfig, value) => {
+    try {
+      const key = buildKey(keyConfig);
+      localStorage.setItem(key, JSON.stringify(value));
+      return true;
+    } catch (error) {
+      console.error('存储数据失败:', error);
+      return false;
+    }
+  },
+  
+  // 删除数据
+  removeItem: (keyConfig) => {
+    try {
+      const key = buildKey(keyConfig);
+      localStorage.removeItem(key);
+      return true;
+    } catch (error) {
+      console.error('删除存储数据失败:', error);
+      return false;
+    }
+  }
+};
+
+// 确保存储对象有效
 function ensureStorage(storage) {
   return storage && storage.prefix && typeof storage.getItem === 'function'
     ? storage
-    : new LocalStorageStrategy();
+    : storageOperations;
 }
 
 function createEmptyCard(targetCardId, targetModeId) {
