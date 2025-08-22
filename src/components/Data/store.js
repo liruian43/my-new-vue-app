@@ -26,6 +26,9 @@ import * as Normalize from './store-parts/normalize'
 import * as LongTerm from './services/longTerm'
 import * as IO from './services/io'
 
+// 引入 emptiness.js中的校验函数（已修正路径到utils目录）
+import { hasAtLeastOneCardAndOptionInSession } from './utils/emptiness'
+
 // 唯一的 ID/Key 规则来源（仅引用）
 import * as IdSvc from './services/id'
 
@@ -240,7 +243,7 @@ export const useCardStore = defineStore('data', {
   }),
 
   getters: {
-    // 基本
+    // 保持原有代码不变
     isRootMode() { return this.currentModeId === 'root_admin' },
     rootMediumData() { return this.mediumCards.filter(card => card.modeId === 'root_admin') },
     rootUnsavedChanges() { return this.rootMode.tempOperations.unsavedHistory.length > 0 },
@@ -493,29 +496,64 @@ export const useCardStore = defineStore('data', {
 
     // 全量环境（版本化）- 通过 manager
     async listEnvFullSnapshots() {
-      const snapshots = await this.dataManager.loadEnvFullSnapshots()
-      return snapshots
+      const snaps = await this.dataManager?.loadEnvFullSnapshots?.() || [];
+      return (Array.isArray(snaps) ? snaps : []).map(s => ({
+        version: s.version,
+        timestamp: s.timestamp,
+        hash: s.hash
+      }));
     },
+    
+    // 按方案修改的核心方法
     async saveEnvFullSnapshot(versionLabel) {
-      const currentSnapshots = await this.dataManager.loadEnvFullSnapshots()
-      const newSnapshot = {
-        version: versionLabel,
-        timestamp: Date.now(),
-        hash: '',
-        environment: this.environmentConfigs,
-        fullConfigs: {}
+      const version = String(versionLabel || '').trim();
+      if (!version) {
+        this.error = '版本号不能为空'; // 直接设置 store.error
+        return false;
       }
-      const updatedSnapshots = [...currentSnapshots, newSnapshot]
-      await this.dataManager.saveEnvFullSnapshots(updatedSnapshots)
-      return newSnapshot
-    },
-    async applyEnvFullSnapshot(versionLabel) {
-      const snapshots = await this.dataManager.loadEnvFullSnapshots()
-      const snapshot = snapshots.find(s => s.version === versionLabel)
-      if (snapshot) { this.environmentConfigs = snapshot.environment; return true }
-      return false
+
+      const snaps = await this.dataManager?.loadEnvFullSnapshots?.() || [];
+      const arr = Array.isArray(snaps) ? snaps : [];
+
+      // 检查版本号是否已存在 (如果希望覆盖，则需要先移除旧的)
+      if (arr.some(s => s.version === version)) {
+        this.error = `版本号已存在：${version}`;
+        return false;
+      }
+
+      // 硬校验：台面上必须至少有“1 张卡 + 至少 1 条选项（结构）”
+      // 这个函数是从 utils/emptiness.js 导入的
+      if (!hasAtLeastOneCardAndOptionInSession(this)) { // 注意：这里需要传入 this (store 实例)
+        this.error = '无效信息：至少需要一张卡片和一条选项，才能保存全量配置';
+        return false;
+      }
+
+      // 最重要的改变：从 sessionCards 构建要保存的 environment
+      // envConfigs.js 中定义了 buildEnvironmentFromSession(store)
+      const environmentToSave = EnvPart.buildEnvironmentFromSession(this); // <-- 调用正确的方法
+      const fullConfigsToSave = EnvPart.buildFullConfigs(environmentToSave); // <-- 同时构建 fullConfigs
+      const hash = EnvPart.hashString(EnvPart.stableStringify(fullConfigsToSave)); // <-- 计算哈希
+
+      const newSnapshot = {
+        version,
+        timestamp: Date.now(),
+        hash,
+        environment: environmentToSave, // 保存实时构建的 environment
+        fullConfigs: fullConfigsToSave // 保存实时构建的 fullConfigs
+      };
+
+      arr.push(newSnapshot);
+      await this.dataManager?.saveEnvFullSnapshots?.(arr);
+      this.error = null; // 清除错误信息
+      return true; // 保存成功
     },
 
+    async applyEnvFullSnapshot(versionLabel) {
+      // 这部分保持不变，因为 envConfigs.js/applyEnvFullSnapshot 已经包含了正确的逻辑
+      return EnvPart.applyEnvFullSnapshot(this, versionLabel);
+    },
+
+    // 以下所有代码保持不变
     // 题库（通过 manager）
     async loadQuestionBank() {
       const bank = await this.dataManager.loadQuestionBank()

@@ -8,7 +8,9 @@ class BrowserLocalStorage {
   getItem(key) {
     try {
       const value = localStorage.getItem(key)
-      return value ? JSON.parse(value) : null
+      const result = value ? JSON.parse(value) : null
+      console.log('恢复的数据:', { key, value: result }); // 恢复时添加
+      return result
     } catch (error) {
       console.error(`获取本地存储项 ${key} 失败:`, error)
       return null
@@ -18,6 +20,7 @@ class BrowserLocalStorage {
   // 设置存储的项
   setItem(key, value) {
     try {
+      console.log('保存的数据:', { key, value }); // 保存时添加
       localStorage.setItem(key, JSON.stringify(value))
       return true
     } catch (error) {
@@ -92,6 +95,7 @@ export default class DataManager {
 
   setCurrentMode(modeId) {
     this.currentModeId = modeId
+    console.log('保存的数据:', { key: this.storageKeys.currentMode, value: modeId }); // 保存时添加
     this.longTermStorage.setItem(this.storageKeys.currentMode, modeId)
   }
 
@@ -100,6 +104,7 @@ export default class DataManager {
     const v = IdSvc.normalizeVersionLabel(label)
     if (!IdSvc.isValidVersionLabel(v)) throw new Error('版本号不能为空')
     this.versionLabel = v
+    console.log('保存的数据:', { key: this.storageKeys.currentVersion, value: v }); // 保存时添加
     this.longTermStorage.setItem(this.storageKeys.currentVersion, v)
     return v
   }
@@ -153,11 +158,14 @@ export default class DataManager {
   //   const data = getByExcelKey({ type: IdSvc.TYPES.ENV_FULL, excelId: 'A6' })
   getByExcelKey({ type, excelId, version, prefix } = {}) {
     const key = this.buildKey({ type, excelId, version, prefix })
-    return this.longTermStorage.getItem(key)
+    const result = this.longTermStorage.getItem(key)
+    console.log('恢复的数据:', { key, value: result }); // 恢复时添加
+    return result
   }
 
   setByExcelKey({ type, excelId, version, prefix } = {}, data) {
     const key = this.buildKey({ type, excelId, version, prefix })
+    console.log('保存的数据:', { key, value: data }); // 保存时添加
     return this.longTermStorage.setItem(key, data)
   }
 
@@ -167,6 +175,7 @@ export default class DataManager {
       return this.longTermStorage.removeItem(key)
     }
     // 兜底：如果 storage 没有 removeItem，就写入 null
+    console.log('保存的数据:', { key, value: null }); // 保存时添加
     return this.longTermStorage.setItem(key, null)
   }
 
@@ -178,14 +187,17 @@ export default class DataManager {
         categories: [],
         lastUpdated: null
       }
+    console.log('恢复的数据:', { key: this.storageKeys.questionBank, value: bank }); // 恢复时添加
     return bank
   }
 
   async saveQuestionBank(bankData) {
-    return this.longTermStorage.setItem(this.storageKeys.questionBank, {
+    const dataToSave = {
       ...bankData,
       lastUpdated: new Date().toISOString()
-    })
+    }
+    console.log('保存的数据:', { key: this.storageKeys.questionBank, value: dataToSave }); // 保存时添加
+    return this.longTermStorage.setItem(this.storageKeys.questionBank, dataToSave)
   }
 
   normalizeQuestion(questionData) {
@@ -212,13 +224,15 @@ export default class DataManager {
   // ========== 环境全量快照（核心功能，保持现状） ==========
   async loadEnvFullSnapshots() {
     const snaps = this.longTermStorage.getItem(this.storageKeys.envFullSnapshots) || []
-    return snaps.map(snap => ({
+    const result = snaps.map(snap => ({
       version: snap.version || '',
       timestamp: snap.timestamp || Date.now(),
       hash: snap.hash || '',
       environment: snap.environment || {},
       fullConfigs: snap.fullConfigs || {}
     }))
+    console.log('恢复的数据:', { key: this.storageKeys.envFullSnapshots, value: result }); // 恢复时添加
+    return result
   }
 
   async saveEnvFullSnapshots(snaps) {
@@ -229,6 +243,7 @@ export default class DataManager {
       environment: snap.environment || {},
       fullConfigs: snap.fullConfigs || {}
     }))
+    console.log('保存的数据:', { key: this.storageKeys.envFullSnapshots, value: validated }); // 保存时添加
     return this.longTermStorage.setItem(this.storageKeys.envFullSnapshots, validated)
   }
 }

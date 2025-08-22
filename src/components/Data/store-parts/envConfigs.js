@@ -1,11 +1,11 @@
 // src/components/Data/store-parts/envConfigs.js
-// 合并版：同时支持 manager 调用（传 storage）与 store 调用（传 store）
-// 兼容你原先 A/B 两版以及快照逻辑（已改为四段 Key 落盘 + 保存前硬校验）
+// 合并版：支持 manager（传 storage）与 store（传 store）
+// 采用四段 Key 落盘 + 保存前硬校验（结构存在性）
+// 空值与结构统一交由 utils/emptiness.js 负责
 
 import {
   isValidCardId,
   normalizeCardId,
-  isValidOptionId,
   normalizeOptionId,
   buildFullOptionId,
   parseFullOptionId,
@@ -14,6 +14,13 @@ import {
   TYPES,
   normalizeVersionLabel
 } from '../services/id.js';
+
+// 导入空值处理工具
+import {
+  toNull,
+  ensureEnvironmentShape,
+  hasAtLeastOneCardAndOptionInSession
+} from '../utils/emptiness.js';
 
 // ========== 四段 Key 生成 ==========
 // 版本来源：优先取 ctx.currentVersion / ctx.version / ctx.versionLabel，兜底 'GLOBAL'
@@ -36,7 +43,8 @@ function storageKeyForEnv(ctx) {
 // ========== 小工具 ==========
 const _arr = (x) => Array.isArray(x) ? x : [];
 
-function stableStringify(obj) {
+// 导出 stableStringify
+export function stableStringify(obj) {
   const seen = new WeakSet();
   const recur = (v) => {
     if (v === null || typeof v !== 'object') return v;
@@ -55,7 +63,8 @@ function stableStringify(obj) {
   return JSON.stringify(recur(obj));
 }
 
-function hashString(str) {
+// 导出 hashString
+export function hashString(str) {
   let h = 5381;
   for (let i = 0; i < str.length; i++) {
     h = ((h << 5) + h) + str.charCodeAt(i);
@@ -73,7 +82,7 @@ function resolveStorage(arg) {
   if (arg?.dataManager?.longTermStorage && isStorage(arg.dataManager.longTermStorage)) {
     return arg.dataManager.longTermStorage;
   }
-  // 也可在此处兜底 window.localStorage（若你需要全局兜底，可解开下一行）
+  // 如需兜底到 window.localStorage，可放开下一行：
   // if (typeof window !== 'undefined' && isStorage(window.localStorage)) return window.localStorage;
   return null;
 }
@@ -91,6 +100,7 @@ function setJSON(storage, key, value) {
   if (!storage) return false;
   // 兼容可能存在的“自带 JSON 序列化”的适配器
   if (storage.prefix) return storage.setItem(key, value);
+  console.log('保存的数据:', value); // 保存时添加
   return storage.setItem(key, JSON.stringify(value));
 }
 
@@ -109,8 +119,13 @@ function maybeMigrateLegacyEnv(storage, newKey) {
       // 尝试识别是否为 JSON 字符串
       let obj = null;
       try { obj = JSON.parse(raw); } catch { obj = raw; }
+      console.log('恢复的数据:', obj); // 恢复时添加
       setJSON(storage, newKey, obj);
-      try { storage.removeItem(oldKey); } catch {}
+      try {
+        storage.removeItem(oldKey);
+      } catch (e) {
+        // ignore legacy key removal
+      }
       break;
     }
   }
@@ -123,6 +138,7 @@ function maybeMigrateLegacyEnv(storage, newKey) {
  * - 参数既可以是 storage（供 manager 调用），也可以是 store（你现有的调用）
  * - 使用四段 Key（prefix:version:envFull:A0）
  * - 首次加载时尝试从 legacy 键迁移
+ * - 返回时对 cards/options 进行 shape 补齐（空值与结构由 emptiness.js 统一）
  */
 export async function loadEnvironmentConfigs(ctx) {
   // 若传入的是 storage 或可解析到 storage
@@ -131,42 +147,42 @@ export async function loadEnvironmentConfigs(ctx) {
     const key = storageKeyForEnv(ctx);
     maybeMigrateLegacyEnv(s, key);
     const stored = getJSON(s, key);
+    console.log('恢复的数据:', stored); // 恢复时添加
+
+    const shaped = ensureEnvironmentShape(stored || { cards: {}, options: {} });
     return {
-      cards: {},
-      options: {},
-      uiPresets: [],
-      scoringRules: [],
-      contextTemplates: [],
-      linkageSettings: {
+      ...shaped,
+      uiPresets: _arr(stored?.uiPresets),
+      scoringRules: _arr(stored?.scoringRules),
+      contextTemplates: _arr(stored?.contextTemplates),
+      linkageSettings: stored?.linkageSettings || {
         autoSync: false,
         syncInterval: 300000,
         conflictResolution: 'source_wins'
-      },
-      ...(stored || {})
+      }
     };
   }
 
   // 兼容：如果是老版 dataManager（store）
   if (typeof ctx?.dataManager?.loadEnvironmentConfigs === 'function') {
     const data = await ctx.dataManager.loadEnvironmentConfigs();
-    if (data && typeof data === 'object') {
-      return {
-        cards: data.cards || {},
-        options: data.options || {},
-        uiPresets: _arr(data.uiPresets),
-        scoringRules: _arr(data.scoringRules),
-        contextTemplates: _arr(data.contextTemplates),
-        linkageSettings: data.linkageSettings || {
-          autoSync: false,
-          syncInterval: 300000,
-          conflictResolution: 'source_wins'
-        }
-      };
-    }
+    console.log('恢复的数据:', data); // 恢复时添加
+    const shaped = ensureEnvironmentShape(data || { cards: {}, options: {} });
+    return {
+      ...shaped,
+      uiPresets: _arr(data?.uiPresets),
+      scoringRules: _arr(data?.scoringRules),
+      contextTemplates: _arr(data?.contextTemplates),
+      linkageSettings: data?.linkageSettings || {
+        autoSync: false,
+        syncInterval: 300000,
+        conflictResolution: 'source_wins'
+      }
+    };
   }
 
-  // 兜底默认值
-  return {
+  // 兜底默认值（shape）
+  const defaultData = ensureEnvironmentShape({
     cards: {},
     options: {},
     uiPresets: [],
@@ -177,7 +193,9 @@ export async function loadEnvironmentConfigs(ctx) {
       syncInterval: 300000,
       conflictResolution: 'source_wins'
     }
-  };
+  });
+  console.log('恢复的数据:', defaultData); // 恢复时添加
+  return defaultData;
 }
 
 /**
@@ -185,31 +203,41 @@ export async function loadEnvironmentConfigs(ctx) {
  * - 参数既可以是 storage（manager 调用），也可以是 store（你现有的调用）
  * - 注意：这里不做“卡+选项”的硬校验，交由“全量快照保存”时校验；
  *   因为此处也可能用于保存非卡片数据（如 uiPresets/contextTemplates）。
+ * - 若调用方传入 cards/options，则仅对这两者做 shape 规范化后再落盘，避免误清空。
  */
 export async function saveEnvironmentConfigs(ctx, configs = {}) {
   const current = await loadEnvironmentConfigs(ctx);
-  const finalConfigs = {
-    ...current,
-    ...configs,
-    updatedAt: new Date().toISOString()
-  };
+
+  // 仅当调用方显式传入 cards/options 时，才用 shape 覆盖
+  const next = { ...current, ...configs };
+  if ('cards' in configs || 'options' in configs) {
+    const shaped = ensureEnvironmentShape({
+      cards: configs.cards,
+      options: configs.options
+    });
+    next.cards = shaped.cards;
+    next.options = shaped.options;
+  }
+  next.updatedAt = new Date().toISOString();
 
   // storage 直写（四段 Key）
   const s = resolveStorage(ctx);
   if (s) {
     const key = storageKeyForEnv(ctx);
-    return setJSON(s, key, finalConfigs);
+    console.log('保存的数据:', next); // 保存时添加
+    return setJSON(s, key, next);
   }
 
   // 兼容 dataManager 保存
   if (typeof ctx?.dataManager?.saveEnvironmentConfigs === 'function') {
-    return ctx.dataManager.saveEnvironmentConfigs(finalConfigs);
+    console.log('保存的数据:', next); // 保存时添加
+    return ctx.dataManager.saveEnvironmentConfigs(next);
   }
 
   return false;
 }
 
-// ========== 老版核心功能保留（保持你的原逻辑与签名） ==========
+// ========== 老版核心功能保留（最小改动，空值委托 emptiness.js） ==========
 
 export function normalizeCards(store, cards) {
   const out = {};
@@ -218,8 +246,9 @@ export function normalizeCards(store, cards) {
     if (!id) continue;
     out[id] = {
       id,
-      title: c?.title ?? null,
-      dropdown: _arr(c?.dropdown || c?.selectOptions).map(opt => (opt?.label ?? opt ?? null))
+      title: toNull(c?.title),
+      // dropdown 永远是 string[]（空项允许为空串）
+      dropdown: _arr(c?.dropdown || c?.selectOptions).map(opt => String(opt?.label ?? opt ?? ''))
     };
   }
   return out;
@@ -262,9 +291,9 @@ export function normalizeOptions(store, options) {
     if (!fullId || !cardId || !optionId) continue;
 
     out[fullId] = {
-      name: o?.name ?? null,
-      value: o?.value ?? null,
-      unit: o?.unit ?? null
+      name: toNull(o?.name),
+      value: toNull(o?.value),
+      unit: toNull(o?.unit)
     };
   }
   return out;
@@ -323,19 +352,10 @@ export function notifyEnvConfigChanged(/* store */) {
   return true;
 }
 
-// ========== 全量快照（保留你的老版实现 + 保存前硬校验） ==========
+// ========== 全量快照（保存前硬校验，仅检查“结构存在性”） ==========
 
-// “台面上至少一张卡且该卡至少一条选项”的判定（用于保存快照前的硬校验）
-function hasAtLeastOneCardAndOptionInSession(store) {
-  if (!Array.isArray(store.sessionCards) || store.sessionCards.length === 0) return false;
-  for (const c of store.sessionCards) {
-    const opts = c?.data?.options;
-    if (Array.isArray(opts) && opts.length > 0) return true;
-  }
-  return false;
-}
-
-function buildEnvironmentFromSession(store) {
+// 导出 buildEnvironmentFromSession
+export function buildEnvironmentFromSession(store) {
   const env = { cards: {}, options: {} };
   const cards = _arr(store.sessionCards)
     .slice()
@@ -348,25 +368,29 @@ function buildEnvironmentFromSession(store) {
 
     env.cards[cardId] = {
       id: cardId,
-      title: card?.data?.title ?? null,
-      dropdown: _arr(card?.data?.selectOptions).map(opt => (opt?.label ?? null))
+      title: toNull(card?.data?.title),
+      // dropdown 按 string[] 存储，UI 的 selectOptions -> label
+      dropdown: _arr(card?.data?.selectOptions).map(opt => String(opt?.label ?? ''))
     };
 
     const opts = _arr(card?.data?.options);
     opts.forEach((opt, idx) => {
+      // 运行态使用 1..N 连续编号入 env；存储时不因内容为空而过滤
       const optionId = normalizeOptionId(String(idx + 1));
       const combinedId = buildFullOptionId(cardId, optionId);
       env.options[combinedId] = {
-        name: opt?.name ?? null,
-        value: opt?.value ?? null,
-        unit: opt?.unit ?? null
+        name: toNull(opt?.name),
+        value: toNull(opt?.value),
+        unit: toNull(opt?.unit)
       };
     });
   }
-  return env;
+  // 使用工具函数确保最终结构合规
+  return ensureEnvironmentShape(env);
 }
 
-function buildFullConfigs(env) {
+// 导出 buildFullConfigs
+export function buildFullConfigs(env) {
   const full = {};
   const cards = env.cards || {};
   const options = env.options || {};
@@ -418,12 +442,13 @@ export async function saveEnvFullSnapshot(store, versionLabel) {
     return false;
   }
 
-  // 硬校验：台面上必须至少有“1 张卡 + 该卡至少 1 条选项”
+  // 硬校验：台面上必须至少有“1 张卡 + 至少 1 条选项（结构）”
   if (!hasAtLeastOneCardAndOptionInSession(store)) {
     store.error = '无效信息：至少需要一张卡片和一条选项，才能保存全量配置';
     return false;
   }
 
+  // 现在这些函数都已导出，可以从 store.js 正确调用了
   const environment = buildEnvironmentFromSession(store);
   const fullConfigs = buildFullConfigs(environment);
   const hash = hashString(stableStringify(fullConfigs));
@@ -467,7 +492,12 @@ export async function applyEnvFullSnapshot(store, versionLabel) {
         const parsed = parseFullOptionId(String(fullId).toUpperCase());
         if (!parsed.valid) return null;
         if (parsed.cardId !== cardId) return null;
-        return { numId: parseInt(parsed.optionId, 10), name: o?.name ?? null, value: o?.value ?? null, unit: o?.unit ?? null };
+        return {
+          numId: parseInt(parsed.optionId, 10),
+          name: toNull(o?.name),
+          value: toNull(o?.value),
+          unit: toNull(o?.unit)
+        };
       })
       .filter(Boolean)
       .sort((a, b) => a.numId - b.numId)
@@ -482,7 +512,7 @@ export async function applyEnvFullSnapshot(store, versionLabel) {
     return {
       id: cardId,
       data: {
-        title: c.title ?? null,
+        title: toNull(c.title),
         options: optionEntries,
         selectOptions,
         selectedValue: null
@@ -504,7 +534,12 @@ export async function applyEnvFullSnapshot(store, versionLabel) {
           const parsed = parseFullOptionId(String(fullId).toUpperCase());
           if (!parsed.valid) return null;
           if (parsed.cardId !== cardId) return null;
-          return { numId: parseInt(parsed.optionId, 10), name: o?.name ?? null, value: o?.value ?? null, unit: o?.unit ?? null };
+          return {
+            numId: parseInt(parsed.optionId, 10),
+            name: toNull(o?.name),
+            value: toNull(o?.value),
+            unit: toNull(o?.unit)
+          };
         })
         .filter(Boolean)
         .sort((a, b) => a.numId - b.numId)
@@ -520,7 +555,7 @@ export async function applyEnvFullSnapshot(store, versionLabel) {
         id: cardId,
         modeId: store.currentModeId || 'root_admin',
         data: {
-          title: c.title ?? null,
+          title: toNull(c.title),
           options: optionEntries,
           selectOptions,
           selectedValue: null
@@ -553,8 +588,8 @@ export async function applyEnvFullSnapshot(store, versionLabel) {
 export function createScoringRule(ruleData) {
   return {
     id: ruleData.id || `rule_${Date.now()}`,
-    name: ruleData.name ?? null,
-    description: ruleData.description ?? null,
+    name: toNull(ruleData.name),
+    description: toNull(ruleData.description),
     type: ruleData.type || 'exact_match',
     parameters: ruleData.parameters || {},
     score: ruleData.score || 0,
