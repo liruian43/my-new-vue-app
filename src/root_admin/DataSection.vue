@@ -1,104 +1,103 @@
 <template>
   <div class="data-management">
-    <!-- 顶部工具栏 -->
+    <!-- 顶部工具栏 - 按钮禁用 -->
     <div class="data-controls">
-      <button class="data-button import" @click="triggerImport">导入数据</button>
-      <button class="data-button export" @click="store.exportData">导出数据</button>
+      <button class="data-button import" @click.prevent>导入数据</button>
+      <button class="data-button export" @click.prevent>导出数据</button>
       <button 
         class="data-button manager" 
-        @click="store.toggleManager"
-        :class="{ active: store.isManager }"
+        @click.prevent
+        :class="{ active: isManager }"
       >
-        {{ store.isManager ? '退出管理' : '数据管理' }}
+        {{ isManager ? '退出管理' : '数据管理' }}
       </button>
-      <button class="data-button clear" @click="store.clearFilters">清除筛选</button>
+      <button class="data-button clear" @click.prevent>清除筛选</button>
     </div>
     
-    <!-- 筛选栏 -->
+    <!-- 筛选栏 - 筛选选项禁用 -->
     <div class="filter-section">
       <div class="filter-group">
         <span class="filter-label">数据类型:</span>
         <div class="filter-options">
-          <button :class="['filter-option', { active: store.filterType === 'all' }]" @click="store.filterType = 'all'">全部</button>
-          <button :class="['filter-option', 'question', { active: store.filterType === 'question' }]" @click="store.filterType = 'question'">资料题库</button>
-          <button :class="['filter-option', 'root', { active: store.filterType === 'root' }]" @click="store.filterType = 'root'">主模式</button>
-          <button :class="['filter-option', 'other-mode', { active: store.filterType === 'other-mode' }]" @click="store.filterType = 'other-mode'">其他模式</button>
-          <button :class="['filter-option', 'config', { active: store.filterType === 'config' }]" @click="store.filterType = 'config'">环境配置</button>
+          <button :class="['filter-option', { active: filterType === 'all' }]" @click.prevent>全部</button>
+          <button :class="['filter-option', 'question', { active: filterType === 'question' }]" @click.prevent>资料题库</button>
+          <button :class="['filter-option', 'root', { active: filterType === 'root' }]" @click.prevent>主模式</button>
+          <button :class="['filter-option', 'other-mode', { active: filterType === 'other-mode' }]" @click.prevent>其他模式</button>
+          <button :class="['filter-option', 'config', { active: filterType === 'config' }]" @click.prevent>环境配置</button>
         </div>
       </div>
 
-      <div class="filter-group" v-if="store.isRootMode">
+      <div class="filter-group" v-if="isRootMode">
         <span class="filter-label">同步状态:</span>
         <div class="filter-options">
-          <button :class="['filter-option', { active: store.syncFilter === 'all' }]" @click="store.syncFilter = 'all'">全部</button>
-          <button :class="['filter-option', 'synced', { active: store.syncFilter === 'synced' }]" @click="store.syncFilter = 'synced'">已同步</button>
-          <button :class="['filter-option', 'unsynced', { active: store.syncFilter === 'unsynced' }]" @click="store.syncFilter = 'unsynced'">未同步</button>
-          <button :class="['filter-option', 'conflict', { active: store.syncFilter === 'conflict' }]" @click="store.syncFilter = 'conflict'">冲突</button>
+          <button :class="['filter-option', { active: syncFilter === 'all' }]" @click.prevent>全部</button>
+          <button :class="['filter-option', 'synced', { active: syncFilter === 'synced' }]" @click.prevent>已同步</button>
+          <button :class="['filter-option', 'unsynced', { active: syncFilter === 'unsynced' }]" @click.prevent>未同步</button>
+          <button :class="['filter-option', 'conflict', { active: syncFilter === 'conflict' }]" @click.prevent>冲突</button>
         </div>
       </div>
     </div>
     
-    <!-- 管理操作栏 -->
-    <div v-if="store.isManager" class="management-section">
+    <!-- 管理操作栏 - 保持显示但功能禁用 -->
+    <div v-if="isManager" class="management-section">
       <div class="selection-info">
         <label>
-          <input type="checkbox" v-model="store.selectAll" @change="store.handleSelectAll">
-          全选 (已选: {{ store.selectedCount }})
+          <input type="checkbox" v-model="selectAll" @change.prevent>
+          全选 (已选: {{ selectedCount }})
         </label>
       </div>
       <div class="management-actions">
-        <button class="data-button delete" @click="store.deleteSelected" :disabled="!store.selectedCount || store.hasModeDataSelected">
+        <button class="data-button delete" @click.prevent :disabled="true">
           删除选中
         </button>
       </div>
     </div>
     
-    <!-- 预览数据提示 -->
-    <div v-if="store.hasPreview" class="preview-section">
+    <!-- 预览数据提示 - 保持显示但功能禁用 -->
+    <div v-if="hasPreview" class="preview-section">
       <span class="preview-info">
-        预览数据: 共 {{ store.previewData.totalCount }} 条 
-        (环境配置: {{ store.previewData.configs.length }}, 资料题库: {{ store.previewData.questions.length }})
+        预览数据: 共 {{ previewTotalCount }} 条 
+        (环境配置: {{ previewConfigsCount }}, 资料题库: {{ previewQuestionsCount }})
       </span>
       <div class="preview-actions">
-        <button class="data-button apply" @click="store.applyPreview">应用预览</button>
-        <button class="data-button cancel" @click="store.cancelPreview">取消预览</button>
-        <button class="data-button switch" @click="store.isPreview = !store.isPreview">
-          {{ store.isPreview ? '查看原始数据' : '查看预览数据' }}
+        <button class="data-button apply" @click.prevent>应用预览</button>
+        <button class="data-button cancel" @click.prevent>取消预览</button>
+        <button class="data-button switch" @click.prevent>
+          {{ isPreview ? '查看原始数据' : '查看预览数据' }}
         </button>
       </div>
     </div>
     
-    <!-- Excel风格表格 -->
+    <!-- Excel风格表格 - 保持显示但交互禁用 -->
     <div class="excel-table-container">
       <!-- 表头 -->
       <div class="excel-header-row">
-        <div class="excel-cell checkbox-col" v-if="store.isManager">
+        <div class="excel-cell checkbox-col" v-if="isManager">
           <span>选</span>
         </div>
         <div class="excel-cell id-col">ID</div>
         <div class="excel-cell type-col">类型</div>
-        <div class="excel-cell sync-col" v-if="store.isRootMode">同步状态</div>
+        <div class="excel-cell sync-col" v-if="isRootMode">同步状态</div>
         <div class="excel-cell summary-col">内容摘要</div>
         <div class="excel-cell mode-col">所属模式</div>
         <div class="excel-cell actions-col">操作</div>
       </div>
 
-      <!-- 表格内容 -->
+      <!-- 表格内容 - 使用静态数据展示 -->
       <div class="excel-body">
         <div 
-          v-for="(item, index) in store.filteredData" 
+          v-for="(item, index) in staticData" 
           :key="index" 
           class="excel-row"
           :class="{ 'even-row': index % 2 === 1 }"
-          :title="store.generateTooltip(item)"
+          :title="item.tooltip"
         >
-          <!-- 复选框列 -->
-          <div class="excel-cell checkbox-col" v-if="store.isManager">
+          <!-- 复选框列 - 禁用状态 -->
+          <div class="excel-cell checkbox-col" v-if="isManager">
             <input 
               type="checkbox" 
-              v-model="item.selected" 
-              @change="store.updateSelected"
-              :disabled="store.isModeData(item)"
+              :checked="false" 
+              disabled
             >
           </div>
           
@@ -109,99 +108,116 @@
           <div class="excel-cell type-col">{{ item.typeText }}</div>
           
           <!-- 同步状态列 -->
-          <div class="excel-cell sync-col" v-if="store.isRootMode">
-            <span :class="store.getSyncClass(item.syncStatus)">{{ store.getSyncText(item.syncStatus) }}</span>
+          <div class="excel-cell sync-col" v-if="isRootMode">
+            <span :class="item.syncClass">{{ item.syncText }}</span>
           </div>
           
           <!-- 内容摘要列 -->
           <div class="excel-cell summary-col">{{ item.summary || '无数据' }}</div>
           
           <!-- 所属模式列 -->
-          <div class="excel-cell mode-col" :class="store.getModeClass(item)">
+          <div class="excel-cell mode-col" :class="item.modeClass">
             {{ item.modeId }}
           </div>
           
-          <!-- 操作列 -->
+          <!-- 操作列 - 按钮禁用 -->
           <div class="excel-cell actions-col">
             <button 
               class="action-btn delete" 
-              @click="store.deleteItem(item)" 
-              v-if="!store.isPreview && !store.isModeData(item)"
+              @click.prevent
+              disabled
             >
               删除
             </button>
             <button 
               class="action-btn edit" 
-              @click="editItem(item)" 
-              v-if="!store.isPreview && !store.isModeData(item) && store.canEditItem(item)"
+              @click.prevent
+              disabled
             >
               编辑
             </button>
           </div>
         </div>
 
-        <div class="empty-state" v-if="store.filteredData.length === 0">
-          <p>{{ store.isPreview ? '没有预览数据' : '没有符合条件的数据' }}</p>
+        <div class="empty-state" v-if="staticData.length === 0">
+          <p>数据功能已禁用</p>
         </div>
       </div>
     </div>
     
-    <input type="file" ref="fileInput" class="hidden" @change="handleImport" accept=".json">
+    <!-- 隐藏文件输入 -->
+    <input type="file" ref="fileInput" class="hidden" accept=".json">
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, inject, watch } from 'vue';
-import { useCardStore } from '@/components/Data/store';
+import { ref, onMounted } from 'vue';
 
-// 注入和初始化
-const store = useCardStore();
-const router = inject('router');
+// 静态状态变量 - 替代store中的状态
+const isManager = ref(false);
+const filterType = ref('all');
+const syncFilter = ref('all');
+const isRootMode = ref(true);
+const selectAll = ref(false);
+const selectedCount = ref(0);
+const hasPreview = ref(false);
+const previewTotalCount = ref(0);
+const previewConfigsCount = ref(0);
+const previewQuestionsCount = ref(0);
+const isPreview = ref(false);
+
+// 静态数据 - 用于展示表格结构
+const staticData = ref([
+  {
+    id: 'root_admin',
+    typeText: '主模式',
+    syncStatus: 'synced',
+    syncClass: 'sync-synced',
+    syncText: '已同步',
+    summary: '系统主模式，包含所有源数据',
+    modeId: 'root_admin',
+    modeClass: 'mode-root',
+    tooltip: '主模式数据'
+  },
+  {
+    id: 'conf_001',
+    typeText: '环境配置',
+    syncStatus: 'synced',
+    syncClass: 'sync-synced',
+    syncText: '已同步',
+    summary: '系统基础配置信息',
+    modeId: 'root_admin',
+    modeClass: 'mode-root',
+    tooltip: '环境配置数据'
+  },
+  {
+    id: 'q_001',
+    typeText: '资料题库',
+    syncStatus: 'synced',
+    syncClass: 'sync-synced',
+    syncText: '已同步',
+    summary: '基础资料信息示例',
+    modeId: 'root_admin',
+    modeClass: 'mode-root',
+    tooltip: '题库数据'
+  }
+]);
+
 const fileInput = ref(null);
 
-// 初始化数据
-async function initialize() {
-  await store.initialize();
-}
+// 空函数 - 替代原有功能方法
+function initialize() {}
+function editItem() {}
+function triggerImport() {}
+function handleImport() {}
 
 onMounted(() => {
-  initialize();
-});
-
-// 编辑数据
-function editItem(item) {
-  if (item.dataType === 'question') {
-    router.push(`/edit-question/${item.id}`);
-  } else if (item.dataType === 'config') {
-    router.push(`/edit-config/${item.id}`);
-  }
-}
-
-// 导入数据
-function triggerImport() {
-  if (fileInput.value) fileInput.value.click();
-}
-
-async function handleImport(e) {
-  const file = e.target.files[0];
-  if (!file) return;
-  
-  try {
-    await store.importDataFromFile(file);
-  } catch (err) {
-    alert(err.message);
-  }
-  e.target.value = '';
-}
-
-// 监听筛选条件变化，更新选中状态
-watch([() => store.filterType, () => store.syncFilter, () => store.isPreview], () => {
-  store.updateSelected();
+  // 不执行任何初始化操作
 });
 </script>
 
 <style scoped>
-/* 样式保持不变 */
+/* 保持原有样式不变 */
 .data-management {
   padding: 20px;
   border: 1px solid #ddd;
@@ -223,9 +239,10 @@ watch([() => store.filterType, () => store.syncFilter, () => store.isPreview], (
   padding: 8px 16px;
   border: none;
   border-radius: 4px;
-  cursor: pointer;
+  cursor: not-allowed; /* 禁用状态光标 */
   transition: background-color 0.3s;
   font-size: 14px;
+  opacity: 0.7; /* 视觉上区分禁用状态 */
 }
 
 .data-button.import {
@@ -306,14 +323,16 @@ watch([() => store.filterType, () => store.syncFilter, () => store.isPreview], (
   border: 1px solid #ddd;
   border-radius: 4px;
   background-color: white;
-  cursor: pointer;
+  cursor: not-allowed; /* 禁用状态光标 */
   font-size: 13px;
+  opacity: 0.7;
 }
 
 .filter-option.active {
   background-color: #2196F3;
   color: white;
   border-color: #2196F3;
+  opacity: 0.8;
 }
 
 .management-section {
@@ -449,8 +468,9 @@ watch([() => store.filterType, () => store.syncFilter, () => store.isPreview], (
   border: 1px solid #ddd;
   border-radius: 2px;
   background-color: white;
-  cursor: pointer;
+  cursor: not-allowed;
   font-size: 12px;
+  opacity: 0.7;
 }
 
 .action-btn.delete {
@@ -459,10 +479,6 @@ watch([() => store.filterType, () => store.syncFilter, () => store.isPreview], (
 
 .action-btn.edit {
   color: #28a745;
-}
-
-.action-btn:hover {
-  background-color: #f0f0f0;
 }
 
 .empty-state {
@@ -493,3 +509,4 @@ watch([() => store.filterType, () => store.syncFilter, () => store.isPreview], (
   background: #aaa;
 }
 </style>
+    

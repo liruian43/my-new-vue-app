@@ -1,4 +1,3 @@
-// src/components/Data/store.js
 // 说明：本文件只“引用” ID 规则（src/components/Data/services/id.js），不实现任何 ID 逻辑。
 
 import { defineStore } from 'pinia'
@@ -7,7 +6,7 @@ import { defineStore } from 'pinia'
 import DataManager from './manager'
 import { dataInstance } from './dataInstance'
 
-// 只保留必要的模块化分片（删除了已移除的模块引用）
+// 只保留必要的模块化分片
 import * as RootPart from './store-parts/rootMode'
 import * as PresetsPart from './store-parts/presets'
 import * as CardsPart from './store-parts/cards'
@@ -21,15 +20,15 @@ import * as Normalize from './store-parts/normalize'
 import * as LongTerm from './services/longTerm'
 import * as IO from './services/io'
 
-// 引入 emptiness.js中的校验函数
+// 引入校验函数
 import { hasAtLeastOneCardAndOptionInSession } from './utils/emptiness'
 
-// 唯一的 ID/Key 规则来源（仅引用）
+// 唯一的 ID/Key 规则来源
 import * as IdSvc from './services/id'
 
 import { DataValidator } from './validators/dataValidator'
 
-// 会话存储增强器（与 ID 无关，保留）
+// 会话存储增强器
 export class SessionStorageEnhancer {
   constructor(sessionId) {
     this.sessionId = sessionId || `session_${Date.now()}`
@@ -61,7 +60,7 @@ export class SessionStorageEnhancer {
   }
 }
 
-// 常量（非 ID 逻辑）
+// 常量
 export const FIELD_IDS = {
   CARD_COUNT: 'cardCount',
   CARD_ORDER: 'cardOrder',
@@ -82,13 +81,13 @@ export const FIELD_IDS = {
   SECTION_DEPENDENCIES: 'section_dependencies'
 }
 
-// 初始化管理器与实例（在store外部初始化，不作为state属性）
+// 初始化管理器与实例
 const dataManager = new DataManager()
 const instance = dataInstance.init()
 const validator = new DataValidator()
-const sessionStorageEnhancer = new SessionStorageEnhancer() // 在这里实例化
+const sessionStorageEnhancer = new SessionStorageEnhancer()
 
-// 兼容旧模块：把 ID 能力在 dataManager 上转发（仅转发，不实现）
+// 兼容旧模块：把 ID 能力在 dataManager 上转发
 dataManager.validator = validator
 dataManager.generateNextCardId = (usedIds = []) =>
   IdSvc.generateNextCardId(usedIds instanceof Set ? usedIds : new Set(usedIds || []))
@@ -97,10 +96,9 @@ dataManager.isValidCardId = (id) => IdSvc.isValidCardId(String(id || ''))
 
 export const useCardStore = defineStore('data', {
   state: () => ({
-    // 主模式配置（非 ID 逻辑）
+    // 主模式配置
     rootMode: {
       dataStandards: {
-        // 保留原有正则配置，但校验请统一用 IdSvc
         cardIdPattern: /^[A-Z]+$/,
         optionIdPattern: /^\d+$/,
         fullOptionIdPattern: /^[A-Z]+\d+$/,
@@ -112,29 +110,23 @@ export const useCardStore = defineStore('data', {
       configSteps: {}
     },
 
-    // 环境配置区（与实例 state 解耦）
+    // 环境配置区
     environmentConfigs: {
       cards: {},   // { A: { id:'A', ... }, ... }
       options: {}, // { A1: { name, value, unit }, ... }
       uiPresets: [],
       scoringRules: [],
       contextTemplates: []
-      // 删除联动控制相关配置，因为相关模块已移除
     },
 
-    // 题库区（通过 manager 读写）
+    // 题库区
     questionBank: {
       questions: [],
       categories: [],
       lastUpdated: null
     },
 
-    // 其他状态（删除联动同步相关状态）
-    subModes: {
-      instances: [],
-      activeInstanceId: null
-      // 删除隔离策略和解析数据，因为相关模块已移除
-    },
+    // 数据段管理
     dataSection: {
       isManager: false,
       filterType: 'all',
@@ -146,7 +138,7 @@ export const useCardStore = defineStore('data', {
       tempSelected: []
     },
 
-    // 会话/临时卡片（与实例 state 解耦）
+    // 会话/临时卡片
     tempCards: [],
     sessionCards: [],
 
@@ -158,28 +150,27 @@ export const useCardStore = defineStore('data', {
     error: null,
     viewMode: 'tree',
     storageType: localStorage.getItem('storageType') || 'local',
-    modes: [],
-    currentModeId: instance.state.currentMode, // 初始可与实例同步，但仅保存字符串
-    modeRoutes: {} // 保留但不使用，后续可彻底移除
+    modes: [],  // 保留但不使用
+    currentModeId: 'root_admin'  // 固定为主模式
   }),
 
   getters: {
-    // 暴露常量（通过getter访问，而非state）
+    // 暴露常量
     FIELD_IDS: () => FIELD_IDS,
     
-    // 暴露服务实例（通过getter访问，避免放在state中）
+    // 暴露服务实例
     sessionStorageEnhancer: () => sessionStorageEnhancer,
     dataManager: () => dataManager,
     instance: () => instance,
     validator: () => validator,
     longTermStorage: () => dataManager.longTermStorage,
 
-    // 保留基础模式判断
-    isRootMode() { return this.currentModeId === 'root_admin' },
+    // 基础模式判断（固定为root_admin）
+    isRootMode() { return true },
     rootMediumData() { return this.mediumCards.filter(card => card.modeId === 'root_admin') },
     rootUnsavedChanges() { return this.rootMode.tempOperations.unsavedHistory.length > 0 },
 
-    // ID 相关校验：统一转发到 IdSvc
+    // ID 相关校验
     isValidCardId: () => (id) => IdSvc.isValidCardId(String(id || '')),
     isValidOptionId: () => (id) => IdSvc.isValidOptionId(String(id || '')),
     isValidExcelId: () => (id) => IdSvc.isValidExcelId(String(id || '')),
@@ -202,9 +193,6 @@ export const useCardStore = defineStore('data', {
     isQuestionExpressionValid: (s) => (expression) =>
       s.rootMode.dataStandards.questionExpressionPattern.test(expression),
 
-    // 子模式
-    activeSubMode() { return this.subModes.instances.find(i => i.id === this.subModes.activeInstanceId) },
-
     // 通用
     selectedCard() {
       let card = this.tempCards.find(c => c.id === this.selectedCardId)
@@ -213,9 +201,7 @@ export const useCardStore = defineStore('data', {
     },
     selectedCardPresets() { return this.presetMappings[this.selectedCardId] || {} },
     currentMode() {
-      return this.currentModeId === 'root_admin'
-        ? this.rootMode
-        : (this.modes.find(m => m.id === this.currentModeId) || null)
+      return this.rootMode
     },
     currentModeSessionCards() { return [...this.sessionCards] },
     currentModeMediumCards() { return this.mediumCards.filter(c => c.modeId === this.currentModeId) },
@@ -229,7 +215,6 @@ export const useCardStore = defineStore('data', {
     sortedTempCards() { return [...this.tempCards].sort((a, b) => IdSvc.compareCardIds(a.id, b.id)) },
     sortedOptions() {
       return (card) => {
-        // 选项本身是数字 ID，直接数值排序
         return [...(card?.data?.options || [])].sort((a, b) => parseInt(a.id, 10) - parseInt(b.id, 10))
       }
     },
@@ -242,7 +227,6 @@ export const useCardStore = defineStore('data', {
     allData() {
       const environmentConfigs = this.environmentConfigs || {}
       const questionBank = this.questionBank || {}
-      const modes = this.subModes.instances || []
 
       const contextTemplates = Array.isArray(environmentConfigs.contextTemplates)
         ? environmentConfigs.contextTemplates
@@ -279,16 +263,7 @@ export const useCardStore = defineStore('data', {
           modeId: dataManager.rootAdminId || 'root_admin',
           isModeData: true,
           timestamp: new Date().getTime()
-        },
-        ...modes.map(item => ({
-          id: item.id,
-          dataType: 'other-mode',
-          typeText: '其他模式',
-          summary: item.description || '用户创建的子模式',
-          modeId: item.id,
-          isModeData: true,
-          timestamp: new Date().getTime() - (modes.indexOf(item) * 1000)
-        }))
+        }
       ]
 
       return [...configData, ...questionData, ...modeData]
@@ -330,7 +305,7 @@ export const useCardStore = defineStore('data', {
     clearRootTempData() { return RootPart.clearRootTempData(this) },
     updateRootConfigStep(step, validationStatus = {}) { return RootPart.updateRootConfigStep(this, step, validationStatus) },
 
-    // ID 相关对外方法：引用 IdSvc（不实现逻辑）
+    // ID 相关对外方法
     compareCardIds(id1, id2) { return IdSvc.compareCardIds(id1, id2) },
     getAllUsedCardIds() { return RootPart.getAllUsedCardIds(this) },
     generateNextCardId() {
@@ -342,7 +317,7 @@ export const useCardStore = defineStore('data', {
       return IdSvc.generateNextOptionId(options)
     },
 
-    // 环境配置（标准字段）
+    // 环境配置
     async loadEnvironmentConfigs() { return EnvPart.loadEnvironmentConfigs(this.longTermStorage) },
     normalizeCards(cards) { return EnvPart.normalizeCards(this, cards) },
     normalizeOptions(options) { return EnvPart.normalizeOptions(this, options) },
@@ -356,7 +331,7 @@ export const useCardStore = defineStore('data', {
         : true
     },
 
-    // 全量环境（版本化）- 通过 manager
+    // 全量环境（版本化）
     async listEnvFullSnapshots() {
       const snaps = await this.dataManager?.loadEnvFullSnapshots?.() || [];
       return (Array.isArray(snaps) ? snaps : []).map(s => ({
@@ -366,30 +341,26 @@ export const useCardStore = defineStore('data', {
       }));
     },
     
-    // 按方案修改的核心方法
     async saveEnvFullSnapshot(versionLabel) {
       const version = String(versionLabel || '').trim();
       if (!version) {
-        this.error = '版本号不能为空'; // 直接设置 store.error
+        this.error = '版本号不能为空';
         return false;
       }
 
       const snaps = await this.dataManager?.loadEnvFullSnapshots?.() || [];
       const arr = Array.isArray(snaps) ? snaps : [];
 
-      // 检查版本号是否已存在
       if (arr.some(s => s.version === version)) {
         this.error = `版本号已存在：${version}`;
         return false;
       }
 
-      // 硬校验：台面上必须至少有“1 张卡 + 至少 1 条选项（结构）”
       if (!hasAtLeastOneCardAndOptionInSession(this)) {
         this.error = '无效信息：至少需要一张卡片和一条选项，才能保存全量配置';
         return false;
       }
 
-      // 从 sessionCards 构建要保存的 environment
       const environmentToSave = EnvPart.buildEnvironmentFromSession(this);
       const fullConfigsToSave = EnvPart.buildFullConfigs(environmentToSave);
       const hash = EnvPart.hashString(EnvPart.stableStringify(fullConfigsToSave));
@@ -412,7 +383,7 @@ export const useCardStore = defineStore('data', {
       return EnvPart.applyEnvFullSnapshot(this, versionLabel);
     },
 
-    // 题库（通过 manager）
+    // 题库
     async loadQuestionBank() {
       const bank = await this.dataManager.loadQuestionBank()
       this.questionBank = bank
@@ -434,22 +405,14 @@ export const useCardStore = defineStore('data', {
       return true
     },
 
-    // 子模式基础功能（保留但简化）
-    async loadSubModeInstances() { 
-      // 简化实现，只加载实例列表
-      const instances = await LongTerm.getFromLongTerm(this.longTermStorage, 'root_admin', 'subModes', 'instances')
-      this.subModes.instances = Array.isArray(instances) ? instances : []
-      return this.subModes.instances
-    },
-
     // 预设
     loadPresetMappings() { return PresetsPart.loadPresetMappings(this) },
     savePresetMappings() { return PresetsPart.savePresetMappings(this) },
     savePresetForSelectOption(cardId, selectOptionId, checkedOptions) { return PresetsPart.savePresetForSelectOption(this, cardId, selectOptionId, checkedOptions) },
     applyPresetToCard(cardId, selectOptionId) { return PresetsPart.applyPresetToCard(this, cardId, selectOptionId) },
 
-    // 会话卡片 / 临时卡片 / 选项 / 下拉 / 中期存储 / 导入导出
-    loadSessionCards(modeId) { return CardsPart.loadSessionCards(this, modeId) },
+    // 会话卡片 / 临时卡片 / 选项等操作
+    loadSessionCards(modeId) { return CardsPart.loadSessionCards(this, modeId || 'root_admin') },
     normalizeCardStructure(card) { return CardsPart.normalizeCardStructure(this, card) },
     addCard(cardData) { return CardsPart.addCard(this, cardData) },
     deleteCard(cardId) { return CardsPart.deleteCard(this, cardId) },
@@ -468,7 +431,7 @@ export const useCardStore = defineStore('data', {
     toggleOptionsEditing(cardId) { return CardsPart.toggleOptionsEditing(this, cardId) },
     togglePresetEditing(cardId) { return CardsPart.togglePresetEditing(this, cardId) },
     toggleEditableField(cardId, field) { return CardsPart.toggleEditableField(this, cardId, field) },
-    saveSessionCards(modeId) { return CardsPart.saveSessionCards(this, modeId) },
+    saveSessionCards(modeId) { return CardsPart.saveSessionCards(this, modeId || 'root_admin') },
     validateConfiguration() { return CardsPart.validateConfiguration(this) },
     loadAllMediumCards() { return CardsPart.loadAllMediumCards(this) },
     saveToMedium() { return CardsPart.saveToMedium(this) },
@@ -481,21 +444,18 @@ export const useCardStore = defineStore('data', {
 
     // 导出 / 导入
     exportData(fileName = 'card_data.json') {
-      return IO.exportData(this.longTermStorage, { modeId: this.currentModeId, fileName })
+      return IO.exportData(this.longTermStorage, { modeId: 'root_admin', fileName })
     },
     async importData(file) {
       return IO.importFromFile(file).then(data =>
-        IO.importToLongTerm(this.longTermStorage, data, { modeId: this.currentModeId })
+        IO.importToLongTerm(this.longTermStorage, data, { modeId: 'root_admin' })
       )
     },
 
-    // 模式（添加/删除/获取/保存）
-    addMode(modeData) { return ModesPart.addMode(this, modeData) },
-    deleteModes(modeIds) { return ModesPart.deleteModes(this, modeIds) },
-    getMode(modeId) { return ModesPart.getMode(this.longTermStorage, modeId, dataManager.rootAdminId) },
-    saveModesToStorage() { return ModesPart.saveModesToStorage(this) },
+    // 模式管理（仅保留主模式相关）
+    getMode(modeId) { return ModesPart.getMode(this, this.longTermStorage, modeId) },
 
-    // 数据段管理（DataSection）
+    // 数据段管理
     isModeData(item) { return DataSectionPart.isModeData(this, item) },
     generateTooltip(item) { return DataSectionPart.generateTooltip(this, item) },
     getModeClass(item) { return DataSectionPart.getModeClass(this, item) },
@@ -512,16 +472,16 @@ export const useCardStore = defineStore('data', {
     clearFilters() { return DataSectionPart.clearFilters(this) },
     normalizeQuestion(question) { return this.dataManager.normalizeQuestion(question) },
 
-    // 模式切换：与 manager/instance 同步当前模式ID（非 ID 逻辑）
-    setCurrentMode(modeId) {
-      this.currentModeId = modeId
-      this.dataManager.setCurrentMode(modeId)
-      this.instance.state.currentMode = modeId
+    // 模式切换（固定为root_admin）
+    setCurrentMode() {
+      this.currentModeId = 'root_admin'
+      this.dataManager.setCurrentMode('root_admin')
+      this.instance.state.currentMode = 'root_admin'
     },
 
     // 模式内本地编辑
     updateModeCardLocalValue(modeId, cardId, fieldType, optIndex, value) {
-      return ModeLocalEditPart.updateModeCardLocalValue(this, modeId, cardId, fieldType, optIndex, value)
+      return ModeLocalEditPart.updateModeCardLocalValue(this, modeId || 'root_admin', cardId, fieldType, optIndex, value)
     },
 
     // Normalize 工具
@@ -534,16 +494,16 @@ export const useCardStore = defineStore('data', {
 
     // 长期存储
     saveToLongTerm(modeId, namespace, dataId, data) {
-      return LongTerm.saveToLongTerm(this.longTermStorage, modeId, namespace, dataId, data, this.validator)
+      return LongTerm.saveToLongTerm(this.longTermStorage, modeId || 'root_admin', namespace, dataId, data, this.validator)
     },
     getFromLongTerm(modeId, namespace, dataId) {
-      return LongTerm.getFromLongTerm(this.longTermStorage, modeId, namespace, dataId)
+      return LongTerm.getFromLongTerm(this.longTermStorage, modeId || 'root_admin', namespace, dataId)
     },
     deleteFromLongTerm(modeId, namespace, dataId) {
-      return LongTerm.deleteFromLongTerm(this.longTermStorage, modeId, namespace, dataId)
+      return LongTerm.deleteFromLongTerm(this.longTermStorage, modeId || 'root_admin', namespace, dataId)
     },
     clearLongTermByMode(modeId) {
-      return LongTerm.clearLongTermByMode(this.longTermStorage, modeId, dataManager.rootAdminId)
+      return LongTerm.clearLongTermByMode(this.longTermStorage, modeId || 'root_admin', dataManager.rootAdminId)
     }
   }
 })

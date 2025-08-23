@@ -1,6 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import HomePage from '../Views/HomePage.vue'
-import { useCardStore } from '../components/Data/store'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -18,52 +17,7 @@ const router = createRouter({
   ]
 })
 
-// 动态注册模式路由
-const registerModeRoutes = (cardStore) => {
-  const storedModes = cardStore.modes || [];
-  
-  storedModes.forEach(mode => {
-    const routeName = `Mode-${mode.id}`;
-    
-    if (!router.hasRoute(routeName)) {
-      const ModeComponent = () => import('../root_admin/ModeManagement.vue');
-      
-      router.addRoute({
-        path: mode.path,
-        name: routeName,
-        component: ModeComponent,
-        props: {
-          modeId: mode.id,
-          modeName: mode.name,
-          modeData: mode
-        }
-      });
-      
-      // 检查方法是否存在再调用
-      if (typeof cardStore.registerModeRoute === 'function') {
-        cardStore.registerModeRoute(mode.id, routeName, mode.path);
-      }
-    }
-  });
-};
-
-router.beforeEach((to, from, next) => {
-  const cardStore = useCardStore();
-  
-  // 检查方法是否存在再调用，避免错误
-  if (!cardStore.router && typeof cardStore.setRouterInstance === 'function') {
-    cardStore.setRouterInstance(router);
-  } else if (!cardStore.router) {
-    // 如果没有setRouterInstance方法，直接给store添加router属性
-    cardStore.router = router;
-  }
-  
-  if (to.path.startsWith('/mode/') && !router.hasRoute(to.name)) {
-    registerModeRoutes(cardStore);
-  }
-  
-  next();
-});
+// 移除所有动态路由相关逻辑，只保留基础路由配置
 
 export default router
     
