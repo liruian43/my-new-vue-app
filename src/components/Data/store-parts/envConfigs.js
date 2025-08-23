@@ -1,18 +1,12 @@
 // src/components/Data/store-parts/envConfigs.js
 // 合并版：支持 manager（传 storage）与 store（传 store）
-// 采用四段 Key 落盘 + 保存前硬校验（结构存在性）
+// 采用五段 Key 落盘 + 保存前硬校验（结构存在性）
 // 空值与结构统一交由 utils/emptiness.js 负责
 
 import {
-  isValidCardId,
-  normalizeCardId,
-  normalizeOptionId,
-  buildFullOptionId,
-  parseFullOptionId,
-  compareCardIds,
-  buildKey,
-  TYPES,
-  normalizeVersionLabel
+  // 原有的直接导入将改为从 ID 对象中获取
+  // buildKey, TYPES, normalizeVersionLabel 等
+  ID // 导入 ID 聚合对象，包含所有 ID 相关函数和常量
 } from '../services/id.js';
 
 // 导入空值处理工具
@@ -22,20 +16,31 @@ import {
   hasAtLeastOneCardAndOptionInSession
 } from '../utils/emptiness.js';
 
-// ========== 四段 Key 生成 ==========
+// ========== 五段 Key 生成 ==========
 // 版本来源：优先取 ctx.currentVersion / ctx.version / ctx.versionLabel，兜底 'GLOBAL'
 function getVersionFromCtx(ctx) {
-  return normalizeVersionLabel(
+  // 使用 ID.normalizeVersionLabel
+  return ID.normalizeVersionLabel(
     ctx?.currentVersion || ctx?.version || ctx?.versionLabel || 'GLOBAL'
   );
 }
 
-// env 整包配置的存储键：prefix:version:envFull:A0
+// 新增：识别 Mode ID
+// ctx 预期是 store 实例，其中应该有 currentModeId
+function getModeIdFromCtx(ctx) {
+  // 使用 ID.normalizeModeId，并提供一个安全的默认值 ROOT_ADMIN_MODE_ID
+  return ID.normalizeModeId(ctx?.currentModeId || ID.ROOT_ADMIN_MODE_ID);
+}
+
+// env 整包配置的存储键：prefix:modeId:version:envFull:A0
 function storageKeyForEnv(ctx) {
+  const modeId = getModeIdFromCtx(ctx); // 获取 modeId
   const version = getVersionFromCtx(ctx);
-  return buildKey({
+  // 使用 ID.buildKey 并传入 modeId
+  return ID.buildKey({
+    modeId,
     version,
-    type: TYPES.ENV_FULL,
+    type: ID.TYPES.ENV_FULL,
     excelId: 'A0' // 合法且不会与真实业务冲突（选项 0 不会被生成）
   });
 }
@@ -79,6 +84,7 @@ function isStorage(obj) {
 function resolveStorage(arg) {
   if (isStorage(arg)) return arg;
   if (arg && isStorage(arg.storage)) return arg.storage;
+  // 确保 dataManager 路径正确，并且 longTermStorage 存在
   if (arg?.dataManager?.longTermStorage && isStorage(arg.dataManager.longTermStorage)) {
     return arg.dataManager.longTermStorage;
   }
@@ -136,7 +142,7 @@ function maybeMigrateLegacyEnv(storage, newKey) {
 /**
  * 加载环境配置
  * - 参数既可以是 storage（供 manager 调用），也可以是 store（你现有的调用）
- * - 使用四段 Key（prefix:version:envFull:A0）
+ * - 使用五段 Key（prefix:modeId:version:envFull:A0）
  * - 首次加载时尝试从 legacy 键迁移
  * - 返回时对 cards/options 进行 shape 补齐（空值与结构由 emptiness.js 统一）
  */
@@ -144,7 +150,7 @@ export async function loadEnvironmentConfigs(ctx) {
   // 若传入的是 storage 或可解析到 storage
   const s = resolveStorage(ctx);
   if (s) {
-    const key = storageKeyForEnv(ctx);
+    const key = storageKeyForEnv(ctx); // 调用新的 storageKeyForEnv
     maybeMigrateLegacyEnv(s, key);
     const stored = getJSON(s, key);
     console.log('恢复的数据:', stored); // 恢复时添加
@@ -164,8 +170,11 @@ export async function loadEnvironmentConfigs(ctx) {
   }
 
   // 兼容：如果是老版 dataManager（store）
+  // 这里的 loadEnvironmentConfigs 可能需要调整 dataManager 的接口或确保 ctx 带有 modeId
   if (typeof ctx?.dataManager?.loadEnvironmentConfigs === 'function') {
-    const data = await ctx.dataManager.loadEnvironmentConfigs();
+    // 假设 dataManager 的 loadEnvironmentConfigs 能够处理 modeId 或自行解决
+    // TODO: 考虑 dataManager 接口是否需要根据 modeId 加载
+    const data = await ctx.dataManager.loadEnvironmentConfigs(getModeIdFromCtx(ctx)); // 尝试传入 modeId
     console.log('恢复的数据:', data); // 恢复时添加
     const shaped = ensureEnvironmentShape(data || { cards: {}, options: {} });
     return {
@@ -206,10 +215,10 @@ export async function loadEnvironmentConfigs(ctx) {
  * - 若调用方传入 cards/options，则仅对这两者做 shape 规范化后再落盘，避免误清空。
  */
 export async function saveEnvironmentConfigs(ctx, configs = {}) {
-  const current = await loadEnvironmentConfigs(ctx);
+  const current = await loadEnvironmentConfigs(ctx); // 先加载当前配置，确保 key 一致
+  const next = { ...current, ...configs };
 
   // 仅当调用方显式传入 cards/options 时，才用 shape 覆盖
-  const next = { ...current, ...configs };
   if ('cards' in configs || 'options' in configs) {
     const shaped = ensureEnvironmentShape({
       cards: configs.cards,
@@ -220,18 +229,19 @@ export async function saveEnvironmentConfigs(ctx, configs = {}) {
   }
   next.updatedAt = new Date().toISOString();
 
-  // storage 直写（四段 Key）
+  // storage 直写（五段 Key）
   const s = resolveStorage(ctx);
   if (s) {
-    const key = storageKeyForEnv(ctx);
+    const key = storageKeyForEnv(ctx); // 调用新的 storageKeyForEnv
     console.log('保存的数据:', next); // 保存时添加
     return setJSON(s, key, next);
   }
 
   // 兼容 dataManager 保存
+  // 这里的 saveEnvironmentConfigs 可能需要调整 dataManager 的接口
   if (typeof ctx?.dataManager?.saveEnvironmentConfigs === 'function') {
     console.log('保存的数据:', next); // 保存时添加
-    return ctx.dataManager.saveEnvironmentConfigs(next);
+    return ctx.dataManager.saveEnvironmentConfigs(next, getModeIdFromCtx(ctx)); // 尝试传入 modeId
   }
 
   return false;
@@ -239,6 +249,7 @@ export async function saveEnvironmentConfigs(ctx, configs = {}) {
 
 // ========== 老版核心功能保留（最小改动，空值委托 emptiness.js） ==========
 
+// 统一替换所有 ID.xxx 调用
 export function normalizeCards(store, cards) {
   const out = {};
   for (const c of _arr(cards)) {
@@ -267,22 +278,22 @@ export function normalizeOptions(store, options) {
 
     // 优先信任 fullId（若有效）
     if (rawFull) {
-      const parsed = parseFullOptionId(String(rawFull).toUpperCase());
+      const parsed = ID.parseFullOptionId(String(rawFull).toUpperCase()); // 使用 ID.parseFullOptionId
       if (parsed.valid) {
         cardId = parsed.cardId;
         optionId = parsed.optionId;
-        fullId = buildFullOptionId(cardId, optionId);
+        fullId = ID.buildFullOptionId(cardId, optionId); // 使用 ID.buildFullOptionId
       }
     }
 
     // 其次用 cardId + optionId 组合
     if (!fullId && rawCard && rawOpt) {
       try {
-        const c = normalizeCardId(rawCard);
-        const o2 = normalizeOptionId(rawOpt);
+        const c = ID.normalizeCardId(rawCard); // 使用 ID.normalizeCardId
+        const o2 = ID.normalizeOptionId(rawOpt); // 使用 ID.normalizeOptionId
         cardId = c;
         optionId = o2;
-        fullId = buildFullOptionId(c, o2);
+        fullId = ID.buildFullOptionId(c, o2); // 使用 ID.buildFullOptionId
       } catch {
         // 无效则跳过
       }
@@ -307,18 +318,18 @@ export function getAllOptionsByCardId(store, cardIdInput) {
 
   let normalizedCardId;
   try {
-    normalizedCardId = normalizeCardId(cid);
+    normalizedCardId = ID.normalizeCardId(cid); // 使用 ID.normalizeCardId
   } catch {
     return res;
   }
 
   Object.entries(map).forEach(([fullId, opt]) => {
-    const parsed = parseFullOptionId(String(fullId).toUpperCase());
+    const parsed = ID.parseFullOptionId(String(fullId).toUpperCase()); // 使用 ID.parseFullOptionId
     if (!parsed.valid) return;
     if (parsed.cardId !== normalizedCardId) return;
     res.push({
       id: parsed.optionId,
-      fullId: buildFullOptionId(parsed.cardId, parsed.optionId),
+      fullId: ID.buildFullOptionId(parsed.cardId, parsed.optionId), // 使用 ID.buildFullOptionId
       ...opt
     });
   });
@@ -359,12 +370,12 @@ export function buildEnvironmentFromSession(store) {
   const env = { cards: {}, options: {} };
   const cards = _arr(store.sessionCards)
     .slice()
-    .sort((a, b) => compareCardIds(String(a.id), String(b.id)));
+    .sort((a, b) => ID.compareCardIds(String(a.id), String(b.id))); // 使用 ID.compareCardIds
 
   for (const card of cards) {
     const rawId = String(card.id);
-    if (!isValidCardId(rawId)) continue;
-    const cardId = normalizeCardId(rawId);
+    if (!ID.isValidCardId(rawId)) continue; // 使用 ID.isValidCardId
+    const cardId = ID.normalizeCardId(rawId); // 使用 ID.normalizeCardId
 
     env.cards[cardId] = {
       id: cardId,
@@ -376,8 +387,8 @@ export function buildEnvironmentFromSession(store) {
     const opts = _arr(card?.data?.options);
     opts.forEach((opt, idx) => {
       // 运行态使用 1..N 连续编号入 env；存储时不因内容为空而过滤
-      const optionId = normalizeOptionId(String(idx + 1));
-      const combinedId = buildFullOptionId(cardId, optionId);
+      const optionId = ID.normalizeOptionId(String(idx + 1)); // 使用 ID.normalizeOptionId
+      const combinedId = ID.buildFullOptionId(cardId, optionId); // 使用 ID.buildFullOptionId
       env.options[combinedId] = {
         name: toNull(opt?.name),
         value: toNull(opt?.value),
@@ -396,7 +407,7 @@ export function buildFullConfigs(env) {
   const options = env.options || {};
 
   Object.keys(options).forEach(combinedId => {
-    const parsed = parseFullOptionId(String(combinedId).toUpperCase());
+    const parsed = ID.parseFullOptionId(String(combinedId).toUpperCase()); // 使用 ID.parseFullOptionId
     if (!parsed.valid) return;
     const cardId = parsed.cardId;
     const optionId = parsed.optionId;
@@ -404,7 +415,7 @@ export function buildFullConfigs(env) {
     const o = options[combinedId] || {};
 
     full[combinedId] = {
-      combinedId: buildFullOptionId(cardId, optionId),
+      combinedId: ID.buildFullOptionId(cardId, optionId), // 使用 ID.buildFullOptionId
       cardId,
       optionId,
       configTitle: c.title ?? null,
@@ -419,7 +430,8 @@ export function buildFullConfigs(env) {
 }
 
 export async function listEnvFullSnapshots(store) {
-  const snaps = await store.dataManager?.loadEnvFullSnapshots?.() || [];
+  // TODO: dataManager 接口需要调整以传递 modeId
+  const snaps = await store.dataManager?.loadEnvFullSnapshots?.(getModeIdFromCtx(store)) || []; // 传入 modeId
   return (Array.isArray(snaps) ? snaps : []).map(s => ({
     version: s.version,
     timestamp: s.timestamp,
@@ -434,7 +446,8 @@ export async function saveEnvFullSnapshot(store, versionLabel) {
     return false;
   }
 
-  const snaps = await store.dataManager?.loadEnvFullSnapshots?.() || [];
+  // TODO: dataManager 接口需要调整以传递 modeId
+  const snaps = await store.dataManager?.loadEnvFullSnapshots?.(getModeIdFromCtx(store)) || []; // 传入 modeId
   const arr = Array.isArray(snaps) ? snaps : [];
 
   if (arr.some(s => s.version === version)) {
@@ -462,7 +475,8 @@ export async function saveEnvFullSnapshot(store, versionLabel) {
   };
 
   arr.push(snap);
-  await store.dataManager?.saveEnvFullSnapshots?.(arr);
+  // TODO: dataManager 接口需要调整以传递 modeId
+  await store.dataManager?.saveEnvFullSnapshots?.(arr, getModeIdFromCtx(store)); // 传入 modeId
   return true;
 }
 
@@ -470,7 +484,8 @@ export async function applyEnvFullSnapshot(store, versionLabel) {
   const version = String(versionLabel || '').trim();
   if (!version) return false;
 
-  const snaps = await store.dataManager?.loadEnvFullSnapshots?.() || [];
+  // TODO: dataManager 接口需要调整以传递 modeId
+  const snaps = await store.dataManager?.loadEnvFullSnapshots?.(getModeIdFromCtx(store)) || []; // 传入 modeId
   const arr = Array.isArray(snaps) ? snaps : [];
   const snap = arr.find(s => s.version === version);
   if (!snap) {
@@ -479,7 +494,7 @@ export async function applyEnvFullSnapshot(store, versionLabel) {
   }
 
   const env = snap.environment || { cards: {}, options: {} };
-  const cardIds = Object.keys(env.cards || {}).sort((a, b) => compareCardIds(String(a), String(b)));
+  const cardIds = Object.keys(env.cards || {}).sort((a, b) => ID.compareCardIds(String(a), String(b))); // 使用 ID.compareCardIds
 
   const incomingCards = cardIds.map(cardId => {
     const c = env.cards[cardId] || {};
@@ -489,7 +504,7 @@ export async function applyEnvFullSnapshot(store, versionLabel) {
 
     const optionEntries = Object.entries(env.options || {})
       .map(([fullId, o]) => {
-        const parsed = parseFullOptionId(String(fullId).toUpperCase());
+        const parsed = ID.parseFullOptionId(String(fullId).toUpperCase()); // 使用 ID.parseFullOptionId
         if (!parsed.valid) return null;
         if (parsed.cardId !== cardId) return null;
         return {
@@ -523,6 +538,7 @@ export async function applyEnvFullSnapshot(store, versionLabel) {
   if (typeof store.replaceSessionWithCards === 'function') {
     store.replaceSessionWithCards(incomingCards, { editMode: 'none' });
   } else {
+    // 这部分是你的兜底逻辑，也需要更新 ID.xxx 的使用
     const sessionCards = [];
     for (const cardId of cardIds) {
       const c = env.cards[cardId] || {};
@@ -531,7 +547,7 @@ export async function applyEnvFullSnapshot(store, versionLabel) {
         : [];
       const optionEntries = Object.entries(env.options || {})
         .map(([fullId, o]) => {
-          const parsed = parseFullOptionId(String(fullId).toUpperCase());
+          const parsed = ID.parseFullOptionId(String(fullId).toUpperCase()); // 使用 ID.parseFullOptionId
           if (!parsed.valid) return null;
           if (parsed.cardId !== cardId) return null;
           return {
@@ -553,7 +569,7 @@ export async function applyEnvFullSnapshot(store, versionLabel) {
 
       sessionCards.push({
         id: cardId,
-        modeId: store.currentModeId || 'root_admin',
+        modeId: store.currentModeId || ID.ROOT_ADMIN_MODE_ID, // 使用 ID.ROOT_ADMIN_MODE_ID
         data: {
           title: toNull(c.title),
           options: optionEntries,

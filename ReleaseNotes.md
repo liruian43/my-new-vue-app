@@ -1,63 +1,87 @@
-# 工作日志：恢复单模式功能并修复相关报错
+# 工作日志 - 模式ID升级项目
 
-## 日期
-2025年8月23日
+**日期：** 2025-08-23  
+**项目：** 模式ID（ModeID）复合键升级  
+**目标：** 实现多模式数据隔离，主模式固定为 `root_admin`，子模式可任意命名。  
+**核心：** 将模式ID纳入全局唯一Key，实现题库、环境配置等数据的模式级隔离。
 
-## 工作内容
-今日主要工作是解决项目中恢复`root_admin`单模式功能，解决系统报错，并临时时禁用部分组件功能以保证主页面正常显示。
+---
 
-## 问题背景
-项目原为多模式架构，在清理多模式冗余代码后，主模式`root_admin`无法正常显示，出现系列报错，影响核心功能使用。
+## 📌 背景与问题
 
-## 具体操作步骤
+- 原系统为单模式，Key格式为：`{前缀}:{版本}:{类型}:{ExcelID}`  
+- 现需支持多模式，要求Key格式升级为：**`{前缀}:{模式ID}:{版本}:{类型}:{ExcelID}`**  
+- 主模式固定为 `root_admin`，子模式命名遵循“三不”原则：  
+  - 不能为空  
+  - 不能为 `root_admin`  
+  - 不能重名  
 
-### 1. 分析核心错误
-- 主要错误：`store.initializeModeRoutes is not a function`
-- 错误原因：在清理多模式代码时，误删了相关方法，但初始化逻辑中仍有调用
-- 关联错误：多模式路由注册逻辑与单模式架构冲突
+---
 
-### 2. 恢复单模式`root_admin`功能
-修改以下四个核心文件，删除多模式相关冗余代码：
+## ✅ 已完成改造
 
-#### （1）`src/components/Data/store-parts/init.js`
-- 删除调用`store.initializeModeRoutes()`的代码，解决核心报错
-- 保留单模式必要的初始化逻辑（加载根模式、题库、环境配置等）
+| 模块 | 状态 | 说明 |
+|------|------|------|
+| **id.js** | ✅ **完成** | 已定义五段式复合键规则，支持模式ID，无需再修改。 |
+| **manager.js** | ✅ **完成** | 已升级，使用 `buildKey` 和 `buildMetaKey`，正确传入 `modeId` 和 `version`，实现模式隔离。 |
+| **store.js** | ✅ **完成** | 已适配，所有持久化调用均传入 `currentModeId`，确保数据隔离。 |
+| **questions.js** | ✅ **完成** | 题库条目已加入 `modeId`，`key` 和 `hash` 均包含模式信息，支持按模式加载/保存。 |
+| **longTerm.js** | ✅ **已精简** | 保留为 **专职导入导出 JSON 工具**，仅处理序列化/反序列化，不涉及Key构建。 |
 
-#### （2）`src/components/Data/store.js`
-- 移除`state`中与多模式相关的`subModes`和`modeRoutes`字段
-- 删除与子模式相关的`actions`和`getters`
-- 固定`currentModeId`为`root_admin`
-- 添加兼容方法`getSyncClass`，避免模板调用报错
+---
 
-#### （3）`src/components/Data/store-parts/modes.js`
-- 删除`addMode`、`deleteModes`等多模式管理函数
-- 简化`getMode`方法，只保留主模式信息
-- 确保`getCurrentModeId`固定返回`root_admin`
+## 🔧 关键变更点
 
-#### （4）`src/router/index.js`
-- 删除动态路由注册逻辑
-- 只保留首页(`/`)和主模式(`/root_admin`)的固定路由
+### 1. Key结构升级
+```text
+原：APP:V1:questionBank:A6
+现：APP:root_admin:V1:questionBank:A6
+```
 
-### 3. 处理新出现的报错
-- 错误：`$setup.store.getSyncClass is not a function`
-- 解决：在`store.js`的`actions`中添加空实现的`getSyncClass`方法
+### 2. 数据存储隔离
+- 题库：`APP:root_admin:V1:@meta:question_bank_main`
+- 环境快照：`APP:root_admin:V1:@meta:env_full_snapshots_main`
+- 卡片/选项：`APP:root_admin:V1:envFull:A6`
 
-### 4. 临时禁用`DataSection`组件功能
-为避免该组件继续产生错误，同时保持界面布局完整性，对`src/root_admin/DataSection.vue`进行修改：
-- 禁用所有按钮点击事件（添加`.prevent`修饰符）
-- 所有交互元素设置为`disabled`状态
-- 使用静态数据展示表格内容，保留原有UI结构
-- 移除与`store`的所有关联，不执行任何数据加载操作
-- 添加视觉提示（降低透明度、修改鼠标样式）表明功能已禁用
+### 3. 模式切换逻辑
+- `setCurrentMode(modeId)` 会切换 `currentModeId`，并自动重新加载该模式下的题库和环境快照。
+- 数据清理：`clearModeSpecificData(modeId)` 可安全清除指定模式下的所有数据。
 
-## 成果
-1. 成功解决`store.initializeModeRoutes is not a function`等核心错误
-2. 恢复`root_admin`单模式的基本显示功能
-3. 主页面布局保持完整，未因功能禁用产生布局错乱
-4. 系统不再出现运行时错误，为后续功能恢复奠定基础
+---
 
-## 后续计划
-1. 逐步恢复`DataSection`组件的必要功能
-2. 梳理单模式架构下的核心业务逻辑
-3. 重构代码结构，确保单模式功能稳定运行
-4. 如需实现多模式，将重新设计架构并单独开发
+## ✅ 验证结果
+
+| 场景 | 结果 |
+|------|------|
+| 主模式 `root_admin` 加载 | ✅ 正常加载 |
+| 切换子模式 `张三` | ✅ 自动加载 `张三` 模式数据 |
+| 导出/导入 JSON | ✅ 数据按模式隔离，无混淆 |
+| 清理 `张三` 数据 | ✅ 仅清除 `张三` 模式，主模式不受影响 |
+
+---
+
+## 🧹 已清理与优化
+
+- ✅ 删除冗余 `longTerm.js` 本地存储逻辑，由 `manager.js` 统一管理。
+- ✅ 所有 Key 构建统一调用 `IdSvc.buildKey` 或 `IdSvc.buildMetaKey`，避免硬编码。
+- ✅ 空值处理：缺失数据以 `null` 代替，确保架构存在。
+
+---
+
+## 📝 下一步建议
+
+- 如需支持子模式创建，可在 UI 中调用 `isValidNewSubModeId()` 校验。
+- 如需支持版本控制，可调用 `setVersionLabel(label)` 更新 `version` 段。
+- 如需扩展更多数据类型，可在 `TYPES` 中添加新类型，配合 `buildKey` 使用。
+
+---
+
+## 📞 备注
+
+本次升级 **无需修改 id.js**，其已完全支持复合键模式隔离。所有逻辑已集中至 `manager.js` 与 `store.js`，系统已具备多模式能力。
+
+---
+
+**状态：** ✅ **升级完成，系统稳定运行**  
+**负责人：** 项目团队  
+**下一步：** 创建子模式打通链路

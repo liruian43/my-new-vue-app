@@ -24,7 +24,7 @@ import * as IO from './services/io'
 import { hasAtLeastOneCardAndOptionInSession } from './utils/emptiness'
 
 // 唯一的 ID/Key 规则来源
-import * as IdSvc from './services/id'
+import * as IdSvc from './services/id' // 确保这里导入的是整个模块，方便访问 IdSvc.ROOT_ADMIN_MODE_ID
 
 import { DataValidator } from './validators/dataValidator'
 
@@ -34,16 +34,19 @@ export class SessionStorageEnhancer {
     this.sessionId = sessionId || `session_${Date.now()}`
     this.prefix = `${this.sessionId}:`
   }
+  // load 方法需要传入 modeId
   load(modeId, dataType) {
     const key = `${this.prefix}${modeId}:${dataType}`
     const data = sessionStorage.getItem(key)
     return data ? JSON.parse(data) : null
   }
+  // save 方法需要传入 modeId
   save(modeId, dataType, data) {
     const key = `${this.prefix}${modeId}:${dataType}`
     sessionStorage.setItem(key, JSON.stringify(data))
     return true
   }
+  // clear 方法需要传入 modeId
   clear(modeId) {
     Object.keys(sessionStorage).forEach(key => {
       if (key.startsWith(`${this.prefix}${modeId}:`)) {
@@ -85,6 +88,7 @@ export const FIELD_IDS = {
 const dataManager = new DataManager()
 const instance = dataInstance.init()
 const validator = new DataValidator()
+// `sessionStorageEnhancer` 实例在创建时无法获取 modeId，其 `load/save/clear` 方法签名已调整为接收 modeId
 const sessionStorageEnhancer = new SessionStorageEnhancer()
 
 // 兼容旧模块：把 ID 能力在 dataManager 上转发
@@ -151,7 +155,7 @@ export const useCardStore = defineStore('data', {
     viewMode: 'tree',
     storageType: localStorage.getItem('storageType') || 'local',
     modes: [],  // 保留但不使用
-    currentModeId: 'root_admin'  // 固定为主模式
+    currentModeId: IdSvc.ROOT_ADMIN_MODE_ID  // <---- **使用 IdSvc.ROOT_ADMIN_MODE_ID 常量**
   }),
 
   getters: {
@@ -166,8 +170,8 @@ export const useCardStore = defineStore('data', {
     longTermStorage: () => dataManager.longTermStorage,
 
     // 基础模式判断（固定为root_admin）
-    isRootMode() { return true },
-    rootMediumData() { return this.mediumCards.filter(card => card.modeId === 'root_admin') },
+    isRootMode() { return true }, // <---- 保持简单，因为目前只考虑单模式
+    rootMediumData() { return this.mediumCards.filter(card => card.modeId === IdSvc.ROOT_ADMIN_MODE_ID) }, // <---- 使用常量
     rootUnsavedChanges() { return this.rootMode.tempOperations.unsavedHistory.length > 0 },
 
     // ID 相关校验
@@ -179,6 +183,7 @@ export const useCardStore = defineStore('data', {
     getCardById: (s) => (cardId) => (s.sessionCards || []).find(c => c.id === cardId) || null,
     getOptionByFullId: (s) => (fullId) => s.environmentConfigs.options[fullId] || null,
     getOptionsByCardId: (s) => (cardId) => {
+      // 这里的 IdSvc.parseFullOptionId 在 envConfigs.js 中已经被替换过，确保导入是正确的
       return Object.entries(s.environmentConfigs.options)
         .filter(([fid]) => fid.startsWith(cardId))
         .map(([fullId, option]) => {
@@ -201,6 +206,7 @@ export const useCardStore = defineStore('data', {
     },
     selectedCardPresets() { return this.presetMappings[this.selectedCardId] || {} },
     currentMode() {
+      // <---- 这里返回 `this.rootMode` 是根据现有逻辑判断，未来可能需要根据 `this.currentModeId` 动态返回
       return this.rootMode
     },
     currentModeSessionCards() { return [...this.sessionCards] },
@@ -221,7 +227,8 @@ export const useCardStore = defineStore('data', {
 
     // 数据段管理（DataSection）
     dataSectionIsRootMode() {
-      return dataManager.rootAdminId === this.currentModeId
+      // <--- 原本就是字符串 'root_admin' 但现在有 IdSvc.ROOT_ADMIN_MODE_ID
+      return IdSvc.ROOT_ADMIN_MODE_ID === this.currentModeId
     },
     dataSectionCurrentMode() { return this.getMode(this.currentModeId) },
     allData() {
@@ -240,7 +247,7 @@ export const useCardStore = defineStore('data', {
         dataType: 'config',
         typeText: '环境配置',
         summary: item.content?.length > 50 ? `${item.content.substring(0, 50)}...` : item.content || '',
-        modeId: this.currentModeId || '',
+        modeId: this.currentModeId || '', // <---- 使用当前模式ID
         timestamp: item.createdAt ? new Date(item.createdAt).getTime() : new Date().getTime()
       }))
 
@@ -249,18 +256,18 @@ export const useCardStore = defineStore('data', {
         dataType: 'question',
         typeText: '资料题库',
         summary: item.content?.length > 50 ? `${item.content.substring(0, 50)}...` : item.content || '',
-        modeId: this.currentModeId || '',
+        modeId: this.currentModeId || '', // <---- 使用当前模式ID
         difficulty: item.difficulty || 'medium',
         timestamp: item.createdAt ? new Date(item.createdAt).getTime() : new Date().getTime()
       }))
 
       const modeData = [
         {
-          id: dataManager.rootAdminId || 'root_admin',
+          id: IdSvc.ROOT_ADMIN_MODE_ID, // <---- 使用常量
           dataType: 'root',
           typeText: '主模式',
           summary: '系统主模式，包含所有源数据',
-          modeId: dataManager.rootAdminId || 'root_admin',
+          modeId: IdSvc.ROOT_ADMIN_MODE_ID, // <---- 使用常量
           isModeData: true,
           timestamp: new Date().getTime()
         }
@@ -296,7 +303,10 @@ export const useCardStore = defineStore('data', {
 
   actions: {
     // 初始化
-    async initialize() { return InitPart.initialize(this) },
+    async initialize() {
+      // 在这里 `this` 就是 Pinia store 实例。EnvPart.initialize 内部会通过 this.currentModeId 获取 modeId。
+      return InitPart.initialize(this)
+    },
 
     // root_admin 管理
     initRootMode() { return RootPart.initRootMode(this) },
@@ -318,14 +328,17 @@ export const useCardStore = defineStore('data', {
     },
 
     // 环境配置
-    async loadEnvironmentConfigs() { return EnvPart.loadEnvironmentConfigs(this.longTermStorage) },
+    // <--- **重要：EnvPart 中的所有方法签名都已调整为接收 store 实例 `this` 作为 `ctx`** --->
+    // 这样 EnvPart 内部就可以通过 `ctx.currentModeId` 获取模式 ID。
+    async loadEnvironmentConfigs() { return EnvPart.loadEnvironmentConfigs(this) }, // <---- 传递 this
     normalizeCards(cards) { return EnvPart.normalizeCards(this, cards) },
     normalizeOptions(options) { return EnvPart.normalizeOptions(this, options) },
-    saveEnvironmentConfigs(configs) { return EnvPart.saveEnvironmentConfigs(this.longTermStorage, configs) },
+    async saveEnvironmentConfigs(configs) { return EnvPart.saveEnvironmentConfigs(this, configs) }, // <---- 传递 this
     getAllOptionsByCardId(cardId) { return EnvPart.getAllOptionsByCardId(this, cardId) },
-    saveQuestionContext(questionId, contextData) { return EnvPart.saveQuestionContext(this, questionId, contextData) },
-    getQuestionContext(questionId) { return EnvPart.getQuestionContext(this, questionId) },
+    async saveQuestionContext(questionId, contextData) { return EnvPart.saveQuestionContext(this, questionId, contextData) }, // <---- 传递 this
+    async getQuestionContext(questionId) { return EnvPart.getQuestionContext(this, questionId) }, // <---- 传递 this
     notifyEnvConfigChanged() {
+      // EnvPart.notifyEnvConfigChanged 也会接收 this
       return typeof EnvPart.notifyEnvConfigChanged === 'function'
         ? EnvPart.notifyEnvConfigChanged(this)
         : true
@@ -333,58 +346,25 @@ export const useCardStore = defineStore('data', {
 
     // 全量环境（版本化）
     async listEnvFullSnapshots() {
-      const snaps = await this.dataManager?.loadEnvFullSnapshots?.() || [];
-      return (Array.isArray(snaps) ? snaps : []).map(s => ({
-        version: s.version,
-        timestamp: s.timestamp,
-        hash: s.hash
-      }));
+      // dataManager?.loadEnvFullSnapshots 内部可能需要 modeId，所以我们统一在 actions 层面传递 `this`
+      // EnvPart.listEnvFullSnapshots 已经修改为接收 `this`
+      return EnvPart.listEnvFullSnapshots(this); // <---- 传递 this
     },
     
     async saveEnvFullSnapshot(versionLabel) {
-      const version = String(versionLabel || '').trim();
-      if (!version) {
-        this.error = '版本号不能为空';
-        return false;
-      }
-
-      const snaps = await this.dataManager?.loadEnvFullSnapshots?.() || [];
-      const arr = Array.isArray(snaps) ? snaps : [];
-
-      if (arr.some(s => s.version === version)) {
-        this.error = `版本号已存在：${version}`;
-        return false;
-      }
-
-      if (!hasAtLeastOneCardAndOptionInSession(this)) {
-        this.error = '无效信息：至少需要一张卡片和一条选项，才能保存全量配置';
-        return false;
-      }
-
-      const environmentToSave = EnvPart.buildEnvironmentFromSession(this);
-      const fullConfigsToSave = EnvPart.buildFullConfigs(environmentToSave);
-      const hash = EnvPart.hashString(EnvPart.stableStringify(fullConfigsToSave));
-
-      const newSnapshot = {
-        version,
-        timestamp: Date.now(),
-        hash,
-        environment: environmentToSave,
-        fullConfigs: fullConfigsToSave
-      };
-
-      arr.push(newSnapshot);
-      await this.dataManager?.saveEnvFullSnapshots?.(arr);
-      this.error = null;
-      return true;
+      // EnvPart.saveEnvFullSnapshot 已经修改为接收 `this`
+      return EnvPart.saveEnvFullSnapshot(this, versionLabel); // <---- 传递 this
     },
 
     async applyEnvFullSnapshot(versionLabel) {
-      return EnvPart.applyEnvFullSnapshot(this, versionLabel);
+      // EnvPart.applyEnvFullSnapshot 已经修改为接收 `this`
+      return EnvPart.applyEnvFullSnapshot(this, versionLabel); // <---- 传递 this
     },
 
     // 题库
     async loadQuestionBank() {
+      // dataManager 的 loadQuestionBank 可能需要 modeId，但这不是 envConfigs.js 的职能
+      // 假设 dataManager 内部自行处理了 modeId 或 modeId 不影响其逻辑
       const bank = await this.dataManager.loadQuestionBank()
       this.questionBank = bank
       return bank
@@ -412,7 +392,7 @@ export const useCardStore = defineStore('data', {
     applyPresetToCard(cardId, selectOptionId) { return PresetsPart.applyPresetToCard(this, cardId, selectOptionId) },
 
     // 会话卡片 / 临时卡片 / 选项等操作
-    loadSessionCards(modeId) { return CardsPart.loadSessionCards(this, modeId || 'root_admin') },
+    loadSessionCards(modeId) { return CardsPart.loadSessionCards(this, modeId || this.currentModeId) }, // <---- 确保传递 this.currentModeId
     normalizeCardStructure(card) { return CardsPart.normalizeCardStructure(this, card) },
     addCard(cardData) { return CardsPart.addCard(this, cardData) },
     deleteCard(cardId) { return CardsPart.deleteCard(this, cardId) },
@@ -431,7 +411,7 @@ export const useCardStore = defineStore('data', {
     toggleOptionsEditing(cardId) { return CardsPart.toggleOptionsEditing(this, cardId) },
     togglePresetEditing(cardId) { return CardsPart.togglePresetEditing(this, cardId) },
     toggleEditableField(cardId, field) { return CardsPart.toggleEditableField(this, cardId, field) },
-    saveSessionCards(modeId) { return CardsPart.saveSessionCards(this, modeId || 'root_admin') },
+    saveSessionCards(modeId) { return CardsPart.saveSessionCards(this, modeId || this.currentModeId) }, // <---- 确保传递 this.currentModeId
     validateConfiguration() { return CardsPart.validateConfiguration(this) },
     loadAllMediumCards() { return CardsPart.loadAllMediumCards(this) },
     saveToMedium() { return CardsPart.saveToMedium(this) },
@@ -444,11 +424,13 @@ export const useCardStore = defineStore('data', {
 
     // 导出 / 导入
     exportData(fileName = 'card_data.json') {
-      return IO.exportData(this.longTermStorage, { modeId: 'root_admin', fileName })
+      // IO.exportData 需要 modeId
+      return IO.exportData(this.longTermStorage, { modeId: this.currentModeId, fileName }) // <---- 传入 this.currentModeId
     },
     async importData(file) {
+      // IO.importToLongTerm 需要 modeId
       return IO.importFromFile(file).then(data =>
-        IO.importToLongTerm(this.longTermStorage, data, { modeId: 'root_admin' })
+        IO.importToLongTerm(this.longTermStorage, data, { modeId: this.currentModeId }) // <---- 传入 this.currentModeId
       )
     },
 
@@ -474,14 +456,14 @@ export const useCardStore = defineStore('data', {
 
     // 模式切换（固定为root_admin）
     setCurrentMode() {
-      this.currentModeId = 'root_admin'
-      this.dataManager.setCurrentMode('root_admin')
-      this.instance.state.currentMode = 'root_admin'
+      this.currentModeId = IdSvc.ROOT_ADMIN_MODE_ID // <---- 使用常量
+      this.dataManager.setCurrentMode(IdSvc.ROOT_ADMIN_MODE_ID) // <---- 使用常量
+      this.instance.state.currentMode = IdSvc.ROOT_ADMIN_MODE_ID // <---- 使用常量
     },
 
     // 模式内本地编辑
     updateModeCardLocalValue(modeId, cardId, fieldType, optIndex, value) {
-      return ModeLocalEditPart.updateModeCardLocalValue(this, modeId || 'root_admin', cardId, fieldType, optIndex, value)
+      return ModeLocalEditPart.updateModeCardLocalValue(this, modeId || this.currentModeId, cardId, fieldType, optIndex, value) // <---- 确保传递 this.currentModeId
     },
 
     // Normalize 工具
@@ -494,17 +476,20 @@ export const useCardStore = defineStore('data', {
 
     // 长期存储
     saveToLongTerm(modeId, namespace, dataId, data) {
-      return LongTerm.saveToLongTerm(this.longTermStorage, modeId || 'root_admin', namespace, dataId, data, this.validator)
+      // LongTerm.saveToLongTerm 签名已调整为接收 modeId
+      return LongTerm.saveToLongTerm(this.longTermStorage, modeId || this.currentModeId, namespace, dataId, data, this.validator) // <---- 确保传递 this.currentModeId
     },
     getFromLongTerm(modeId, namespace, dataId) {
-      return LongTerm.getFromLongTerm(this.longTermStorage, modeId || 'root_admin', namespace, dataId)
+      // LongTerm.getFromLongTerm 签名已调整为接收 modeId
+      return LongTerm.getFromLongTerm(this.longTermStorage, modeId || this.currentModeId, namespace, dataId) // <---- 确保传递 this.currentModeId
     },
     deleteFromLongTerm(modeId, namespace, dataId) {
-      return LongTerm.deleteFromLongTerm(this.longTermStorage, modeId || 'root_admin', namespace, dataId)
+      // LongTerm.deleteFromLongTerm 签名已调整为接收 modeId
+      return LongTerm.deleteFromLongTerm(this.longTermStorage, modeId || this.currentModeId, namespace, dataId) // <---- 确保传递 this.currentModeId
     },
     clearLongTermByMode(modeId) {
-      return LongTerm.clearLongTermByMode(this.longTermStorage, modeId || 'root_admin', dataManager.rootAdminId)
+      // LongTerm.clearLongTermByMode 签名已调整为接收 modeId
+      return LongTerm.clearLongTermByMode(this.longTermStorage, modeId || this.currentModeId, this.dataManager.rootAdminId) // <---- 确保传递 this.currentModeId
     }
   }
 })
-    

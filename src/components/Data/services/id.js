@@ -1,13 +1,14 @@
 // src/components/Data/services/id.js
 // 职责：全局唯一的 ID/Key 规则中心
-// 规则：Key = {系统前缀}:{版号}:{类型}:{ExcelID}
+// 规则：Key = {系统前缀}:{模式ID}:{版号}:{类型}:{ExcelID}
 // - 系统前缀：区分 localStorage 命名空间（默认 'APP'）
+// - 模式ID：多模式下区分具体模式的唯一标识（如 'root_admin', '张三', '李四'）
 // - 版号：任意非空字符串（外部保证不重复，如 'V1'、'抓娃娃' 等）
 // - 类型：仅两类 —— 题库(questionBank) 与 全量区(envFull)
 // - ExcelID：卡片级（A, B..Z, AA..）或选项级（字母+数字，如 A6、AB12）
 //
 // 说明：你可以分散独立使用其中任意部分（比如只用卡片ID或选项ID），
-// 在需要落盘/定位时，再用 buildKey 统一组合成固定四段的 Key。
+// 在需要落盘/定位时，再用 buildKey 统一组合成固定五段的 Key。
 
 // -----------------------------
 // 系统前缀（本地存储命名空间）
@@ -21,6 +22,37 @@ export function setSystemPrefix(prefix) {
 }
 export function getSystemPrefix() {
   return SYSTEM_PREFIX
+}
+
+// -----------------------------
+// 模式 ID 规范化与校验
+// -----------------------------
+export const ROOT_ADMIN_MODE_ID = 'root_admin';
+
+export function normalizeModeId(modeId) {
+  return String(modeId || '').trim();
+}
+
+export function isValidModeId(modeId) {
+  const mid = normalizeModeId(modeId);
+  // 模式ID不能为空
+  if (mid.length === 0) return false;
+  // 模式ID不能包含 ':'，因为它是 Key 的分隔符
+  if (mid.includes(':')) return false;
+  // 其他特殊字符限制可以根据需要添加，目前仅限制 ':'
+  return true;
+}
+
+export function isValidNewSubModeId(modeId) {
+  const mid = normalizeModeId(modeId);
+  // 模式ID不能为空
+  if (mid.length === 0) return false;
+  // 模式ID不能包含 ':'
+  if (mid.includes(':')) return false;
+  // 新建的子模式ID不能是 root_admin
+  if (mid === ROOT_ADMIN_MODE_ID) return false;
+  // 未来可能添加的重名检查，但目前重名检查在 modes 模块实现
+  return true;
 }
 
 // -----------------------------
@@ -174,6 +206,7 @@ export function normalizeExcelId(excelId) {
   if (isCardExcelId(s)) return s
   const m = s.match(/^([A-Z]+)(\d+)$/)
   if (m) return `${m[1]}${m[2]}`
+  // 保持与旧规范一致的错误 throw
   throw new Error(`无效 ExcelID: ${excelId}（应为卡片ID如 A 或选项ID如 A6）`)
 }
 // 语义更直观的别名（等价于 buildFullOptionId）
@@ -189,59 +222,95 @@ export function splitExcelId(excelId) {
 }
 
 // -----------------------------
-// Key 组合/解析（固定四段）
-// Key = prefix:version:type:excelId
+// Key 组合/解析（固定五段）
+// Key = prefix:modeId:version:type:excelId
 // 各段做 URL 安全编码，避免中文/特殊字符导致的存储键问题。
 // -----------------------------
 function enc(x) { return encodeURIComponent(String(x ?? '')) }
 function dec(x) { try { return decodeURIComponent(String(x ?? '')) } catch { return String(x ?? '') } }
 
-export function buildKey({ version, type, excelId, prefix }) {
-  const p = String(prefix || SYSTEM_PREFIX).trim()
-  if (!p) throw new Error('prefix 不能为空')
+// 辅助函数，用于在 Key 校验失败时提供详细信息
+function debugValidate(param, checker, value, errorMsg) {
+  if (!checker(value)) {
+    throw new Error(`buildKey 校验失败 - 参数: ${param}, 值: '${value}', 错误: ${errorMsg}`);
+  }
+}
 
-  const v = normalizeVersionLabel(version)
-  if (!isValidVersionLabel(v)) throw new Error('版本号不能为空')
+export function buildKey({ modeId, version, type, excelId, prefix }) {
+  const p = String(prefix || SYSTEM_PREFIX).trim();
+  debugValidate('prefix', (val) => val.length > 0, p, '系统前缀不能为空');
 
-  const t = normalizeType(type)
-  if (!isValidType(t)) throw new Error(`无效类型: ${type}（有效值：questionBank / envFull，或其别名/中文）`)
+  const m = normalizeModeId(modeId);
+  debugValidate('modeId', isValidModeId, m, '模式ID不能为空或包含特殊字符 (:)');
 
-  const e = normalizeExcelId(excelId)
+  const v = normalizeVersionLabel(version);
+  debugValidate('version', isValidVersionLabel, v, '版本号不能为空');
 
-  return `${enc(p)}:${enc(v)}:${enc(t)}:${enc(e)}`
+  const t = normalizeType(type);
+  debugValidate('type', isValidType, t, '类型无效（应为 questionBank / envFull，或其别名/中文）');
+
+  // excelId 可以是 null/undefined，但经过 normalizeExcelId 应该抛错或成为有效格式
+  const e = normalizeExcelId(excelId); // 内部会校验或抛错
+
+  return `${enc(p)}:${enc(m)}:${enc(v)}:${enc(t)}:${enc(e)}`;
 }
 
 export function parseKey(key) {
-  const s = String(key || '')
-  const parts = s.split(':')
-  if (parts.length !== 4) return { valid: false }
-  const [p, v, t, e] = parts
-  const prefix = dec(p)
-  const version = dec(v)
-  const typeRaw = dec(t)
-  const type = normalizeType(typeRaw)
-  const excelId = dec(e)
-  const kind = excelIdKind(excelId)
+  const s = String(key || '');
+  const parts = s.split(':');
+  // 长度现在是 5 段
+  if (parts.length !== 5) return { valid: false, error: 'Key 格式错误：分段数量不匹配' };
+
+  const [p, m, v, t, e] = parts;
+  const prefix = dec(p);
+  const modeId = dec(m);
+  const version = dec(v);
+  const typeRaw = dec(t);
+  const type = normalizeType(typeRaw); // 保持规范化，兼容旧的 TYP_ALIASES
+  const excelId = dec(e);
+  const kind = excelIdKind(excelId);
 
   const valid =
     !!prefix &&
+    isValidModeId(modeId) && // 增加模式ID校验
     isValidVersionLabel(version) &&
     isValidType(type) &&
-    !!kind
+    !!kind &&
+    // 确保 excelId 也是有效的，防止解析出奇怪内容
+    isValidExcelId(excelId);
+
+  // 返回时增加 error 字段，便于调用方调试
+  if (!valid) {
+    return {
+      valid: false,
+      error: 'Key 内容校验失败',
+      debug: {
+        prefixValid: !!prefix,
+        modeIdValid: isValidModeId(modeId),
+        versionValid: isValidVersionLabel(version),
+        typeValid: isValidType(type),
+        excelIdKindValid: !!kind,
+        excelIdContentValid: isValidExcelId(excelId),
+      },
+      rawParts: { p_raw: p, m_raw: m, v_raw: v, t_raw: t, e_raw: e },
+      parsed: { prefix, modeId, version, type, excelId, kind }
+    };
+  }
 
   return {
-    valid,
+    valid: true,
     prefix,
+    modeId,        // 新增 Mode ID
     version,
-    type,          // 规范化后的类型：questionBank / envFull
-    excelId,       // 规范化大写 ExcelID（若传入即为大写）
-    excelIdKind: kind // 'card' | 'option'
-  }
+    type,
+    excelId,
+    excelIdKind: kind
+  };
 }
 
 // -----------------------------
 // Meta Key（非卡片/选项级数据，如 submode_instances 等）
-// 形态：prefix:version:@meta:name
+// 形态：prefix:modeId:version:@meta:name
 // 说明：不走 type(questionBank/envFull) 与 excelId 校验，避免与卡片数据冲突。
 // -----------------------------
 export function normalizeMetaName(name) {
@@ -250,32 +319,58 @@ export function normalizeMetaName(name) {
   return s
 }
 
-export function buildMetaKey({ version, name, prefix }) {
-  const p = String(prefix || SYSTEM_PREFIX).trim()
-  if (!p) throw new Error('prefix 不能为空')
+export function buildMetaKey({ modeId, version, name, prefix }) {
+  const p = String(prefix || SYSTEM_PREFIX).trim();
+  debugValidate('prefix', (val) => val.length > 0, p, '系统前缀不能为空');
 
-  const v = normalizeVersionLabel(version)
-  if (!isValidVersionLabel(v)) throw new Error('版本号不能为空')
+  const m = normalizeModeId(modeId);
+  debugValidate('modeId', isValidModeId, m, '模式ID不能为空或包含特殊字符 (:)');
 
-  const n = normalizeMetaName(name)
-  return `${enc(p)}:${enc(v)}:${enc('@meta')}:${enc(n)}`
+  const v = normalizeVersionLabel(version);
+  debugValidate('version', isValidVersionLabel, v, '版本号不能为空');
+
+  const n = normalizeMetaName(name);
+
+  return `${enc(p)}:${enc(m)}:${enc(v)}:${enc('@meta')}:${enc(n)}`;
 }
 
 export function parseMetaKey(key) {
-  const s = String(key || '')
-  const parts = s.split(':')
-  if (parts.length !== 4) return { valid: false }
-  const [p, v, t, n] = parts
-  const prefix = dec(p)
-  const version = dec(v)
-  const tag = dec(t)
-  const name = dec(n)
+  const s = String(key || '');
+  // 长度现在是 5 段
+  const parts = s.split(':');
+  if (parts.length !== 5) return { valid: false, error: 'Meta Key 格式错误：分段数量不匹配' };
+
+  const [p, m, v, t, n] = parts;
+  const prefix = dec(p);
+  const modeId = dec(m); // 新增模式ID
+  const version = dec(v);
+  const tag = dec(t);
+  const name = dec(n);
+
   const valid =
     !!prefix &&
+    isValidModeId(modeId) && // 增加模式ID校验
     isValidVersionLabel(version) &&
     tag === '@meta' &&
-    !!name
-  return { valid, prefix, version, name }
+    !!name;
+
+  if (!valid) {
+    return {
+      valid: false,
+      error: 'Meta Key 内容校验失败',
+      debug: {
+        prefixValid: !!prefix,
+        modeIdValid: isValidModeId(modeId),
+        versionValid: isValidVersionLabel(version),
+        tagValid: tag === '@meta',
+        nameValid: !!name,
+      },
+      rawParts: { p_raw: p, m_raw: m, v_raw: v, t_raw: t, n_raw: n },
+      parsed: { prefix, modeId, version, tag, name }
+    };
+  }
+
+  return { valid: true, prefix, modeId, version, name };
 }
 
 // -----------------------------
@@ -286,6 +381,12 @@ export const ID = Object.freeze({
   // 系统前缀/版本/类型
   setSystemPrefix,
   getSystemPrefix,
+
+  ROOT_ADMIN_MODE_ID, // 导出常量
+  normalizeModeId,    // 新增
+  isValidModeId,      // 新增
+  isValidNewSubModeId, // 新增
+
   normalizeVersionLabel,
   isValidVersionLabel,
   TYPES,
@@ -313,12 +414,12 @@ export const ID = Object.freeze({
   buildExcelId,
   splitExcelId,
 
-  // Key（固定四段）
+  // Key（固定五段）
   buildKey,
   parseKey,
 
-  // Meta - 已添加到聚合对象中，无需单独导出
+  // Meta Key
   buildMetaKey,
   parseMetaKey,
   normalizeMetaName
-})
+});
