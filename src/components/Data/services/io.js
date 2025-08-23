@@ -1,8 +1,7 @@
 import { buildKey, TYPES, getSystemPrefix } from './id.js';
 import { loadEnvironmentConfigs, saveEnvironmentConfigs } from '../store-parts/envConfigs';
-import { loadLinkageRules, saveLinkageRules } from '../store-parts/linkage-new';
 
-// 定义基础存储键的配置
+// 定义基础存储键的配置（移除同步历史相关配置）
 const STORAGE_CONFIGS = {
   questionBank: {
     version: 'V1',
@@ -13,11 +12,6 @@ const STORAGE_CONFIGS = {
     version: 'V1',
     type: TYPES.ENV_FULL,
     excelId: 'SUBMODES'
-  },
-  syncHistory: {
-    version: 'V1',
-    type: TYPES.ENV_FULL,
-    excelId: 'SYNCHISTORY'
   }
 };
 
@@ -31,7 +25,7 @@ function getStorageKey(config) {
   });
 }
 
-// 确保使用正确的存储对象（现在直接使用localStorage）
+// 确保使用正确的存储对象
 function ensureStorage(storage) {
   if (storage && storage.getItem && storage.setItem) {
     return storage;
@@ -42,13 +36,11 @@ function ensureStorage(storage) {
 export async function exportData(storage, { modeId = null, fileName = 'data_export.json' } = {}) {
   const s = ensureStorage(storage);
 
-  // 使用新的键生成方式获取数据
+  // 仅导出必要数据，移除联动规则和同步历史
   const exportData = {
     questionBank: JSON.parse(s.getItem(getStorageKey(STORAGE_CONFIGS.questionBank)) || '{"questions":[],"categories":[],"lastUpdated":null}'),
     environmentConfigs: await loadEnvironmentConfigs(s),
-    linkageRules: loadLinkageRules(s),
-    subModeInstances: JSON.parse(s.getItem(getStorageKey(STORAGE_CONFIGS.subModeInstances)) || '[]'),
-    syncHistory: JSON.parse(s.getItem(getStorageKey(STORAGE_CONFIGS.syncHistory)) || '[]')
+    subModeInstances: JSON.parse(s.getItem(getStorageKey(STORAGE_CONFIGS.subModeInstances)) || '[]')
   };
 
   if (modeId && modeId !== 'root_admin') {
@@ -102,23 +94,15 @@ export async function importToLongTerm(storage, file, { modeId, namespace } = {}
       }));
     }
 
-    // 环境配置合并
+    // 环境配置合并（移除联动设置相关合并）
     if (importedData.environmentConfigs) {
       const env = await loadEnvironmentConfigs(s);
       await saveEnvironmentConfigs(s, {
         ...env,
         uiPresets: [...(env.uiPresets || []), ...(importedData.environmentConfigs.uiPresets || [])],
         scoringRules: [...(env.scoringRules || []), ...(importedData.environmentConfigs.scoringRules || [])],
-        contextTemplates: [...(env.contextTemplates || []), ...(importedData.environmentConfigs.contextTemplates || [])],
-        linkageSettings: { ...(env.linkageSettings || {}), ...(importedData.environmentConfigs.linkageSettings || {}) }
+        contextTemplates: [...(env.contextTemplates || []), ...(importedData.environmentConfigs.contextTemplates || [])]
       });
-    }
-
-    // 联动规则合并（按ID去重）
-    if (Array.isArray(importedData.linkageRules)) {
-      const existing = loadLinkageRules(s);
-      const newOnes = importedData.linkageRules.filter(nr => !existing.some(ex => ex.id === nr.id));
-      saveLinkageRules(s, [...existing, ...newOnes]);
     }
 
     return { success: true };
@@ -126,3 +110,4 @@ export async function importToLongTerm(storage, file, { modeId, namespace } = {}
     throw new Error(`导入失败: ${err.message}`);
   }
 }
+    

@@ -7,26 +7,21 @@ import { defineStore } from 'pinia'
 import DataManager from './manager'
 import { dataInstance } from './dataInstance'
 
-// 模块化分片（保持你现有的文件结构与接口）
-import * as RoutingPart from './store-parts/routing'
-import * as LinkagePart from './store-parts/linkage'
+// 只保留必要的模块化分片（删除了已移除的模块引用）
 import * as RootPart from './store-parts/rootMode'
 import * as PresetsPart from './store-parts/presets'
 import * as CardsPart from './store-parts/cards'
-import * as SubModesPart from './store-parts/subModes'
-import * as FeedbackPart from './store-parts/feedback'
 import * as DataSectionPart from './store-parts/dataSection'
 import * as ModesPart from './store-parts/modes'
 import * as InitPart from './store-parts/init'
 import * as ModeLocalEditPart from './store-parts/modeLocalEdit'
 import * as EnvPart from './store-parts/envConfigs'
 import * as QuestionsPart from './store-parts/questions'
-import * as Sync from './store-parts/sync'
 import * as Normalize from './store-parts/normalize'
 import * as LongTerm from './services/longTerm'
 import * as IO from './services/io'
 
-// 引入 emptiness.js中的校验函数（已修正路径到utils目录）
+// 引入 emptiness.js中的校验函数
 import { hasAtLeastOneCardAndOptionInSession } from './utils/emptiness'
 
 // 唯一的 ID/Key 规则来源（仅引用）
@@ -87,40 +82,11 @@ export const FIELD_IDS = {
   SECTION_DEPENDENCIES: 'section_dependencies'
 }
 
-export const FIXED_SYNC_FIELDS = [
-  FIELD_IDS.OPTIONS,
-  FIELD_IDS.SELECT_OPTIONS,
-  FIELD_IDS.CARD_COUNT,
-  FIELD_IDS.CARD_ORDER,
-  FIELD_IDS.DATA_SECTION_ID,
-  FIELD_IDS.SECTION_ITEMS
-]
-
-export const CONFIGURABLE_SYNC_FIELDS = [
-  FIELD_IDS.CARD_TITLE,
-  FIELD_IDS.OPTION_NAME,
-  FIELD_IDS.OPTION_VALUE,
-  FIELD_IDS.OPTION_UNIT,
-  FIELD_IDS.UI_CONFIG,
-  FIELD_IDS.SECTION_TITLE,
-  FIELD_IDS.SECTION_VALIDITY
-]
-
-export const AUTHORIZABLE_FIELDS = [
-  FIELD_IDS.CARD_TITLE,
-  FIELD_IDS.OPTION_NAME,
-  FIELD_IDS.OPTION_VALUE,
-  FIELD_IDS.OPTION_UNIT,
-  FIELD_IDS.UI_CONFIG,
-  FIELD_IDS.CHECKBOX,
-  FIELD_IDS.SECTION_TITLE,
-  FIELD_IDS.SECTION_ITEMS
-]
-
-// 初始化管理器与实例（注意：不在实例 state 上挂列表数据）
+// 初始化管理器与实例（在store外部初始化，不作为state属性）
 const dataManager = new DataManager()
 const instance = dataInstance.init()
 const validator = new DataValidator()
+const sessionStorageEnhancer = new SessionStorageEnhancer() // 在这里实例化
 
 // 兼容旧模块：把 ID 能力在 dataManager 上转发（仅转发，不实现）
 dataManager.validator = validator
@@ -152,28 +118,8 @@ export const useCardStore = defineStore('data', {
       options: {}, // { A1: { name, value, unit }, ... }
       uiPresets: [],
       scoringRules: [],
-      contextTemplates: [],
-
-      linkageControl: {
-        isModeDropdownOpen: false,
-        selectedMode: '',
-        isInPrepareState: false,
-        syncOptions: [
-          { id: 1, name: '卡片标题', fieldId: FIELD_IDS.CARD_TITLE, checked: false },
-          { id: 2, name: '选项名称', fieldId: FIELD_IDS.OPTION_NAME, checked: false },
-          { id: 3, name: '选项值', fieldId: FIELD_IDS.OPTION_VALUE, checked: false },
-          { id: 4, name: '选项单位', fieldId: FIELD_IDS.OPTION_UNIT, checked: false },
-          { id: 5, name: '数据段标题', fieldId: FIELD_IDS.SECTION_TITLE, checked: false }
-        ],
-        authOptions: [
-          { id: 1, name: '卡片标题', fieldId: FIELD_IDS.CARD_TITLE, checked: false },
-          { id: 2, name: '选项名称', fieldId: FIELD_IDS.OPTION_NAME, checked: false },
-          { id: 3, name: '选项值', fieldId: FIELD_IDS.OPTION_VALUE, checked: false },
-          { id: 4, name: '选项单位', fieldId: FIELD_IDS.OPTION_UNIT, checked: false },
-          { id: 5, name: '复选框', fieldId: FIELD_IDS.CHECKBOX, checked: false },
-          { id: 6, name: '数据段内容', fieldId: FIELD_IDS.SECTION_ITEMS, checked: false }
-        ]
-      }
+      contextTemplates: []
+      // 删除联动控制相关配置，因为相关模块已移除
     },
 
     // 题库区（通过 manager 读写）
@@ -183,23 +129,11 @@ export const useCardStore = defineStore('data', {
       lastUpdated: null
     },
 
-    // 其他状态
-    linkageSync: {
-      syncHistory: [],
-      fieldAuthorizations: {},
-      pendingSyncs: [],
-      currentLinkageConfig: null
-    },
+    // 其他状态（删除联动同步相关状态）
     subModes: {
       instances: [],
-      activeInstanceId: null,
-      isolationPolicies: {},
-      parsedData: {}
-    },
-    matchingFeedback: {
-      submissionHistory: [],
-      feedbackResults: [],
-      scoringLogs: []
+      activeInstanceId: null
+      // 删除隔离策略和解析数据，因为相关模块已移除
     },
     dataSection: {
       isManager: false,
@@ -226,24 +160,21 @@ export const useCardStore = defineStore('data', {
     storageType: localStorage.getItem('storageType') || 'local',
     modes: [],
     currentModeId: instance.state.currentMode, // 初始可与实例同步，但仅保存字符串
-    modeRoutes: {},
-
-    // 服务实例
-    sessionStorageEnhancer: new SessionStorageEnhancer(),
-    dataManager,
-    instance,
-    validator,
-    longTermStorage: dataManager.longTermStorage,
-
-    // 常量暴露
-    FIELD_IDS,
-    FIXED_SYNC_FIELDS,
-    CONFIGURABLE_SYNC_FIELDS,
-    AUTHORIZABLE_FIELDS
+    modeRoutes: {} // 保留但不使用，后续可彻底移除
   }),
 
   getters: {
-    // 保持原有代码不变
+    // 暴露常量（通过getter访问，而非state）
+    FIELD_IDS: () => FIELD_IDS,
+    
+    // 暴露服务实例（通过getter访问，避免放在state中）
+    sessionStorageEnhancer: () => sessionStorageEnhancer,
+    dataManager: () => dataManager,
+    instance: () => instance,
+    validator: () => validator,
+    longTermStorage: () => dataManager.longTermStorage,
+
+    // 保留基础模式判断
     isRootMode() { return this.currentModeId === 'root_admin' },
     rootMediumData() { return this.mediumCards.filter(card => card.modeId === 'root_admin') },
     rootUnsavedChanges() { return this.rootMode.tempOperations.unsavedHistory.length > 0 },
@@ -265,30 +196,14 @@ export const useCardStore = defineStore('data', {
         })
     },
 
-    // 模式联动控制
-    filteredModes: (s) => s.modes.filter(mode => mode.id !== 'root_admin'),
-    canConfirmLinkage: (s) => {
-      if (!s.environmentConfigs.linkageControl.isInPrepareState ||
-          !s.environmentConfigs.linkageControl.selectedMode ||
-          !s.currentModeId) return false
-      return true
-    },
-
     // 题库
     allQuestionCategories() { return [...this.questionBank.categories] },
     getQuestionById: (s) => (id) => s.questionBank.questions.find(q => q.id === id),
     isQuestionExpressionValid: (s) => (expression) =>
       s.rootMode.dataStandards.questionExpressionPattern.test(expression),
 
-    // 联动授权读取
-    getFieldAuthorization: (s) => (sourceModeId, targetModeId, field) => {
-      const key = `${sourceModeId}_${targetModeId}_${field}`
-      return !!s.linkageSync.fieldAuthorizations[key]
-    },
-
     // 子模式
     activeSubMode() { return this.subModes.instances.find(i => i.id === this.subModes.activeInstanceId) },
-    getParsedSubModeData: (s) => (instanceId) => s.subModes.parsedData[instanceId] || { cards: [], options: [] },
 
     // 通用
     selectedCard() {
@@ -308,12 +223,6 @@ export const useCardStore = defineStore('data', {
       return this.selectedCard?.editableFields || {
         optionName: true, optionValue: true, optionUnit: true,
         optionCheckbox: true, optionActions: true, select: true
-      }
-    },
-    getCardSyncStatus() {
-      return (cardId) => {
-        const mode = this.currentMode; if (!mode || !mode.syncStatus) return null
-        return mode.syncStatus[cardId] || { hasSync: false, isAuthorized: false }
       }
     },
     sortedSessionCards() { return [...this.sessionCards].sort((a, b) => IdSvc.compareCardIds(a.id, b.id)) },
@@ -348,7 +257,6 @@ export const useCardStore = defineStore('data', {
         typeText: '环境配置',
         summary: item.content?.length > 50 ? `${item.content.substring(0, 50)}...` : item.content || '',
         modeId: this.currentModeId || '',
-        syncStatus: this.getCardSyncStatus(item.questionId) || {},
         timestamp: item.createdAt ? new Date(item.createdAt).getTime() : new Date().getTime()
       }))
 
@@ -358,7 +266,6 @@ export const useCardStore = defineStore('data', {
         typeText: '资料题库',
         summary: item.content?.length > 50 ? `${item.content.substring(0, 50)}...` : item.content || '',
         modeId: this.currentModeId || '',
-        syncStatus: this.getCardSyncStatus(item.id) || {},
         difficulty: item.difficulty || 'medium',
         timestamp: item.createdAt ? new Date(item.createdAt).getTime() : new Date().getTime()
       }))
@@ -402,12 +309,6 @@ export const useCardStore = defineStore('data', {
         result = result.filter(item => item.dataType === this.dataSection.filterType)
       }
 
-      if (this.isRootMode && this.dataSection.syncFilter !== 'all') {
-        result = result.filter(item =>
-          this.checkSyncStatus(item.syncStatus, this.dataSection.syncFilter)
-        )
-      }
-
       return result.sort((a, b) => b.timestamp - a.timestamp)
     },
     hasModeDataSelected() {
@@ -421,45 +322,6 @@ export const useCardStore = defineStore('data', {
   actions: {
     // 初始化
     async initialize() { return InitPart.initialize(this) },
-
-    // 路由与模式页面管理
-    initRouter(router) { return RoutingPart.initRouter(this, router) },
-    generateModePage(mode) { return RoutingPart.generateModePage(this, mode) },
-    createModeComponent(mode) { return RoutingPart.createModeComponent(this, mode) },
-    registerModeRoute(modeComponent) { return RoutingPart.registerModeRoute(modeComponent) },
-    saveGeneratedMode(modeComponent) { return RoutingPart.saveGeneratedMode(modeComponent) },
-    deleteModePage(modeId) { return RoutingPart.deleteModePage(this, modeId) },
-    loadGeneratedModes() { return RoutingPart.loadGeneratedModes() },
-    navigateToMode(modeId) { return RoutingPart.navigateToMode(this, modeId) },
-
-    initializeModeRoutes() { return RoutingPart.initializeModeRoutes(this) },
-    addModeRoute(modeId, routeName, path) { return RoutingPart.addModeRoute(this, modeId, routeName, path) },
-    generateModeRoutePath(modeId) { return RoutingPart.generateModeRoutePath(modeId) },
-    getModeRoute(modeId) { return RoutingPart.getModeRoute(this, modeId) },
-
-    // 联动/授权/同步
-    checkSyncPermission(sourceModeId, targetModeId) { return LinkagePart.checkSyncPermission(this, sourceModeId, targetModeId) },
-    processValue(value) { return LinkagePart.processValue(this, value) },
-    isFieldSynced(field, syncFields) { return LinkagePart.isFieldSynced(this, field, syncFields) },
-    coordinateMode(linkageConfig) { return LinkagePart.coordinateMode(this, linkageConfig) },
-    syncToTargetMode(sourceId, targetId, sourceData, syncFields, authFields) {
-      return LinkagePart.syncToTargetMode(this, sourceId, targetId, sourceData, syncFields, authFields)
-    },
-
-    toggleModeDropdown() { return LinkagePart.toggleModeDropdown(this) },
-    selectMode(modeName) { return LinkagePart.selectMode(this, modeName) },
-    togglePrepareStatus() { return LinkagePart.togglePrepareStatus(this) },
-    resetLinkageState() { return LinkagePart.resetLinkageState(this) },
-    confirmLinkage() { return LinkagePart.confirmLinkage(this) },
-
-    syncDataToTargets(linkageConfig) { return LinkagePart.syncDataToTargets(this, linkageConfig) },
-    setFieldAuthorization(sourceModeId, targetModeId, field, authorized) { return LinkagePart.setFieldAuthorization(this, sourceModeId, targetModeId, field, authorized) },
-    recordSyncHistory(syncData) { return LinkagePart.recordSyncHistory(this, syncData) },
-    async syncData(cardIdList, targetModeId, { sync = [], auth = [] } = {}) {
-      return LinkagePart.syncData(this, cardIdList, targetModeId, { sync, auth })
-    },
-    updateModeSyncInfo(modeId, syncInfo) { return LinkagePart.updateModeSyncInfo(this, modeId, syncInfo) },
-    syncToMode(targetModeId, cardIds, syncConfig) { return LinkagePart.syncToMode(this, targetModeId, cardIds, syncConfig) },
 
     // root_admin 管理
     initRootMode() { return RootPart.initRootMode(this) },
@@ -515,45 +377,41 @@ export const useCardStore = defineStore('data', {
       const snaps = await this.dataManager?.loadEnvFullSnapshots?.() || [];
       const arr = Array.isArray(snaps) ? snaps : [];
 
-      // 检查版本号是否已存在 (如果希望覆盖，则需要先移除旧的)
+      // 检查版本号是否已存在
       if (arr.some(s => s.version === version)) {
         this.error = `版本号已存在：${version}`;
         return false;
       }
 
       // 硬校验：台面上必须至少有“1 张卡 + 至少 1 条选项（结构）”
-      // 这个函数是从 utils/emptiness.js 导入的
-      if (!hasAtLeastOneCardAndOptionInSession(this)) { // 注意：这里需要传入 this (store 实例)
+      if (!hasAtLeastOneCardAndOptionInSession(this)) {
         this.error = '无效信息：至少需要一张卡片和一条选项，才能保存全量配置';
         return false;
       }
 
-      // 最重要的改变：从 sessionCards 构建要保存的 environment
-      // envConfigs.js 中定义了 buildEnvironmentFromSession(store)
-      const environmentToSave = EnvPart.buildEnvironmentFromSession(this); // <-- 调用正确的方法
-      const fullConfigsToSave = EnvPart.buildFullConfigs(environmentToSave); // <-- 同时构建 fullConfigs
-      const hash = EnvPart.hashString(EnvPart.stableStringify(fullConfigsToSave)); // <-- 计算哈希
+      // 从 sessionCards 构建要保存的 environment
+      const environmentToSave = EnvPart.buildEnvironmentFromSession(this);
+      const fullConfigsToSave = EnvPart.buildFullConfigs(environmentToSave);
+      const hash = EnvPart.hashString(EnvPart.stableStringify(fullConfigsToSave));
 
       const newSnapshot = {
         version,
         timestamp: Date.now(),
         hash,
-        environment: environmentToSave, // 保存实时构建的 environment
-        fullConfigs: fullConfigsToSave // 保存实时构建的 fullConfigs
+        environment: environmentToSave,
+        fullConfigs: fullConfigsToSave
       };
 
       arr.push(newSnapshot);
       await this.dataManager?.saveEnvFullSnapshots?.(arr);
-      this.error = null; // 清除错误信息
-      return true; // 保存成功
+      this.error = null;
+      return true;
     },
 
     async applyEnvFullSnapshot(versionLabel) {
-      // 这部分保持不变，因为 envConfigs.js/applyEnvFullSnapshot 已经包含了正确的逻辑
       return EnvPart.applyEnvFullSnapshot(this, versionLabel);
     },
 
-    // 以下所有代码保持不变
     // 题库（通过 manager）
     async loadQuestionBank() {
       const bank = await this.dataManager.loadQuestionBank()
@@ -576,12 +434,13 @@ export const useCardStore = defineStore('data', {
       return true
     },
 
-    // 子模式
-    async loadSubModeInstances() { return SubModesPart.loadSubModeInstances(this.longTermStorage) },
-    parseSubModeData(instanceId) { return SubModesPart.parseSubModeData(this, instanceId) },
-
-    // 匹配反馈
-    submitForMatching(instanceId, results) { return FeedbackPart.submitForMatching(this, instanceId, results) },
+    // 子模式基础功能（保留但简化）
+    async loadSubModeInstances() { 
+      // 简化实现，只加载实例列表
+      const instances = await LongTerm.getFromLongTerm(this.longTermStorage, 'root_admin', 'subModes', 'instances')
+      this.subModes.instances = Array.isArray(instances) ? instances : []
+      return this.subModes.instances
+    },
 
     // 预设
     loadPresetMappings() { return PresetsPart.loadPresetMappings(this) },
@@ -640,10 +499,7 @@ export const useCardStore = defineStore('data', {
     isModeData(item) { return DataSectionPart.isModeData(this, item) },
     generateTooltip(item) { return DataSectionPart.generateTooltip(this, item) },
     getModeClass(item) { return DataSectionPart.getModeClass(this, item) },
-    getSyncText(status) { return DataSectionPart.getSyncText(this, status) },
-    getSyncClass(status) { return DataSectionPart.getSyncClass(this, status) },
     canEditItem(item) { return DataSectionPart.canEditItem(this, item) },
-    checkSyncStatus(syncStatus, filter) { return DataSectionPart.checkSyncStatus(this, syncStatus, filter) },
     updateSelected() { return DataSectionPart.updateSelected(this) },
     handleSelectAll() { return DataSectionPart.handleSelectAll(this) },
     async deleteItem(item) { return DataSectionPart.deleteItem(this, item) },
@@ -666,43 +522,6 @@ export const useCardStore = defineStore('data', {
     // 模式内本地编辑
     updateModeCardLocalValue(modeId, cardId, fieldType, optIndex, value) {
       return ModeLocalEditPart.updateModeCardLocalValue(this, modeId, cardId, fieldType, optIndex, value)
-    },
-
-    // 发送反馈到主模式
-    sendFeedbackToRoot(modeId, feedback) {
-      const rootMode = this.getMode('root_admin')
-      if (!rootMode.feedback) rootMode.feedback = {}
-      if (!rootMode.feedback[modeId]) rootMode.feedback[modeId] = []
-      rootMode.feedback[modeId].push({ ...feedback, timestamp: new Date().toISOString() })
-      this.saveModesToStorage()
-    },
-
-    // 同步相关功能
-    getSyncStatus(itemId) {
-      return Sync.getSyncStatus(this.longTermStorage, itemId)
-    },
-    saveSyncHistory(history) {
-      return Sync.saveSyncHistory(this.longTermStorage, history)
-    },
-    loadSyncHistory() {
-      return Sync.loadSyncHistory(this.longTermStorage)
-    },
-    createSyncHistoryEntry(data) {
-      return Sync.createSyncHistoryEntry(data)
-    },
-    updateSyncStatus(card, field) {
-      return Sync.updateCardSyncStatus(card, field)
-    },
-
-    // 字段授权
-    saveFieldAuthorizations(authorizations) {
-      return Sync.saveFieldAuthorizations(this.longTermStorage, authorizations)
-    },
-    loadFieldAuthorizations() {
-      return Sync.loadFieldAuthorizations(this.longTermStorage)
-    },
-    filterSyncFields(sourceData, authorizedFields) {
-      return Sync.filterSyncFields(sourceData, authorizedFields)
     },
 
     // Normalize 工具
@@ -728,3 +547,4 @@ export const useCardStore = defineStore('data', {
     }
   }
 })
+    
