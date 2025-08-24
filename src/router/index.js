@@ -13,11 +13,14 @@ const router = createRouter({
       path: '/root_admin',
       name: 'RootAdminHomePage',
       component: () => import('../root_admin/root_admin.vue')
+    },
+    {
+      path: '/mode/:modeId',
+      name: 'SubMode',
+      component: () => import('../components/Othermodes/SubMode.vue'),
+      props: true
     }
   ]
 })
 
-// 移除所有动态路由相关逻辑，只保留基础路由配置
-
 export default router
-    

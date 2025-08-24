@@ -1,223 +1,341 @@
 <template>
   <div class="data-management">
-    <!-- 顶部工具栏 - 按钮禁用 -->
+    <!-- 顶部工具栏 -->
     <div class="data-controls">
-      <button class="data-button import" @click.prevent>导入数据</button>
-      <button class="data-button export" @click.prevent>导出数据</button>
+      <button class="data-button import" @click="triggerImport">导入数据</button>
+      <button class="data-button export" @click="exportData">导出数据</button>
       <button 
         class="data-button manager" 
-        @click.prevent
+        @click="toggleManager"
         :class="{ active: isManager }"
       >
         {{ isManager ? '退出管理' : '数据管理' }}
       </button>
-      <button class="data-button clear" @click.prevent>清除筛选</button>
+      <button class="data-button clear" @click="clearSelection" v-if="selectedCount > 0">清除筛选</button>
     </div>
     
-    <!-- 筛选栏 - 筛选选项禁用 -->
+    <!-- 筛选栏 -->
     <div class="filter-section">
       <div class="filter-group">
         <span class="filter-label">数据类型:</span>
         <div class="filter-options">
-          <button :class="['filter-option', { active: filterType === 'all' }]" @click.prevent>全部</button>
-          <button :class="['filter-option', 'question', { active: filterType === 'question' }]" @click.prevent>资料题库</button>
-          <button :class="['filter-option', 'root', { active: filterType === 'root' }]" @click.prevent>主模式</button>
-          <button :class="['filter-option', 'other-mode', { active: filterType === 'other-mode' }]" @click.prevent>其他模式</button>
-          <button :class="['filter-option', 'config', { active: filterType === 'config' }]" @click.prevent>环境配置</button>
+          <button :class="['filter-option', { active: filterType === 'all' }]" @click="setFilterType('all')">全部</button>
+          <button :class="['filter-option', 'question', { active: filterType === 'question' }]" @click="setFilterType('question')">题库</button>
+          <button :class="['filter-option', 'env', { active: filterType === 'env' }]" @click="setFilterType('env')">全量区</button>
+          <button :class="['filter-option', 'root', { active: filterType === 'root' }]" @click="setFilterType('root')">主模式</button>
+          <button :class="['filter-option', 'other-mode', { active: filterType === 'other-mode' }]" @click="setFilterType('other-mode')">其他模式</button>
         </div>
       </div>
 
       <div class="filter-group" v-if="isRootMode">
         <span class="filter-label">同步状态:</span>
         <div class="filter-options">
-          <button :class="['filter-option', { active: syncFilter === 'all' }]" @click.prevent>全部</button>
-          <button :class="['filter-option', 'synced', { active: syncFilter === 'synced' }]" @click.prevent>已同步</button>
-          <button :class="['filter-option', 'unsynced', { active: syncFilter === 'unsynced' }]" @click.prevent>未同步</button>
-          <button :class="['filter-option', 'conflict', { active: syncFilter === 'conflict' }]" @click.prevent>冲突</button>
+          <button :class="['filter-option', { active: syncFilter === 'all' }]" @click="setSyncFilter('all')">全部</button>
+          <button :class="['filter-option', 'pushed', { active: syncFilter === 'pushed' }]" @click="setSyncFilter('pushed')">已推送</button>
+          <button :class="['filter-option', 'unpushed', { active: syncFilter === 'unpushed' }]" @click="setSyncFilter('unpushed')">未推送</button>
+          <button :class="['filter-option', 'synced', { active: syncFilter === 'synced' }]" @click="setSyncFilter('synced')">已同步</button>
+          <button :class="['filter-option', 'unsynced', { active: syncFilter === 'unsynced' }]" @click="setSyncFilter('unsynced')">未同步</button>
+          <button :class="['filter-option', 'conflict', { active: syncFilter === 'conflict' }]" @click="setSyncFilter('conflict')">冲突</button>
         </div>
       </div>
     </div>
     
-    <!-- 管理操作栏 - 保持显示但功能禁用 -->
+    <!-- 管理操作栏 -->
     <div v-if="isManager" class="management-section">
       <div class="selection-info">
         <label>
-          <input type="checkbox" v-model="selectAll" @change.prevent>
+          <input type="checkbox" v-model="selectAll" @change="toggleSelectAll">
           全选 (已选: {{ selectedCount }})
         </label>
       </div>
       <div class="management-actions">
-        <button class="data-button delete" @click.prevent :disabled="true">
+        <button class="data-button delete" @click="deleteSelected" :disabled="selectedCount === 0">
           删除选中
         </button>
       </div>
     </div>
     
-    <!-- 预览数据提示 - 保持显示但功能禁用 -->
-    <div v-if="hasPreview" class="preview-section">
-      <span class="preview-info">
-        预览数据: 共 {{ previewTotalCount }} 条 
-        (环境配置: {{ previewConfigsCount }}, 资料题库: {{ previewQuestionsCount }})
-      </span>
-      <div class="preview-actions">
-        <button class="data-button apply" @click.prevent>应用预览</button>
-        <button class="data-button cancel" @click.prevent>取消预览</button>
-        <button class="data-button switch" @click.prevent>
-          {{ isPreview ? '查看原始数据' : '查看预览数据' }}
-        </button>
-      </div>
-    </div>
-    
-    <!-- Excel风格表格 - 保持显示但交互禁用 -->
+    <!-- Excel风格表格 -->
     <div class="excel-table-container">
       <!-- 表头 -->
       <div class="excel-header-row">
         <div class="excel-cell checkbox-col" v-if="isManager">
           <span>选</span>
         </div>
-        <div class="excel-cell id-col">ID</div>
+        <div class="excel-cell version-col">版号</div>
         <div class="excel-cell type-col">类型</div>
-        <div class="excel-cell sync-col" v-if="isRootMode">同步状态</div>
-        <div class="excel-cell summary-col">内容摘要</div>
-        <div class="excel-cell mode-col">所属模式</div>
-        <div class="excel-cell actions-col">操作</div>
+        <div class="excel-cell mode-col">模式</div>
+        <div class="excel-cell content-col">所有内容</div>
+        <div class="excel-cell push-col">推送状态</div>
+        <div class="excel-cell sync-col">同步状态</div>
+        <div class="excel-cell conflict-col">有无冲突</div>
       </div>
 
-      <!-- 表格内容 - 使用静态数据展示 -->
+      <!-- 表格内容 -->
       <div class="excel-body">
         <div 
-          v-for="(item, index) in staticData" 
-          :key="index" 
+          v-for="(item, index) in filteredData" 
+          :key="item.key" 
           class="excel-row"
           :class="{ 'even-row': index % 2 === 1 }"
           :title="item.tooltip"
         >
-          <!-- 复选框列 - 禁用状态 -->
+          <!-- 复选框列 -->
           <div class="excel-cell checkbox-col" v-if="isManager">
             <input 
               type="checkbox" 
-              :checked="false" 
-              disabled
+              v-model="item.selected"
             >
           </div>
           
-          <!-- ID列 -->
-          <div class="excel-cell id-col">{{ item.id }}</div>
+          <!-- 版号列 -->
+          <div class="excel-cell version-col">{{ item.version }}</div>
           
           <!-- 类型列 -->
           <div class="excel-cell type-col">{{ item.typeText }}</div>
           
-          <!-- 同步状态列 -->
-          <div class="excel-cell sync-col" v-if="isRootMode">
-            <span :class="item.syncClass">{{ item.syncText }}</span>
-          </div>
-          
-          <!-- 内容摘要列 -->
-          <div class="excel-cell summary-col">{{ item.summary || '无数据' }}</div>
-          
-          <!-- 所属模式列 -->
+          <!-- 模式列 -->
           <div class="excel-cell mode-col" :class="item.modeClass">
             {{ item.modeId }}
           </div>
           
-          <!-- 操作列 - 按钮禁用 -->
-          <div class="excel-cell actions-col">
-            <button 
-              class="action-btn delete" 
-              @click.prevent
-              disabled
-            >
-              删除
-            </button>
-            <button 
-              class="action-btn edit" 
-              @click.prevent
-              disabled
-            >
-              编辑
-            </button>
+          <!-- 内容列 -->
+          <div class="excel-cell content-col">{{ item.content }}</div>
+          
+          <!-- 推送状态列 -->
+          <div class="excel-cell push-col">
+            <span :class="item.pushClass">{{ item.pushText }}</span>
+          </div>
+          
+          <!-- 同步状态列 -->
+          <div class="excel-cell sync-col">
+            <span :class="item.syncClass">{{ item.syncText }}</span>
+          </div>
+          
+          <!-- 冲突状态列 -->
+          <div class="excel-cell conflict-col">
+            <span :class="item.conflictClass">{{ item.conflictText }}</span>
           </div>
         </div>
 
-        <div class="empty-state" v-if="staticData.length === 0">
-          <p>数据功能已禁用</p>
+        <div class="empty-state" v-if="filteredData.length === 0">
+          <p>暂无数据</p>
         </div>
       </div>
     </div>
     
     <!-- 隐藏文件输入 -->
-    <input type="file" ref="fileInput" class="hidden" accept=".json">
+    <input type="file" ref="fileInput" class="hidden" accept=".json" @change="handleImport">
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, computed, onMounted } from 'vue'
+import { ID } from '../components/Data/services/id.js'
 
-// 静态状态变量 - 替代store中的状态
-const isManager = ref(false);
-const filterType = ref('all');
-const syncFilter = ref('all');
-const isRootMode = ref(true);
-const selectAll = ref(false);
-const selectedCount = ref(0);
-const hasPreview = ref(false);
-const previewTotalCount = ref(0);
-const previewConfigsCount = ref(0);
-const previewQuestionsCount = ref(0);
-const isPreview = ref(false);
+// 状态变量
+const isManager = ref(false)
+const filterType = ref('all')
+const syncFilter = ref('all')
+const isRootMode = ref(true)
+const selectAll = ref(false)
+const fileInput = ref(null)
 
-// 静态数据 - 用于展示表格结构
-const staticData = ref([
-  {
-    id: 'root_admin',
-    typeText: '主模式',
-    syncStatus: 'synced',
-    syncClass: 'sync-synced',
-    syncText: '已同步',
-    summary: '系统主模式，包含所有源数据',
-    modeId: 'root_admin',
-    modeClass: 'mode-root',
-    tooltip: '主模式数据'
-  },
-  {
-    id: 'conf_001',
-    typeText: '环境配置',
-    syncStatus: 'synced',
-    syncClass: 'sync-synced',
-    syncText: '已同步',
-    summary: '系统基础配置信息',
-    modeId: 'root_admin',
-    modeClass: 'mode-root',
-    tooltip: '环境配置数据'
-  },
-  {
-    id: 'q_001',
-    typeText: '资料题库',
-    syncStatus: 'synced',
-    syncClass: 'sync-synced',
-    syncText: '已同步',
-    summary: '基础资料信息示例',
-    modeId: 'root_admin',
-    modeClass: 'mode-root',
-    tooltip: '题库数据'
+// 数据存储
+const allData = ref([])
+
+// 计算属性
+const selectedCount = computed(() => {
+  return allData.value.filter(item => item.selected).length
+})
+
+const filteredData = computed(() => {
+  let result = [...allData.value]
+  
+  // 数据类型筛选
+  if (filterType.value !== 'all') {
+    switch (filterType.value) {
+      case 'question':
+        result = result.filter(item => item.type === ID.TYPES.QUESTION_BANK)
+        break
+      case 'env':
+        result = result.filter(item => item.type === ID.TYPES.ENV_FULL)
+        break
+      case 'root':
+        result = result.filter(item => item.modeId === ID.ROOT_ADMIN_MODE_ID)
+        break
+      case 'other-mode':
+        result = result.filter(item => item.modeId !== ID.ROOT_ADMIN_MODE_ID)
+        break
+    }
   }
-]);
+  
+  // 同步状态筛选
+  if (syncFilter.value !== 'all') {
+    result = result.filter(item => {
+      switch (syncFilter.value) {
+        case 'pushed':
+          return item.pushStatus === 'pushed'
+        case 'unpushed':
+          return item.pushStatus === 'unpushed'
+        case 'synced':
+          return item.syncStatus === 'synced'
+        case 'unsynced':
+          return item.syncStatus === 'unsynced'
+        case 'conflict':
+          return item.conflictStatus === 'conflict'
+        default:
+          return true
+      }
+    })
+  }
+  
+  return result
+})
 
-const fileInput = ref(null);
+// 方法
+const toggleManager = () => {
+  isManager.value = !isManager.value
+  if (!isManager.value) {
+    // 退出管理时清除所有选择
+    allData.value.forEach(item => {
+      item.selected = false
+    })
+    selectAll.value = false
+  }
+}
 
-// 空函数 - 替代原有功能方法
-function initialize() {}
-function editItem() {}
-function triggerImport() {}
-function handleImport() {}
+const setFilterType = (type) => {
+  filterType.value = type
+}
+
+const setSyncFilter = (status) => {
+  syncFilter.value = status
+}
+
+const toggleSelectAll = () => {
+  const newSelectedState = selectAll.value
+  filteredData.value.forEach(item => {
+    item.selected = newSelectedState
+  })
+}
+
+const clearSelection = () => {
+  allData.value.forEach(item => {
+    item.selected = false
+  })
+  selectAll.value = false
+}
+
+const deleteSelected = () => {
+  if (selectedCount.value === 0) return
+  
+  if (confirm(`确定要删除选中的 ${selectedCount.value} 条数据吗？`)) {
+    // 过滤掉选中的数据
+    allData.value = allData.value.filter(item => !item.selected)
+    selectAll.value = false
+  }
+}
+
+const triggerImport = () => {
+  fileInput.value.click()
+}
+
+const handleImport = (event) => {
+  const file = event.target.files[0]
+  if (!file) return
+  
+  const reader = new FileReader()
+  reader.onload = (e) => {
+    try {
+      const data = JSON.parse(e.target.result)
+      // 这里应该处理导入的数据
+      console.log('导入数据:', data)
+      alert('数据导入成功')
+    } catch (error) {
+      console.error('导入数据失败:', error)
+      alert('数据导入失败: ' + error.message)
+    }
+  }
+  reader.readAsText(file)
+  event.target.value = '' // 重置文件输入
+}
+
+const exportData = () => {
+  // 导出所有数据
+  const dataStr = JSON.stringify(allData.value, null, 2)
+  const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr)
+  
+  const exportFileDefaultName = 'data-export.json'
+  const linkElement = document.createElement('a')
+  linkElement.setAttribute('href', dataUri)
+  linkElement.setAttribute('download', exportFileDefaultName)
+  linkElement.click()
+}
+
+// 扫描本地存储获取数据
+const scanLocalStorage = () => {
+  const data = []
+  
+  // 遍历所有localStorage项
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i)
+    const parsedKey = ID.parseKey(key)
+    
+    if (parsedKey.valid) {
+      try {
+        const value = localStorage.getItem(key)
+        const parsedValue = JSON.parse(value)
+        
+        // 生成内容摘要
+        let content = ''
+        if (parsedKey.type === ID.TYPES.QUESTION_BANK) {
+          content = Array.isArray(parsedValue.questions) 
+            ? `${parsedValue.questions.length}个题库条目` 
+            : '题库数据'
+        } else if (parsedKey.type === ID.TYPES.ENV_FULL) {
+          content = typeof parsedValue === 'object' 
+            ? JSON.stringify(parsedValue).substring(0, 50) + '...' 
+            : String(parsedValue).substring(0, 50) + '...'
+        } else {
+          content = String(parsedValue).substring(0, 50) + '...'
+        }
+        
+        data.push({
+          key: key,
+          version: parsedKey.version,
+          type: parsedKey.type,
+          typeText: parsedKey.type === ID.TYPES.QUESTION_BANK ? '题库' : '全量区',
+          modeId: parsedKey.modeId,
+          modeClass: parsedKey.modeId === ID.ROOT_ADMIN_MODE_ID ? 'mode-root' : 'mode-other',
+          content: content,
+          pushStatus: Math.random() > 0.5 ? 'pushed' : 'unpushed', // 模拟推送状态
+          pushClass: Math.random() > 0.5 ? 'push-pushed' : 'push-unpushed',
+          pushText: Math.random() > 0.5 ? '已推送' : '未推送',
+          syncStatus: Math.random() > 0.5 ? 'synced' : 'unsynced', // 模拟同步状态
+          syncClass: Math.random() > 0.5 ? 'sync-synced' : 'sync-unsynced',
+          syncText: Math.random() > 0.5 ? '已同步' : '未同步',
+          conflictStatus: Math.random() > 0.8 ? 'conflict' : 'no-conflict', // 模拟冲突状态
+          conflictClass: Math.random() > 0.8 ? 'conflict-yes' : 'conflict-no',
+          conflictText: Math.random() > 0.8 ? '有冲突' : '无冲突',
+          selected: false,
+          tooltip: key
+        })
+      } catch (error) {
+        console.error('解析数据失败:', key, error)
+      }
+    }
+  }
+  
+  allData.value = data
+}
 
 onMounted(() => {
-  // 不执行任何初始化操作
-});
+  scanLocalStorage()
+})
 </script>
 
 <style scoped>
-/* 保持原有样式不变 */
 .data-management {
   padding: 20px;
   border: 1px solid #ddd;
@@ -239,10 +357,9 @@ onMounted(() => {
   padding: 8px 16px;
   border: none;
   border-radius: 4px;
-  cursor: not-allowed; /* 禁用状态光标 */
+  cursor: pointer;
   transition: background-color 0.3s;
   font-size: 14px;
-  opacity: 0.7; /* 视觉上区分禁用状态 */
 }
 
 .data-button.import {
@@ -250,14 +367,26 @@ onMounted(() => {
   color: white;
 }
 
+.data-button.import:hover {
+  background-color: #45a049;
+}
+
 .data-button.export {
   background-color: #2196F3;
   color: white;
 }
 
+.data-button.export:hover {
+  background-color: #1976D2;
+}
+
 .data-button.manager {
   background-color: #ff9800;
   color: white;
+}
+
+.data-button.manager:hover {
+  background-color: #f57c00;
 }
 
 .data-button.manager.active {
@@ -269,29 +398,22 @@ onMounted(() => {
   color: #333;
 }
 
+.data-button.clear:hover {
+  background-color: #e0e0e0;
+}
+
 .data-button.delete {
   background-color: #f44336;
   color: white;
 }
 
+.data-button.delete:hover:not(:disabled) {
+  background-color: #d32f2f;
+}
+
 .data-button.delete:disabled {
   background-color: #ffcccc;
   cursor: not-allowed;
-}
-
-.data-button.apply {
-  background-color: #4CAF50;
-  color: white;
-}
-
-.data-button.cancel {
-  background-color: #f44336;
-  color: white;
-}
-
-.data-button.switch {
-  background-color: #2196F3;
-  color: white;
 }
 
 .filter-section {
@@ -323,16 +445,18 @@ onMounted(() => {
   border: 1px solid #ddd;
   border-radius: 4px;
   background-color: white;
-  cursor: not-allowed; /* 禁用状态光标 */
+  cursor: pointer;
   font-size: 13px;
-  opacity: 0.7;
+}
+
+.filter-option:hover {
+  background-color: #f0f0f0;
 }
 
 .filter-option.active {
   background-color: #2196F3;
   color: white;
   border-color: #2196F3;
-  opacity: 0.8;
 }
 
 .management-section {
@@ -345,26 +469,6 @@ onMounted(() => {
 
 .selection-info {
   font-size: 14px;
-}
-
-.preview-section {
-  background-color: #fff8e1;
-  padding: 12px;
-  border-radius: 6px;
-  margin-bottom: 15px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.preview-info {
-  color: #ff8f00;
-  font-size: 14px;
-}
-
-.preview-actions {
-  display: flex;
-  gap: 10px;
 }
 
 .excel-table-container {
@@ -411,7 +515,7 @@ onMounted(() => {
   text-align: center;
 }
 
-.id-col {
+.version-col {
   width: 100px;
 }
 
@@ -419,34 +523,25 @@ onMounted(() => {
   width: 100px;
 }
 
-.sync-col {
-  width: 100px;
-}
-
-.summary-col {
-  min-width: 300px;
-  width: 300px;
-}
-
 .mode-col {
   width: 120px;
 }
 
-.actions-col {
-  width: 120px;
-  text-align: center;
+.content-col {
+  min-width: 200px;
+  width: 200px;
 }
 
-.sync-synced {
-  color: #28a745;
+.push-col {
+  width: 100px;
 }
 
-.sync-unsynced {
-  color: #ffc107;
+.sync-col {
+  width: 100px;
 }
 
-.sync-conflict {
-  color: #dc3545;
+.conflict-col {
+  width: 100px;
 }
 
 .mode-root {
@@ -458,26 +553,27 @@ onMounted(() => {
   color: #007bff;
 }
 
-.mode-current {
-  background-color: #e3f2fd;
+.push-pushed {
+  color: #28a745;
 }
 
-.action-btn {
-  padding: 4px 8px;
-  margin: 0 3px;
-  border: 1px solid #ddd;
-  border-radius: 2px;
-  background-color: white;
-  cursor: not-allowed;
-  font-size: 12px;
-  opacity: 0.7;
+.push-unpushed {
+  color: #ffc107;
 }
 
-.action-btn.delete {
+.sync-synced {
+  color: #28a745;
+}
+
+.sync-unsynced {
+  color: #ffc107;
+}
+
+.conflict-yes {
   color: #dc3545;
 }
 
-.action-btn.edit {
+.conflict-no {
   color: #28a745;
 }
 
@@ -509,4 +605,3 @@ onMounted(() => {
   background: #aaa;
 }
 </style>
-    

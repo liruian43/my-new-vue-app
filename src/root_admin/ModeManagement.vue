@@ -1,6 +1,6 @@
 <template>
   <div class="mode-management">
-    <!-- 原模式管理功能区域，添加了容器和边框 -->
+    <!-- 原模式管理功能区域 -->
     <div class="mode-management-container">
       <div class="mode-controls">
         <!-- 新建模式按钮 -->
@@ -28,7 +28,7 @@
         <input 
           type="text" 
           v-model="newModeName" 
-          placeholder="请输入模式名称"
+          placeholder="请输入模式名称（将作为模式ID使用）"
           class="mode-name-input"
           @keyup.enter="createMode"
         >
@@ -58,7 +58,10 @@
           </div>
           <!-- 模式名称 -->
           <div class="mode-name">
-            {{ mode.name }}
+            {{ mode.name }} ({{ mode.id }})
+            <span class="sync-status" v-if="mode.id !== 'root_admin'">
+              [{{ mode.syncStatus }}]
+            </span>
           </div>
         </div>
         
@@ -68,201 +71,442 @@
       </div>
     </div>
     
-    <!-- 添加的ModeLinkageControl组件 -->
-    <div class="mode-linkage-container">
-      <ModeLinkageControl 
-        v-if="isRootAdminMode" 
-        @confirm-linkage="handleLinkage" 
-      />
+    <!-- 匹配引擎控制 -->
+    <div class="match-engine-control">
+      <h3>匹配引擎控制</h3>
+      <div class="engine-control-section">
+        <div class="control-row">
+          <label>匹配策略:</label>
+          <select v-model="selectedStrategy" class="strategy-select">
+            <option 
+              v-for="strategy in availableStrategies" 
+              :key="strategy" 
+              :value="strategy"
+            >
+              {{ strategy === 'standard' ? '标准匹配' : strategy === 'fuzzy' ? '模糊匹配' : strategy }}
+            </option>
+          </select>
+          <button @click="applyStrategy" class="apply-button">应用策略</button>
+        </div>
+        
+        <div class="control-row" v-if="selectedStrategy === 'fuzzy'">
+          <label>模糊匹配配置:</label>
+          <div class="fuzzy-config">
+            <label>
+              <input type="checkbox" v-model="fuzzyConfig.allowPartialMatches">
+              允许部分匹配
+            </label>
+            <label>
+              <input type="checkbox" v-model="fuzzyConfig.qualityGrading">
+              启用质量分级
+            </label>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- 数据推送阀门 -->
+    <div class="push-valve-container">
+      <h3>数据推送阀门</h3>
+      
+      <div class="valve-section">
+        <div class="valve-row">
+          <label>选择目标模式:</label>
+          <select 
+            v-model="selectedTargetMode" 
+            class="mode-select"
+            :disabled="pushableModes.length === 0"
+          >
+            <option value="">请选择模式</option>
+            <option 
+              v-for="mode in pushableModes" 
+              :key="mode.id" 
+              :value="mode.id"
+            >
+              {{ mode.name }} ({{ mode.id }})
+            </option>
+          </select>
+        </div>
+        
+        <div class="valve-row">
+          <label>选择推送版本:</label>
+          <select 
+            v-model="selectedVersion" 
+            class="version-select"
+            :disabled="availableVersions.length === 0"
+          >
+            <option value="">请选择版本</option>
+            <option 
+              v-for="version in availableVersions" 
+              :key="version" 
+              :value="version"
+            >
+              {{ version }}
+            </option>
+          </select>
+        </div>
+        
+        <!-- 准备/取消推送按钮 -->
+        <div class="valve-row">
+          <button 
+            class="action-button prepare-button"
+            :disabled="!selectedTargetMode || pushableModes.length === 0 || !selectedVersion"
+            @click="togglePrepareStatus"
+          >
+            {{ isInPrepareState ? '取消推送' : '准备推送' }}
+          </button>
+        </div>
+        
+        <!-- 同步选项区域 -->
+        <div class="sync-options" v-if="isInPrepareState">
+          <div class="option-group">
+            <span class="group-label">同步(控制显示):</span>
+            <div class="fixed-sync-hint">
+              固定同步: 卡片数量、选项数据、卡片顺序、下拉菜单
+            </div>
+            <div class="option-item">
+              <input 
+                type="checkbox" 
+                id="sync-envConfigs"
+                v-model="pushConfig.envConfigs"
+                disabled
+              >
+              <label for="sync-envConfigs">环境配置数据</label>
+            </div>
+            <div class="option-item">
+              <input 
+                type="checkbox" 
+                id="sync-questionBank"
+                v-model="pushConfig.questionBank"
+              >
+              <label for="sync-questionBank">题库数据</label>
+            </div>
+          </div>
+
+          <!-- 授权选项区域 -->
+          <div class="option-group">
+            <span class="group-label">授权(控制编辑):</span>
+            <div class="option-item">
+              <input 
+                type="checkbox" 
+                id="auth-editable"
+                v-model="permissions.editable"
+              >
+              <label for="auth-editable">可编辑</label>
+            </div>
+            <div class="option-item">
+              <input 
+                type="checkbox" 
+                id="auth-readOnly"
+                v-model="permissions.readOnly"
+                checked
+                disabled
+              >
+              <label for="auth-readOnly">只读（默认）</label>
+            </div>
+          </div>
+        </div>
+        
+        <!-- 数据克扣区域 -->
+        <div class="withholding-options" v-if="isInPrepareState">
+          <div class="option-group">
+            <span class="group-label">数据克扣:</span>
+            <div class="option-item">
+              <input 
+                type="checkbox" 
+                id="withhold-value"
+                v-model="withholding.value"
+              >
+              <label for="withhold-value">克扣选项值</label>
+            </div>
+            <div class="option-item">
+              <input 
+                type="checkbox" 
+                id="withhold-unit"
+                v-model="withholding.unit"
+              >
+              <label for="withhold-unit">克扣选项单位</label>
+            </div>
+            <div class="option-item">
+              <input 
+                type="checkbox" 
+                id="withhold-dropdown"
+                v-model="withholding.dropdownLabels"
+              >
+              <label for="withhold-dropdown">克扣下拉标签</label>
+            </div>
+          </div>
+        </div>
+        
+        <!-- 确认推送按钮 -->
+        <div class="valve-row" v-if="isInPrepareState">
+          <button 
+            class="action-button confirm-button"
+            @click="pushData"
+            :disabled="pushingData"
+          >
+            {{ pushingData ? '推送中...' : '确认推送' }}
+          </button>
+        </div>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue';
-import { useCardStore } from '../components/Data/store';
-import { v4 as uuidv4 } from 'uuid';
-// 移除直接的utils导入，改为通过store调用
-import ModeLinkageControl from '../components/ModeLinkageControl.vue';
-import { useRoute } from 'vue-router';
+import { ref, computed, onMounted, watch } from 'vue'
+import modeManager from '../components/Data/modeManager.js'
+import communicationService from '../components/Data/communicationService.js'
+import { useCardStore } from '../components/Data/store'
+import { rootMatchController } from '../components/Data/matchEngine.js'
 
-// 路由判断逻辑：仅匹配/root_admin及其所有子路径
-const route = useRoute();
-
-// 模式判断
-const isRootAdminMode = computed(() => {
-  return /^\/root_admin($|\/)/.test(route.path);
-});
-
-// 初始化存储
-const cardStore = useCardStore();
+// 获取卡片存储实例
+const cardStore = useCardStore()
 
 // 状态管理
-const isCreating = ref(false);
-const isDeleting = ref(false);
-const newModeName = ref('');
-const selectedModeIds = ref([]);
-const modeLoading = ref(false);
+const isCreating = ref(false)
+const isDeleting = ref(false)
+const newModeName = ref('')
+const selectedModeIds = ref([])
+const selectedTargetMode = ref('')
+const selectedVersion = ref('')
+const isInPrepareState = ref(false)
+
+// 匹配引擎控制
+const selectedStrategy = ref('standard')
+const availableStrategies = ref(['standard', 'fuzzy'])
+const fuzzyConfig = ref({
+  allowPartialMatches: true,
+  qualityGrading: true
+})
+
+// 推送配置
+const pushConfig = ref({
+  envConfigs: true,
+  questionBank: true
+})
+
+// 权限配置（默认只读）
+const permissions = ref({
+  editable: false,
+  readOnly: true
+})
+
+// 数据克扣配置
+const withholding = ref({
+  value: true,
+  unit: true,
+  dropdownLabels: true
+})
+
+const pushingData = ref(false)
 
 // 过滤：只显示用户创建的模式（排除主模式root_admin）
 const filteredModes = computed(() => {
-  return cardStore.modes.filter(mode => mode.id !== 'root_admin');
-});
+  return modeManager.getModes().filter(mode => mode.id !== 'root_admin')
+})
 
-// 初始化加载模式列表
+// 可推送的模式（未同步或需要更新的模式）
+const pushableModes = computed(() => {
+  return modeManager.getModes().filter(mode => mode.id !== 'root_admin')
+})
+
+// 可用版本列表
+const availableVersions = ref([])
+
+// 初始化
 onMounted(() => {
-  if (cardStore.modes.length === 0) {
-    modeLoading.value = true;
-    // 确保存储已初始化
-    cardStore.initialize().then(() => {
-      modeLoading.value = false;
-    }).catch(() => {
-      modeLoading.value = false;
-    });
+  // 获取可用的匹配策略
+  availableStrategies.value = rootMatchController.getAvailableStrategies()
+  // 加载可用版本
+  loadAvailableVersions()
+})
+
+// 监听卡片存储变化，重新加载版本
+watch(() => cardStore.sessionCards, () => {
+  loadAvailableVersions()
+})
+
+// 加载可用版本
+const loadAvailableVersions = async () => {
+  try {
+    const versions = await cardStore.listEnvFullSnapshots()
+    availableVersions.value = versions.map(v => v.version)
+  } catch (error) {
+    console.error('加载版本列表失败:', error)
+    availableVersions.value = []
   }
-});
+}
 
 // 切换创建模式
 const toggleCreateMode = () => {
   if (isCreating.value) {
-    newModeName.value = ''; // 重置输入
+    newModeName.value = '' // 重置输入
   }
-  isCreating.value = !isCreating.value;
-  isDeleting.value = false;
-  selectedModeIds.value = [];
-};
+  isCreating.value = !isCreating.value
+  isDeleting.value = false
+  selectedModeIds.value = []
+}
 
 // 切换删除模式
 const toggleDeleteMode = () => {
   if (isDeleting.value) {
-    handleDeleteSelectedModes();
+    handleDeleteSelectedModes()
   } else {
-    selectedModeIds.value = []; // 重置选择
+    selectedModeIds.value = [] // 重置选择
   }
-  isDeleting.value = !isDeleting.value;
-  isCreating.value = false;
-};
+  isDeleting.value = !isDeleting.value
+  isCreating.value = false
+}
 
-// 处理删除选中的模式（仅删除模式本身，不涉及卡片）
-const handleDeleteSelectedModes = () => {
-  if (selectedModeIds.value.length === 0) return;
-  
-  // 严格过滤：排除主模式（双重保险）
-  const modesToDelete = selectedModeIds.value.filter(id => id !== 'root_admin');
-  if (modesToDelete.length === 0) {
-    selectedModeIds.value = [];
-    return;
-  }
-  
-  if (confirm(`确定要删除这${modesToDelete.length}个模式吗？`)) {
-    modeLoading.value = true;
-    try {
-      // 调用store删除模式（仅模式记录）
-      cardStore.deleteModes(modesToDelete);
-      // 通过store删除对应的模式页面文件（原直接调用deleteModePage）
-      modesToDelete.forEach(modeId => {
-        cardStore.deleteModePage(modeId);
-      });
-      // 重置状态
-      selectedModeIds.value = [];
-    } catch (error) {
-      console.error('删除模式失败:', error);
-      alert('删除模式失败，请重试');
-    } finally {
-      modeLoading.value = false;
+// 切换准备状态
+const togglePrepareStatus = () => {
+  isInPrepareState.value = !isInPrepareState.value
+  if (!isInPrepareState.value) {
+    // 重置配置
+    pushConfig.value = {
+      envConfigs: true,
+      questionBank: true
+    }
+    permissions.value = {
+      editable: false,
+      readOnly: true
+    }
+    withholding.value = {
+      value: true,
+      unit: true,
+      dropdownLabels: true
     }
   }
-};
+}
+
+// 处理删除选中的模式
+const handleDeleteSelectedModes = () => {
+  if (selectedModeIds.value.length === 0) return
+  
+  if (confirm(`确定要删除这${selectedModeIds.value.length}个模式吗？`)) {
+    try {
+      selectedModeIds.value.forEach(modeId => {
+        modeManager.deleteMode(modeId)
+      })
+      // 重置状态
+      selectedModeIds.value = []
+    } catch (error) {
+      console.error('删除模式失败:', error)
+      alert('删除模式失败: ' + error.message)
+    }
+  }
+}
 
 // 创建新模式
 const createMode = () => {
   if (!newModeName.value.trim()) {
-    alert('请输入模式名称');
-    return;
+    alert('请输入模式名称')
+    return
   }
   
-  modeLoading.value = true;
   try {
-    const modeUuid = uuidv4();
-    const newMode = {
-      id: `mode-${modeUuid}`, // 确保与主模式区分
-      name: newModeName.value.trim(),
-      level: 2, // 二级模式（用户创建）
-      permissions: {
-        card: { addCard: true, deleteCard: true, editTitle: true, editOptions: true },
-        data: { view: true, save: true, export: false, import: true },
-        mode: { create: false, delete: false, assignPermissions: false, sync: false },
-        authorize: { canAuthorize: false }
-      },
-      routePath: `/mode/${modeUuid}`,
-      createdAt: new Date().toISOString()
-    };
-    
-    // 添加到存储
-    const createdMode = cardStore.addMode(newMode);
-    if (createdMode) {
-      // 通过store生成模式页面（原直接调用generateModePage）
-      cardStore.generateModePage(createdMode);
-      // 重置表单
-      newModeName.value = '';
-      isCreating.value = false;
-    }
+    const newMode = modeManager.createMode(newModeName.value.trim())
+    alert(`模式 "${newMode.name}" 创建成功！访问路径: /mode/${newMode.id}`)
+    // 重置表单
+    newModeName.value = ''
+    isCreating.value = false
   } catch (error) {
-    console.error('创建模式失败:', error);
-    alert('创建模式失败，请重试');
-  } finally {
-    modeLoading.value = false;
+    console.error('创建模式失败:', error)
+    alert('创建模式失败: ' + error.message)
   }
-};
+}
 
-// 联动处理（从CardSection.vue迁移过来的方法）
-const handleLinkage = (config) => {
-  // 会话级源数据区数据
-  const sessionSourceData = computed(() => {
-    const data = cardStore.currentModeSessionCards;
-    return Array.isArray(data) ? data : [];
-  });
+// 应用匹配策略
+const applyStrategy = () => {
+  try {
+    rootMatchController.setMatchStrategy(selectedStrategy.value)
+    
+    // 如果是模糊匹配，应用配置
+    if (selectedStrategy.value === 'fuzzy') {
+      rootMatchController.configureFuzzyMatch(fuzzyConfig.value)
+    }
+    
+    alert(`匹配策略已设置为: ${selectedStrategy.value}`)
+  } catch (error) {
+    console.error('设置匹配策略失败:', error)
+    alert('设置匹配策略失败: ' + error.message)
+  }
+}
+
+// 收集要推送的数据
+const collectPushData = async () => {
+  const data = {}
   
-  if (cardStore.checkResult !== 'pass') {
-    // 这里简化处理，实际应该调用配置检查方法
-    cardStore.checkResult = 'loading';
-    setTimeout(() => {
-      cardStore.checkResult = 'pass';
-    }, 500);
-    return;
+  // 始终推送卡片结构数据（不可克扣）
+  data.cards = cardStore.sessionCards || []
+  
+  // 推送环境配置数据（基于选定版本）
+  if (pushConfig.value.envConfigs) {
+    // 应用指定版本的环境配置
+    await cardStore.applyEnvFullSnapshot(selectedVersion.value)
+    data.envConfigs = cardStore.environmentConfigs || {}
   }
   
-  const sourceData = {
-    cardCount: sessionSourceData.value.length,
-    cards: sessionSourceData.value.map((card, index) => ({
-      cardIndex: index,
-      optionCount: card.data.options.length,
-      title: card.data.title,
-      options: card.data.options.map(opt => ({
-        name: opt.name,
-        value: opt.value,
-        unit: opt.unit
-      })),
-      dropdown: {
-        show: card.showDropdown,
-        options: card.data.selectOptions,
-        selectedValue: card.data.selectedValue
-      },
-      presetMappings: cardStore.presetMappings[card.id] || {}
-    })),
-    timestamp: new Date().toISOString()
-  };
+  // 推送题库数据（基于选定版本）
+  if (pushConfig.value.questionBank) {
+    // 加载指定版本的题库
+    await cardStore.loadQuestionBank()
+    data.questionBank = cardStore.questionBank || {}
+  }
   
-  // 通过store调用联动处理（原直接调用coordinateMode）
-  cardStore.coordinateMode({
-    sourceModeId: 'root_admin',
-    sourceData: sourceData,
-    targetMode: config.targetMode,
-    targetModeIds: config.targetModeIds,
-    syncFields: config.sync,
-    authFields: config.auth
-  });
-};
+  // 添加版本信息
+  data.version = selectedVersion.value
+  
+  // 添加匹配策略信息
+  data.matchStrategy = {
+    strategy: selectedStrategy.value,
+    config: selectedStrategy.value === 'fuzzy' ? fuzzyConfig.value : null
+  }
+  
+  return data
+}
+
+// 推送数据到指定模式
+const pushData = async () => {
+  if (!selectedTargetMode.value) {
+    alert('请选择目标模式')
+    return
+  }
+  
+  if (!selectedVersion.value) {
+    alert('请选择推送版本')
+    return
+  }
+  
+  pushingData.value = true
+  
+  try {
+    // 收集要推送的数据
+    const data = await collectPushData()
+    
+    // 使用通信服务推送数据
+    communicationService.pushDataToMode(
+      selectedTargetMode.value,
+      data,
+      permissions.value,
+      withholding.value
+    )
+    
+    // 更新目标模式的同步状态
+    modeManager.updateSyncStatus(selectedTargetMode.value, '已同步')
+    
+    alert(`数据已成功推送到模式: ${selectedTargetMode.value}`)
+    pushingData.value = false
+    selectedTargetMode.value = ''
+    selectedVersion.value = ''
+    isInPrepareState.value = false
+  } catch (error) {
+    console.error('推送数据失败:', error)
+    alert('推送数据失败: ' + error.message)
+    pushingData.value = false
+  }
+}
 </script>
 
 <style scoped>
@@ -369,15 +613,16 @@ const handleLinkage = (config) => {
   margin-top: 10px;
   display: flex;
   flex-wrap: wrap;
-  gap: 10px; /* 模式名称之间的间距 */
+  gap: 10px;
 }
 
 .mode-item {
   display: flex;
   align-items: center;
-  gap: 6px; /* 复选框与名称的间距 */
+  gap: 6px;
   padding: 6px 10px;
   border-radius: 4px;
+  background-color: #f0f0f0;
 }
 
 .mode-checkbox {
@@ -387,9 +632,12 @@ const handleLinkage = (config) => {
 .mode-name {
   padding: 4px 10px;
   color: #333;
-  border: 1px solid #eee;
-  border-radius: 4px;
   font-size: 14px;
+}
+
+.sync-status {
+  font-size: 12px;
+  color: #666;
 }
 
 .empty-state {
@@ -399,25 +647,197 @@ const handleLinkage = (config) => {
   font-size: 14px;
 }
 
-.loading-overlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(255,255,255,0.8);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 10;
+/* 匹配引擎控制样式 */
+.match-engine-control {
+  padding: 15px;
+  border: 1px solid #eee;
+  border-radius: 6px;
+  margin-bottom: 20px;
+  background-color: #f0f8ff;
 }
 
-/* 模式联动控制组件的容器样式 */
-.mode-linkage-container {
+.match-engine-control h3 {
+  margin-top: 0;
+  margin-bottom: 15px;
+  color: #333;
+}
+
+.engine-control-section {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.control-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.control-row label {
+  min-width: 100px;
+  font-weight: bold;
+}
+
+.strategy-select {
+  padding: 6px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  min-width: 150px;
+}
+
+.apply-button {
+  padding: 6px 12px;
+  background-color: #2196f3;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.fuzzy-config {
+  display: flex;
+  gap: 15px;
+  flex-wrap: wrap;
+}
+
+.fuzzy-config label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+}
+
+/* 数据推送阀门样式 */
+.push-valve-container {
   padding: 15px;
   border: 1px solid #eee;
   border-radius: 6px;
   background-color: #f9f9f9;
+}
+
+.push-valve-container h3 {
+  margin-top: 0;
+  margin-bottom: 15px;
+  color: #333;
+}
+
+.valve-section {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.valve-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.valve-row label {
+  min-width: 100px;
+  font-weight: bold;
+}
+
+.mode-select, .version-select {
+  padding: 6px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  min-width: 200px;
+}
+
+.mode-select:disabled, .version-select:disabled {
+  background-color: #f5f5f5;
+  color: #999;
+}
+
+/* 推送阀门按钮样式 */
+.action-button {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s;
+}
+
+.prepare-button {
+  background-color: #ff9800;
+  color: white;
+}
+
+.prepare-button:hover:not(:disabled) {
+  background-color: #f57c00;
+}
+
+.prepare-button:disabled {
+  background-color: #cccccc;
+  cursor: not-allowed;
+}
+
+.confirm-button {
+  background-color: #4CAF50;
+  color: white;
+}
+
+.confirm-button:hover:not(:disabled) {
+  background-color: #45a049;
+}
+
+.confirm-button:disabled {
+  background-color: #cccccc;
+  cursor: not-allowed;
+}
+
+/* 同步和授权选项区域 */
+.sync-options, .withholding-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  padding: 15px;
+  background-color: #ffffff;
+  border-radius: 4px;
+  border: 1px solid #ddd;
+}
+
+.option-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 200px;
+}
+
+.group-label {
+  font-weight: bold;
+  color: #333;
+  margin-bottom: 5px;
+}
+
+.fixed-sync-hint {
+  font-size: 12px;
+  color: #666;
+  padding: 5px;
+  background-color: #f0f0f0;
+  border-radius: 3px;
+  margin-bottom: 5px;
+}
+
+.option-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.option-item input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+}
+
+.option-item label {
+  cursor: pointer;
+  font-size: 14px;
 }
 
 @media (max-width: 768px) {
@@ -438,6 +858,19 @@ const handleLinkage = (config) => {
   .mode-name-input {
     min-width: auto;
     width: 100%;
+  }
+  
+  .valve-row, .control-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  
+  .valve-row label, .control-row label {
+    min-width: auto;
+  }
+  
+  .sync-options, .withholding-options {
+    flex-direction: column;
   }
 }
 </style>
