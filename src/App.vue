@@ -39,14 +39,15 @@
 import { onMounted, computed, watch, ref } from "vue"
 import { useCardStore } from './components/Data/store';
 import { useRouter } from 'vue-router';
+import modeManager from './components/Data/modeManager';
 
 // 路由实例
 const router = useRouter();
 // 卡片存储实例
 const cardStore = useCardStore();
 
-// 从store获取原始模式列表
-const modes = computed(() => cardStore.modes);
+// 直接从modeManager获取模式列表
+const modes = computed(() => modeManager.getModes());
 
 // 仅基于ID过滤root_admin模式，无其他过滤条件
 const filteredModes = computed(() => {

@@ -7,6 +7,7 @@
       <div class="sync-status">
         <span>同步状态: {{ syncStatus }}</span>
         <span v-if="lastSyncTime">上次同步: {{ lastSyncTime }}</span>
+        <span v-if="currentVersion">当前版本: {{ currentVersion }}</span>
       </div>
     </div>
 
@@ -158,6 +159,7 @@ const modeInfo = ref({
 
 const syncStatus = ref('未同步')
 const lastSyncTime = ref(null)
+const currentVersion = ref(null)
 
 // 卡片数据
 const cards = ref([])
@@ -212,11 +214,14 @@ const handleIncomingData = (packet) => {
     // 更新卡片数据
     updateCardData(processedData)
     
+    // 设置当前版本
+    currentVersion.value = packet.data.version || null
+    
     // 更新同步状态
     syncStatus.value = '已同步'
     lastSyncTime.value = new Date().toLocaleString()
     
-    console.log(`模式 ${modeId.value} 接收并处理了推送的数据`)
+    console.log(`模式 ${modeId.value} 接收并处理了推送的数据，版本: ${currentVersion.value}`)
   } catch (error) {
     console.error('处理推送数据失败:', error)
     syncStatus.value = '同步失败'
@@ -252,6 +257,7 @@ const processWithholdingData = (data, withholding) => {
 // 更新卡片数据
 const updateCardData = (data) => {
   // 这里应该根据接收到的数据更新卡片
+  // 新的数据会直接覆盖旧的数据，确保子模式只运行一个版本
   cards.value = data.cards || []
   console.log('卡片数据已更新:', cards.value)
 }

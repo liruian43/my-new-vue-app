@@ -208,7 +208,16 @@ class MatchEngineManager {
       // 3. 获取本地参数标准
       const envConfigs = this.loadEnvConfigs(modeId)
       
-      // 4. 使用当前策略执行匹配
+      // 4. 验证版本一致性
+      const versionConsistency = this.validateVersionConsistency(modeId, questionBank, envConfigs)
+      if (!versionConsistency.valid) {
+        return {
+          success: false,
+          error: versionConsistency.message
+        }
+      }
+      
+      // 5. 使用当前策略执行匹配
       const strategy = this.strategies[this.currentStrategy]
       if (!strategy) {
         throw new Error(`未找到匹配策略: ${this.currentStrategy}`)
@@ -222,6 +231,50 @@ class MatchEngineManager {
         success: false,
         error: '匹配过程出错: ' + error.message
       }
+    }
+  }
+
+  // 验证版本一致性
+  validateVersionConsistency(modeId, questionBank, envConfigs) {
+    // 获取当前版本
+    const currentVersion = this.getCurrentVersion(modeId)
+    
+    // 验证题库版本
+    const questionVersions = [...new Set(questionBank.questions
+      .filter(q => q.version)
+      .map(q => q.version))]
+    
+    // 验证环境配置版本
+    const envVersion = envConfigs.version
+    
+    // 检查是否存在多个题库版本
+    if (questionVersions.length > 1) {
+      return {
+        valid: false,
+        message: `题库中存在多个版本: ${questionVersions.join(', ')}，请确保版本一致性`
+      }
+    }
+    
+    const questionVersion = questionVersions[0] || null
+    
+    // 检查版本是否一致
+    if (questionVersion && questionVersion !== currentVersion) {
+      return {
+        valid: false,
+        message: `题库版本(${questionVersion})与当前版本(${currentVersion})不一致`
+      }
+    }
+    
+    if (envVersion && envVersion !== currentVersion) {
+      return {
+        valid: false,
+        message: `环境配置版本(${envVersion})与当前版本(${currentVersion})不一致`
+      }
+    }
+    
+    return {
+      valid: true,
+      message: '版本一致性验证通过'
     }
   }
 
@@ -265,7 +318,14 @@ class MatchEngineManager {
     
     try {
       const bankData = localStorage.getItem(key)
-      return bankData ? JSON.parse(bankData) : { questions: [] }
+      const parsedBank = bankData ? JSON.parse(bankData) : { questions: [] }
+      
+      // 确保题库数据包含版本信息
+      if (parsedBank && !parsedBank.version) {
+        parsedBank.version = this.getCurrentVersion(modeId)
+      }
+      
+      return parsedBank
     } catch (error) {
       console.error('加载题库失败:', error)
       return { questions: [] }
@@ -284,7 +344,14 @@ class MatchEngineManager {
     
     try {
       const envData = localStorage.getItem(key)
-      return envData ? JSON.parse(envData) : { configs: {} }
+      const parsedEnv = envData ? JSON.parse(envData) : { configs: {} }
+      
+      // 确保环境配置包含版本信息
+      if (parsedEnv && !parsedEnv.version) {
+        parsedEnv.version = this.getCurrentVersion(modeId)
+      }
+      
+      return parsedEnv
     } catch (error) {
       console.error('加载环境配置失败:', error)
       return { configs: {} }

@@ -126,6 +126,50 @@
               {{ mode.name }} ({{ mode.id }})
             </option>
           </select>
+          
+          <!-- 同步选项区域 -->
+          <div class="sync-options-inline">
+            <span class="group-label">同步:</span>
+            <div class="option-item">
+              <input 
+                type="checkbox" 
+                id="sync-card-title"
+                v-model="syncOptions.cardTitle"
+                :disabled="!selectedTargetMode"
+              >
+              <label for="sync-card-title">卡片标题</label>
+            </div>
+            <div class="option-item">
+              <input 
+                type="checkbox" 
+                id="sync-option-name"
+                v-model="syncOptions.optionName"
+                :disabled="!selectedTargetMode"
+              >
+              <label for="sync-option-name">选项名称</label>
+            </div>
+            <div class="option-item">
+              <input 
+                type="checkbox" 
+                id="sync-option-value"
+                v-model="syncOptions.optionValue"
+                :disabled="!selectedTargetMode"
+              >
+              <label for="sync-option-value">选项值</label>
+            </div>
+            <div class="option-item">
+              <input 
+                type="checkbox" 
+                id="sync-option-unit"
+                v-model="syncOptions.optionUnit"
+                :disabled="!selectedTargetMode"
+              >
+              <label for="sync-option-unit">选项单位</label>
+            </div>
+            <div class="fixed-sync-hint">
+              (固定同步: 卡片数量、选项数据、卡片顺序、下拉菜单、预设)
+            </div>
+          </div>
         </div>
         
         <div class="valve-row">
@@ -133,7 +177,7 @@
           <select 
             v-model="selectedVersion" 
             class="version-select"
-            :disabled="availableVersions.length === 0"
+            :disabled="availableVersions.length === 0 || !selectedTargetMode"
           >
             <option value="">请选择版本</option>
             <option 
@@ -144,6 +188,56 @@
               {{ version }}
             </option>
           </select>
+          
+          <!-- 授权选项区域 -->
+          <div class="auth-options-inline">
+            <span class="group-label">授权:</span>
+            <div class="option-item">
+              <input 
+                type="checkbox" 
+                id="auth-card-title"
+                v-model="authOptions.cardTitle"
+                :disabled="!selectedTargetMode"
+              >
+              <label for="auth-card-title">卡片标题</label>
+            </div>
+            <div class="option-item">
+              <input 
+                type="checkbox" 
+                id="auth-option-name"
+                v-model="authOptions.optionName"
+                :disabled="!selectedTargetMode"
+              >
+              <label for="auth-option-name">选项名称</label>
+            </div>
+            <div class="option-item">
+              <input 
+                type="checkbox" 
+                id="auth-option-value"
+                v-model="authOptions.optionValue"
+                :disabled="!selectedTargetMode"
+              >
+              <label for="auth-option-value">选项值</label>
+            </div>
+            <div class="option-item">
+              <input 
+                type="checkbox" 
+                id="auth-option-unit"
+                v-model="authOptions.optionUnit"
+                :disabled="!selectedTargetMode"
+              >
+              <label for="auth-option-unit">选项单位</label>
+            </div>
+            <div class="option-item">
+              <input 
+                type="checkbox" 
+                id="auth-checkbox"
+                v-model="authOptions.checkbox"
+                :disabled="!selectedTargetMode"
+              >
+              <label for="auth-checkbox">复选框</label>
+            </div>
+          </div>
         </div>
         
         <!-- 准备/取消推送按钮 -->
@@ -155,56 +249,6 @@
           >
             {{ isInPrepareState ? '取消推送' : '准备推送' }}
           </button>
-        </div>
-        
-        <!-- 同步选项区域 -->
-        <div class="sync-options" v-if="isInPrepareState">
-          <div class="option-group">
-            <span class="group-label">同步(控制显示):</span>
-            <div class="fixed-sync-hint">
-              固定同步: 卡片数量、选项数据、卡片顺序、下拉菜单
-            </div>
-            <div class="option-item">
-              <input 
-                type="checkbox" 
-                id="sync-envConfigs"
-                v-model="pushConfig.envConfigs"
-                disabled
-              >
-              <label for="sync-envConfigs">环境配置数据</label>
-            </div>
-            <div class="option-item">
-              <input 
-                type="checkbox" 
-                id="sync-questionBank"
-                v-model="pushConfig.questionBank"
-              >
-              <label for="sync-questionBank">题库数据</label>
-            </div>
-          </div>
-
-          <!-- 授权选项区域 -->
-          <div class="option-group">
-            <span class="group-label">授权(控制编辑):</span>
-            <div class="option-item">
-              <input 
-                type="checkbox" 
-                id="auth-editable"
-                v-model="permissions.editable"
-              >
-              <label for="auth-editable">可编辑</label>
-            </div>
-            <div class="option-item">
-              <input 
-                type="checkbox" 
-                id="auth-readOnly"
-                v-model="permissions.readOnly"
-                checked
-                disabled
-              >
-              <label for="auth-readOnly">只读（默认）</label>
-            </div>
-          </div>
         </div>
         
         <!-- 数据克扣区域 -->
@@ -280,16 +324,21 @@ const fuzzyConfig = ref({
   qualityGrading: true
 })
 
-// 推送配置
-const pushConfig = ref({
-  envConfigs: true,
-  questionBank: true
+// 同步选项
+const syncOptions = ref({
+  cardTitle: false,
+  optionName: false,
+  optionValue: false,
+  optionUnit: false
 })
 
-// 权限配置（默认只读）
-const permissions = ref({
-  editable: false,
-  readOnly: true
+// 授权选项
+const authOptions = ref({
+  cardTitle: false,
+  optionName: false,
+  optionValue: false,
+  optionUnit: false,
+  checkbox: false // 控制其他模式是否显示复选框
 })
 
 // 数据克扣配置
@@ -360,18 +409,25 @@ const toggleDeleteMode = () => {
 }
 
 // 切换准备状态
-const togglePrepareStatus = () => {
+const togglePrepareState = () => {
   isInPrepareState.value = !isInPrepareState.value
   if (!isInPrepareState.value) {
     // 重置配置
-    pushConfig.value = {
-      envConfigs: true,
-      questionBank: true
+    syncOptions.value = {
+      cardTitle: false,
+      optionName: false,
+      optionValue: false,
+      optionUnit: false
     }
-    permissions.value = {
-      editable: false,
-      readOnly: true
+    
+    authOptions.value = {
+      cardTitle: false,
+      optionName: false,
+      optionValue: false,
+      optionUnit: false,
+      checkbox: false
     }
+    
     withholding.value = {
       value: true,
       unit: true,
@@ -441,20 +497,6 @@ const collectPushData = async () => {
   // 始终推送卡片结构数据（不可克扣）
   data.cards = cardStore.sessionCards || []
   
-  // 推送环境配置数据（基于选定版本）
-  if (pushConfig.value.envConfigs) {
-    // 应用指定版本的环境配置
-    await cardStore.applyEnvFullSnapshot(selectedVersion.value)
-    data.envConfigs = cardStore.environmentConfigs || {}
-  }
-  
-  // 推送题库数据（基于选定版本）
-  if (pushConfig.value.questionBank) {
-    // 加载指定版本的题库
-    await cardStore.loadQuestionBank()
-    data.questionBank = cardStore.questionBank || {}
-  }
-  
   // 添加版本信息
   data.version = selectedVersion.value
   
@@ -463,6 +505,16 @@ const collectPushData = async () => {
     strategy: selectedStrategy.value,
     config: selectedStrategy.value === 'fuzzy' ? fuzzyConfig.value : null
   }
+  
+  // 添加同步选项
+  data.syncOptions = { ...syncOptions.value }
+  
+  // 添加授权选项
+  data.authOptions = { ...authOptions.value }
+  
+  // 加载指定版本的题库
+  await cardStore.loadQuestionBank()
+  data.questionBank = cardStore.questionBank || {}
   
   return data
 }
@@ -485,11 +537,17 @@ const pushData = async () => {
     // 收集要推送的数据
     const data = await collectPushData()
     
+    // 构建权限配置
+    const permissions = {
+      editable: authOptions.value, // 使用授权选项作为可编辑配置
+      readOnly: !Object.values(authOptions.value).some(val => val) // 如果没有任何授权项被选中，则为只读
+    }
+    
     // 使用通信服务推送数据
     communicationService.pushDataToMode(
       selectedTargetMode.value,
       data,
-      permissions.value,
+      permissions,
       withholding.value
     )
     
@@ -791,37 +849,31 @@ const pushData = async () => {
   cursor: not-allowed;
 }
 
-/* 同步和授权选项区域 */
-.sync-options, .withholding-options {
+/* 同步和授权选项区域（横向排列） */
+.sync-options-inline, .auth-options-inline {
   display: flex;
-  flex-wrap: wrap;
-  gap: 20px;
-  padding: 15px;
+  align-items: center;
+  gap: 15px;
+  padding: 8px 12px;
   background-color: #ffffff;
   border-radius: 4px;
   border: 1px solid #ddd;
+  flex-wrap: wrap;
 }
 
-.option-group {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-width: 200px;
-}
-
-.group-label {
+.sync-options-inline .group-label, .auth-options-inline .group-label {
   font-weight: bold;
   color: #333;
-  margin-bottom: 5px;
+  white-space: nowrap;
 }
 
 .fixed-sync-hint {
   font-size: 12px;
   color: #666;
-  padding: 5px;
+  white-space: nowrap;
   background-color: #f0f0f0;
+  padding: 2px 6px;
   border-radius: 3px;
-  margin-bottom: 5px;
 }
 
 .option-item {
@@ -835,7 +887,58 @@ const pushData = async () => {
   height: 16px;
 }
 
+.option-item input[type="checkbox"]:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .option-item label {
+  cursor: pointer;
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.option-item label:has(input:disabled) {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* 数据克扣区域 */
+.withholding-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  padding: 15px;
+  background-color: #ffffff;
+  border-radius: 4px;
+  border: 1px solid #ddd;
+}
+
+.withholding-options .option-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 200px;
+}
+
+.withholding-options .group-label {
+  font-weight: bold;
+  color: #333;
+  margin-bottom: 5px;
+}
+
+.withholding-options .option-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.withholding-options .option-item input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+}
+
+.withholding-options .option-item label {
   cursor: pointer;
   font-size: 14px;
 }
@@ -860,16 +963,21 @@ const pushData = async () => {
     width: 100%;
   }
   
-  .valve-row, .control-row {
+  .valve-row {
     flex-direction: column;
     align-items: flex-start;
   }
   
-  .valve-row label, .control-row label {
+  .valve-row label {
     min-width: auto;
   }
   
-  .sync-options, .withholding-options {
+  .sync-options-inline, .auth-options-inline {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+  
+  .withholding-options {
     flex-direction: column;
   }
 }
