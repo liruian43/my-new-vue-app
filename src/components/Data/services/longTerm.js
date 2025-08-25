@@ -54,3 +54,85 @@ export function parseFromJson(jsonString) {
     return null; // 解析失败时，返回 null 以保持架构存在
   }
 }
+
+// 添加缺失的导出函数以消除编译警告
+// 这些函数应该与 localStorage 相关，但由于架构原因，这里提供简单的兼容实现
+
+/**
+ * 保存数据到长期存储
+ * @param {string} key 存储键
+ * @param {any} data 要保存的数据
+ * @returns {boolean} 是否保存成功
+ */
+export function saveToLongTerm(key, data) {
+  try {
+    const jsonString = stringifyToJson(data);
+    localStorage.setItem(key, jsonString);
+    return true;
+  } catch (error) {
+    console.error('保存到长期存储失败:', error);
+    return false;
+  }
+}
+
+/**
+ * 从长期存储获取数据
+ * @param {string} key 存储键
+ * @returns {any} 获取的数据，失败时返回 null
+ */
+export function getFromLongTerm(key) {
+  try {
+    const jsonString = localStorage.getItem(key);
+    return parseFromJson(jsonString);
+  } catch (error) {
+    console.error('从长期存储获取数据失败:', error);
+    return null;
+  }
+}
+
+/**
+ * 从长期存储删除数据
+ * @param {string} key 存储键
+ * @returns {boolean} 是否删除成功
+ */
+export function deleteFromLongTerm(key) {
+  try {
+    localStorage.removeItem(key);
+    return true;
+  } catch (error) {
+    console.error('从长期存储删除数据失败:', error);
+    return false;
+  }
+}
+
+/**
+ * 按模式清理长期存储数据
+ * @param {string} modeId 模式ID
+ * @returns {number} 清理的条目数量
+ */
+export function clearLongTermByMode(modeId) {
+  try {
+    let count = 0;
+    const keysToRemove = [];
+    
+    // 遍历所有存储的键，找到匹配模式的键
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.includes(`:${modeId}:`)) {
+        keysToRemove.push(key);
+      }
+    }
+    
+    // 删除匹配的键
+    keysToRemove.forEach(key => {
+      localStorage.removeItem(key);
+      count++;
+    });
+    
+    console.log(`清理模式 ${modeId} 的数据，共删除 ${count} 个条目`);
+    return count;
+  } catch (error) {
+    console.error('按模式清理长期存储失败:', error);
+    return 0;
+  }
+}

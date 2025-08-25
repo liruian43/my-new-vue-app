@@ -349,6 +349,215 @@ export function parseMetaKey(key) {
 }
 
 // -----------------------------
+// 批量Key处理工具（通用五段Key字段提取器）
+// -----------------------------
+
+/**
+ * 从LocalStorage中批量提取五段Key的指定字段
+ * @param {string|string[]} fields 要提取的字段名（'prefix'|'modeId'|'version'|'type'|'excelId'）
+ * @param {object} filters 过滤条件 { prefix?, modeId?, version?, type?, excelId? }
+ * @param {Storage} storage 存储对象（默认localStorage）
+ * @param {boolean} unique 是否去重（默认true）
+ * @returns {Array} 提取结果数组
+ */
+export function extractKeysFields(fields, filters = {}, storage = localStorage, unique = true) {
+  const fieldsArray = Array.isArray(fields) ? fields : [fields];
+  const validFields = ['prefix', 'modeId', 'version', 'type', 'excelId'];
+  
+  // 验证字段名
+  for (const field of fieldsArray) {
+    if (!validFields.includes(field)) {
+      throw new Error(`无效的字段名: ${field}，支持的字段: ${validFields.join(', ')}`);
+    }
+  }
+  
+  const results = [];
+  const seenSet = unique ? new Set() : null;
+  
+  try {
+    for (let i = 0; i < storage.length; i++) {
+      const key = storage.key(i);
+      if (!key) continue;
+      
+      const parsed = parseKey(key);
+      if (!parsed.valid) continue;
+      
+      // 应用过滤条件
+      let matchFilters = true;
+      for (const [filterField, filterValue] of Object.entries(filters)) {
+        if (filterValue && parsed[filterField] !== filterValue) {
+          matchFilters = false;
+          break;
+        }
+      }
+      if (!matchFilters) continue;
+      
+      // 提取指定字段
+      if (fieldsArray.length === 1) {
+        // 单字段提取
+        const value = parsed[fieldsArray[0]];
+        if (unique) {
+          if (!seenSet.has(value)) {
+            seenSet.add(value);
+            results.push(value);
+          }
+        } else {
+          results.push(value);
+        }
+      } else {
+        // 多字段提取
+        const result = {};
+        for (const field of fieldsArray) {
+          result[field] = parsed[field];
+        }
+        
+        if (unique) {
+          const resultKey = JSON.stringify(result);
+          if (!seenSet.has(resultKey)) {
+            seenSet.add(resultKey);
+            results.push(result);
+          }
+        } else {
+          results.push(result);
+        }
+      }
+    }
+  } catch (error) {
+    console.warn('[ID] 提取Key字段时出错:', error);
+  }
+  
+  return results;
+}
+
+/**
+ * 获取五段Key的完整分析报告
+ * @param {object} filters 过滤条件
+ * @param {Storage} storage 存储对象（默认localStorage）
+ * @returns {object} 分析报告 { summary, byPrefix, byModeId, byVersion, byType, byExcelId }
+ */
+export function analyzeKeysDistribution(filters = {}, storage = localStorage) {
+  const analysis = {
+    totalKeys: 0,
+    validKeys: 0,
+    invalidKeys: 0,
+    byPrefix: {},
+    byModeId: {},
+    byVersion: {},
+    byType: {},
+    byExcelId: {},
+    combinations: []
+  };
+  
+  try {
+    for (let i = 0; i < storage.length; i++) {
+      const key = storage.key(i);
+      if (!key) continue;
+      
+      analysis.totalKeys++;
+      
+      const parsed = parseKey(key);
+      if (!parsed.valid) {
+        analysis.invalidKeys++;
+        continue;
+      }
+      
+      // 应用过滤条件
+      let matchFilters = true;
+      for (const [filterField, filterValue] of Object.entries(filters)) {
+        if (filterValue && parsed[filterField] !== filterValue) {
+          matchFilters = false;
+          break;
+        }
+      }
+      if (!matchFilters) continue;
+      
+      analysis.validKeys++;
+      
+      // 统计各字段分布
+      const fields = ['prefix', 'modeId', 'version', 'type', 'excelId'];
+      fields.forEach(field => {
+        const value = parsed[field];
+        const byField = analysis[`by${field.charAt(0).toUpperCase() + field.slice(1)}`];
+        byField[value] = (byField[value] || 0) + 1;
+      });
+      
+      // 记录完整组合
+      analysis.combinations.push({
+        key,
+        prefix: parsed.prefix,
+        modeId: parsed.modeId,
+        version: parsed.version,
+        type: parsed.type,
+        excelId: parsed.excelId
+      });
+    }
+  } catch (error) {
+    console.warn('[ID] 分析Key分布时出错:', error);
+  }
+  
+  return analysis;
+}
+
+/**
+ * 批量操作Key的工具函数
+ * @param {string} operation 操作类型 'list'|'count'|'delete'|'export'
+ * @param {object} criteria 条件 { prefix?, modeId?, version?, type?, excelId? }
+ * @param {Storage} storage 存储对象（默认localStorage）
+ * @returns {Array|number|boolean} 根据操作类型返回不同结果
+ */
+export function batchKeyOperation(operation, criteria = {}, storage = localStorage) {
+  const matchingKeys = [];
+  
+  try {
+    for (let i = 0; i < storage.length; i++) {
+      const key = storage.key(i);
+      if (!key) continue;
+      
+      const parsed = parseKey(key);
+      if (!parsed.valid) continue;
+      
+      // 检查是否匹配条件
+      let matches = true;
+      for (const [field, value] of Object.entries(criteria)) {
+        if (value && parsed[field] !== value) {
+          matches = false;
+          break;
+        }
+      }
+      
+      if (matches) {
+        matchingKeys.push({ key, parsed, data: storage.getItem(key) });
+      }
+    }
+    
+    switch (operation) {
+      case 'list':
+        return matchingKeys.map(item => item.key);
+      
+      case 'count':
+        return matchingKeys.length;
+      
+      case 'delete':
+        matchingKeys.forEach(item => storage.removeItem(item.key));
+        return matchingKeys.length;
+      
+      case 'export':
+        return matchingKeys.map(item => ({
+          key: item.key,
+          fields: item.parsed,
+          data: item.data
+        }));
+      
+      default:
+        throw new Error(`不支持的操作类型: ${operation}`);
+    }
+  } catch (error) {
+    console.warn(`[ID] 批量操作Key时出错 (${operation}):`, error);
+    return operation === 'count' ? 0 : [];
+  }
+}
+
+// -----------------------------
 // 导出聚合对象（可选，便于“一个对象全用”）
 // 你也可以只按需导入上面的任意函数。
 // -----------------------------
@@ -396,5 +605,10 @@ export const ID = Object.freeze({
   // Meta Key
   buildMetaKey,
   parseMetaKey,
-  normalizeMetaName
+  normalizeMetaName,
+  
+  // 批量Key处理工具
+  extractKeysFields,
+  analyzeKeysDistribution,
+  batchKeyOperation
 });

@@ -430,31 +430,87 @@ export function buildFullConfigs(env) {
 }
 
 export async function listEnvFullSnapshots(store) {
-  // TODO: dataManager 接口需要调整以传递 modeId
-  const snaps = await store.dataManager?.loadEnvFullSnapshots?.(getModeIdFromCtx(store)) || []; // 传入 modeId
-  return (Array.isArray(snaps) ? snaps : []).map(s => ({
-    version: s.version,
-    timestamp: s.timestamp,
-    hash: s.hash
-  }));
+  try {
+    // 使用新的id.js批量提取工具获取版本列表
+    const versions = ID.extractKeysFields('version', {
+      modeId: store.currentModeId || ID.ROOT_ADMIN_MODE_ID,
+      type: ID.TYPES.ENV_FULL
+    });
+    
+    console.log('[listEnvFullSnapshots] 提取到的版本:', versions);
+    
+    if (!versions || versions.length === 0) {
+      console.log('[listEnvFullSnapshots] 没有找到任何版本数据');
+      return [];
+    }
+    
+    // 为每个版本获取详细信息（时间戳和hash）
+    const snapshots = [];
+    for (const version of versions) {
+      try {
+        // 使用与 saveEnvFullSnapshot 相同的key构建逻辑
+        // 根据现有代码，全量快照应该使用 A0 作为 excelId
+        const key = ID.buildKey({
+          modeId: store.currentModeId || ID.ROOT_ADMIN_MODE_ID,
+          version: version,
+          type: ID.TYPES.ENV_FULL,
+          excelId: 'A0' // 与 storageKeyForEnv 保持一致
+        });
+        
+        const storage = resolveStorage(store);
+        const data = getJSON(storage, key);
+        
+        if (data && data.timestamp) {
+          snapshots.push({
+            version: ID.normalizeVersionLabel(version),
+            timestamp: data.timestamp,
+            hash: data.hash || ''
+          });
+        } else {
+          console.warn(`[listEnvFullSnapshots] 版本 ${version} 没有有效的时间戳数据`);
+          // 有版本记录但没有完整数据，可能是损坏的记录
+          snapshots.push({
+            version: ID.normalizeVersionLabel(version),
+            timestamp: Date.now(),
+            hash: ''
+          });
+        }
+      } catch (error) {
+        console.warn(`[listEnvFullSnapshots] 加载版本 ${version} 失败:`, error);
+        // 即使单个版本失败，也要显示在列表中
+        snapshots.push({
+          version: ID.normalizeVersionLabel(version),
+          timestamp: Date.now(),
+          hash: ''
+        });
+      }
+    }
+    
+    console.log('[listEnvFullSnapshots] 最终快照列表:', snapshots);
+    // 按时间戳倒序排列
+    return snapshots.sort((a, b) => b.timestamp - a.timestamp);
+  } catch (error) {
+    console.error('[listEnvFullSnapshots] 函数执行失败:', error);
+    return [];
+  }
 }
 export async function saveEnvFullSnapshot(store, versionLabel) {
-  const version = String(versionLabel || '').trim();
-  if (!version) {
+  const version = ID.normalizeVersionLabel(versionLabel || '');
+  if (!ID.isValidVersionLabel(version)) {
     store.error = '版本号不能为空';
     return false;
   }
 
+  console.log('[saveEnvFullSnapshot] 保存版本:', version);
+
   // 确保dataManager已设置versionLabel
-  if (!store.dataManager.versionLabel) {
+  if (store.dataManager && typeof store.dataManager.setVersionLabel === 'function') {
     store.dataManager.setVersionLabel(version);
   }
 
-  // TODO: dataManager 接口需要调整以传递 modeId
-  const snaps = await store.dataManager?.loadEnvFullSnapshots?.(getModeIdFromCtx(store)) || []; // 传入 modeId
-  const arr = Array.isArray(snaps) ? snaps : [];
-
-  if (arr.some(s => s.version === version)) {
+  // 检查是否已存在该版本
+  const existingSnapshots = await listEnvFullSnapshots(store);
+  if (existingSnapshots.some(s => s.version === version)) {
     store.error = `版本号已存在：${version}`;
     return false;
   }
@@ -465,12 +521,16 @@ export async function saveEnvFullSnapshot(store, versionLabel) {
     return false;
   }
 
-  // 现在这些函数都已导出，可以从 store.js 正确调用了
+  // 从会话中构建环境数据
   const environment = buildEnvironmentFromSession(store);
   const fullConfigs = buildFullConfigs(environment);
   const hash = hashString(stableStringify(fullConfigs));
 
-  const snap = {
+  console.log('[saveEnvFullSnapshot] 构建的环境数据:', environment);
+  console.log('[saveEnvFullSnapshot] 生成的hash:', hash);
+
+  // 使用正确的五段Key保存快照数据
+  const snapData = {
     version,
     timestamp: Date.now(),
     hash,
@@ -478,27 +538,57 @@ export async function saveEnvFullSnapshot(store, versionLabel) {
     fullConfigs
   };
 
-  arr.push(snap);
-  // TODO: dataManager 接口需要调整以传递 modeId
-  await store.dataManager?.saveEnvFullSnapshots?.(arr, getModeIdFromCtx(store)); // 传入 modeId
-  return true;
+  try {
+    // 使用 storageKeyForEnv 构建正确的存储Key
+    const storage = resolveStorage(store);
+    const key = storageKeyForEnv({ ...store, currentVersion: version, versionLabel: version });
+    
+    console.log('[saveEnvFullSnapshot] 使用的存储Key:', key);
+    
+    const success = setJSON(storage, key, snapData);
+    if (success) {
+      console.log('[saveEnvFullSnapshot] 保存成功');
+      store.error = null;
+      return true;
+    } else {
+      store.error = '保存失败';
+      return false;
+    }
+  } catch (error) {
+    console.error('[saveEnvFullSnapshot] 保存失败:', error);
+    store.error = `保存失败: ${error.message}`;
+    return false;
+  }
 }
 
 export async function applyEnvFullSnapshot(store, versionLabel) {
-  const version = String(versionLabel || '').trim();
-  if (!version) return false;
-
-  // TODO: dataManager 接口需要调整以传递 modeId
-  const snaps = await store.dataManager?.loadEnvFullSnapshots?.(getModeIdFromCtx(store)) || []; // 传入 modeId
-  const arr = Array.isArray(snaps) ? snaps : [];
-  const snap = arr.find(s => s.version === version);
-  if (!snap) {
-    store.error = `未找到版本：${version}`;
+  const version = ID.normalizeVersionLabel(versionLabel || '');
+  if (!ID.isValidVersionLabel(version)) {
+    store.error = '版本号不能为空';
     return false;
   }
 
-  const env = snap.environment || { cards: {}, options: {} };
-  const cardIds = Object.keys(env.cards || {}).sort((a, b) => ID.compareCardIds(String(a), String(b))); // 使用 ID.compareCardIds
+  console.log('[applyEnvFullSnapshot] 应用版本:', version);
+
+  try {
+    // 使用正确的五段Key加载快照数据
+    const storage = resolveStorage(store);
+    const key = storageKeyForEnv({ ...store, currentVersion: version, versionLabel: version });
+    
+    console.log('[applyEnvFullSnapshot] 使用的存储Key:', key);
+    
+    const snapData = getJSON(storage, key);
+    if (!snapData) {
+      store.error = `未找到版本：${version}`;
+      return false;
+    }
+
+    console.log('[applyEnvFullSnapshot] 加载的快照数据:', snapData);
+
+    const env = snapData.environment || { cards: {}, options: {} };
+    const cardIds = Object.keys(env.cards || {}).sort((a, b) => ID.compareCardIds(String(a), String(b)));
+
+    console.log('[applyEnvFullSnapshot] 卡片ID列表:', cardIds);
 
   const incomingCards = cardIds.map(cardId => {
     const c = env.cards[cardId] || {};
@@ -600,8 +690,14 @@ export async function applyEnvFullSnapshot(store, versionLabel) {
     store.selectedCardId = sessionCards[0]?.id || null;
   }
 
-  store.error = null;
-  return true;
+    console.log('[applyEnvFullSnapshot] 应用成功');
+    store.error = null;
+    return true;
+  } catch (error) {
+    console.error('[applyEnvFullSnapshot] 应用失败:', error);
+    store.error = `应用版本失败: ${error.message}`;
+    return false;
+  }
 }
 
 // ========== 新版新增功能（保持你原有实现） ==========

@@ -110,7 +110,19 @@ export default class DataManager {
     }
     console.log(`[DataManager] 初始化 - 当前模式设置为: ${this.currentModeId}`)
     
-    // 2. 不强制加载数据，只有实际使用时才校验
+    // 2. 初始化版本标签（使用id.js规范化，确保五段Key系统正常工作）
+    const savedVersion = this.longTermStorage.getItem(this.storageKeys.globalCurrentVersion)
+    if (savedVersion && IdSvc.isValidVersionLabel(savedVersion)) {
+        this.versionLabel = IdSvc.normalizeVersionLabel(savedVersion)
+        console.log(`[DataManager] 从存储加载版本标签: ${this.versionLabel}`)
+    } else {
+        // 使用id.js方法设置默认版本，确保符合规范
+        const defaultVersion = IdSvc.normalizeVersionLabel('v1.0.0')
+        this.setVersionLabel(defaultVersion) // 这会调用id.js的验证和存储
+        console.log(`[DataManager] 设置默认版本标签: ${this.versionLabel}`)
+    }
+    
+    // 3. 不强制加载数据，只有实际使用时才校验
     return true
   }
 
