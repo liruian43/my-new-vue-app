@@ -251,37 +251,6 @@
           </button>
         </div>
         
-        <!-- 数据克扣区域 -->
-        <div class="withholding-options" v-if="isInPrepareState">
-          <div class="option-group">
-            <span class="group-label">数据克扣:</span>
-            <div class="option-item">
-              <input 
-                type="checkbox" 
-                id="withhold-value"
-                v-model="withholding.value"
-              >
-              <label for="withhold-value">克扣选项值</label>
-            </div>
-            <div class="option-item">
-              <input 
-                type="checkbox" 
-                id="withhold-unit"
-                v-model="withholding.unit"
-              >
-              <label for="withhold-unit">克扣选项单位</label>
-            </div>
-            <div class="option-item">
-              <input 
-                type="checkbox" 
-                id="withhold-dropdown"
-                v-model="withholding.dropdownLabels"
-              >
-              <label for="withhold-dropdown">克扣下拉标签</label>
-            </div>
-          </div>
-        </div>
-        
         <!-- 确认推送按钮 -->
         <div class="valve-row" v-if="isInPrepareState">
           <button 
@@ -298,7 +267,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import modeManager from '../components/Data/modeManager.js'
 import communicationService from '../components/Data/communicationService.js'
 import { useCardStore } from '../components/Data/store'
@@ -341,23 +310,24 @@ const authOptions = ref({
   checkbox: false // 控制其他模式是否显示复选框
 })
 
-// 数据克扣配置
-const withholding = ref({
-  value: true,
-  unit: true,
-  dropdownLabels: true
-})
-
 const pushingData = ref(false)
+
+// 模式列表
+const modes = ref(modeManager.getModes())
+
+// 更新模式列表
+const updateModes = () => {
+  modes.value = modeManager.getModes()
+}
 
 // 过滤：只显示用户创建的模式（排除主模式root_admin）
 const filteredModes = computed(() => {
-  return modeManager.getModes().filter(mode => mode.id !== 'root_admin')
+  return modes.value.filter(mode => mode.id !== 'root_admin')
 })
 
 // 可推送的模式（未同步或需要更新的模式）
 const pushableModes = computed(() => {
-  return modeManager.getModes().filter(mode => mode.id !== 'root_admin')
+  return modes.value.filter(mode => mode.id !== 'root_admin')
 })
 
 // 可用版本列表
@@ -369,6 +339,14 @@ onMounted(() => {
   availableStrategies.value = rootMatchController.getAvailableStrategies()
   // 加载可用版本
   loadAvailableVersions()
+  // 监听模式变化事件
+  modeManager.onModesChanged(updateModes)
+})
+
+// 组件卸载时清理事件监听器
+onUnmounted(() => {
+  // 注意：在当前实现中，modeManager没有提供移除监听器的方法
+  // 在实际应用中，应该提供取消监听的方法
 })
 
 // 监听卡片存储变化，重新加载版本
@@ -409,7 +387,7 @@ const toggleDeleteMode = () => {
 }
 
 // 切换准备状态
-const togglePrepareState = () => {
+const togglePrepareStatus = () => {
   isInPrepareState.value = !isInPrepareState.value
   if (!isInPrepareState.value) {
     // 重置配置
@@ -427,12 +405,6 @@ const togglePrepareState = () => {
       optionUnit: false,
       checkbox: false
     }
-    
-    withholding.value = {
-      value: true,
-      unit: true,
-      dropdownLabels: true
-    }
   }
 }
 
@@ -442,9 +414,12 @@ const handleDeleteSelectedModes = () => {
   
   if (confirm(`确定要删除这${selectedModeIds.value.length}个模式吗？`)) {
     try {
+      const count = selectedModeIds.value.length; // 保存删除数量
       selectedModeIds.value.forEach(modeId => {
         modeManager.deleteMode(modeId)
       })
+      // 显示删除成功提示
+      alert(`成功删除${count}个模式`) // 使用保存的数量
       // 重置状态
       selectedModeIds.value = []
     } catch (error) {
@@ -543,17 +518,17 @@ const pushData = async () => {
       readOnly: !Object.values(authOptions.value).some(val => val) // 如果没有任何授权项被选中，则为只读
     }
     
-    // 使用通信服务推送数据
+    // 使用通信服务推送数据（不再传递withholding参数）
     communicationService.pushDataToMode(
       selectedTargetMode.value,
       data,
-      permissions,
-      withholding.value
+      permissions
     )
     
     // 更新目标模式的同步状态
     modeManager.updateSyncStatus(selectedTargetMode.value, '已同步')
     
+    // 显示成功推送提示
     alert(`数据已成功推送到模式: ${selectedTargetMode.value}`)
     pushingData.value = false
     selectedTargetMode.value = ''
@@ -561,6 +536,7 @@ const pushData = async () => {
     isInPrepareState.value = false
   } catch (error) {
     console.error('推送数据失败:', error)
+    // 显示错误推送提示
     alert('推送数据失败: ' + error.message)
     pushingData.value = false
   }
@@ -903,46 +879,6 @@ const pushData = async () => {
   cursor: not-allowed;
 }
 
-/* 数据克扣区域 */
-.withholding-options {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 20px;
-  padding: 15px;
-  background-color: #ffffff;
-  border-radius: 4px;
-  border: 1px solid #ddd;
-}
-
-.withholding-options .option-group {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-width: 200px;
-}
-
-.withholding-options .group-label {
-  font-weight: bold;
-  color: #333;
-  margin-bottom: 5px;
-}
-
-.withholding-options .option-item {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-}
-
-.withholding-options .option-item input[type="checkbox"] {
-  width: 16px;
-  height: 16px;
-}
-
-.withholding-options .option-item label {
-  cursor: pointer;
-  font-size: 14px;
-}
-
 @media (max-width: 768px) {
   .mode-controls {
     flex-direction: column;
@@ -975,10 +911,6 @@ const pushData = async () => {
   .sync-options-inline, .auth-options-inline {
     width: 100%;
     flex-wrap: wrap;
-  }
-  
-  .withholding-options {
-    flex-direction: column;
   }
 }
 </style>

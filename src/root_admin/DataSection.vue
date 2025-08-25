@@ -4,6 +4,7 @@
     <div class="data-controls">
       <button class="data-button import" @click="triggerImport">导入数据</button>
       <button class="data-button export" @click="exportData">导出数据</button>
+      <button class="data-button" @click="scanLocalStorage">刷新数据</button>
       <button 
         class="data-button manager" 
         @click="toggleManager"
@@ -130,7 +131,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { ID } from '../components/Data/services/id.js'
 
 // 状态变量
@@ -280,48 +281,100 @@ const scanLocalStorage = () => {
   // 遍历所有localStorage项
   for (let i = 0; i < localStorage.length; i++) {
     const key = localStorage.key(i)
-    const parsedKey = ID.parseKey(key)
     
-    if (parsedKey.valid) {
+    // 只处理本系统数据 (以APP:开头)
+    if (key && key.startsWith('APP:')) {
       try {
         const value = localStorage.getItem(key)
         const parsedValue = JSON.parse(value)
         
-        // 生成内容摘要
-        let content = ''
-        if (parsedKey.type === ID.TYPES.QUESTION_BANK) {
-          content = Array.isArray(parsedValue.questions) 
-            ? `${parsedValue.questions.length}个题库条目` 
-            : '题库数据'
-        } else if (parsedKey.type === ID.TYPES.ENV_FULL) {
-          content = typeof parsedValue === 'object' 
-            ? JSON.stringify(parsedValue).substring(0, 50) + '...' 
-            : String(parsedValue).substring(0, 50) + '...'
-        } else {
-          content = String(parsedValue).substring(0, 50) + '...'
+        // 解析key的各个部分
+        const keyParts = key.split(':')
+        if (keyParts.length >= 5) {
+          const prefix = decodeURIComponent(keyParts[0])
+          const modeId = decodeURIComponent(keyParts[1])
+          const version = decodeURIComponent(keyParts[2])
+          const type = decodeURIComponent(keyParts[3])
+          const excelId = decodeURIComponent(keyParts[4])
+          
+          // 确定数据类型文本
+          let typeText = '未知'
+          if (type === ID.TYPES.QUESTION_BANK) {
+            typeText = '题库'
+          } else if (type === ID.TYPES.ENV_FULL) {
+            typeText = '全量区'
+          } else if (type) {
+            typeText = type
+          }
+          
+          // 生成内容摘要 - 根据实际数据结构
+          let content = ''
+          if (type === ID.TYPES.QUESTION_BANK && Array.isArray(parsedValue.questions)) {
+            content = `${parsedValue.questions.length}个题库条目`
+          } else if (type === ID.TYPES.ENV_FULL && typeof parsedValue === 'object') {
+            // 对于全量区数据，显示一些关键信息
+            const cardCount = parsedValue.cards ? Object.keys(parsedValue.cards).length : 0
+            const optionCount = parsedValue.options ? Object.keys(parsedValue.options).length : 0
+            content = `cards: ${cardCount}, options: ${optionCount}`
+          } else if (typeof parsedValue === 'object') {
+            // 通用对象显示
+            content = JSON.stringify(parsedValue).substring(0, 50) + '...'
+          } else {
+            // 其他类型数据
+            content = String(parsedValue).substring(0, 50) + '...'
+          }
+          
+          // 特殊处理：如果内容太短，尝试提供更多有用信息
+          if (content.length < 10 && typeof parsedValue === 'object') {
+            const keys = Object.keys(parsedValue)
+            if (keys.length > 0) {
+              content = keys.slice(0, 3).join(', ') + (keys.length > 3 ? '...' : '')
+            }
+          }
+          
+          data.push({
+            key: key,
+            version: version || '未指定',
+            type: type || '未指定',
+            typeText: typeText,
+            modeId: modeId || '未指定',
+            modeClass: modeId === ID.ROOT_ADMIN_MODE_ID ? 'mode-root' : 'mode-other',
+            content: content,
+            pushStatus: Math.random() > 0.5 ? 'pushed' : 'unpushed', // 模拟推送状态
+            pushClass: Math.random() > 0.5 ? 'push-pushed' : 'push-unpushed',
+            pushText: Math.random() > 0.5 ? '已推送' : '未推送',
+            syncStatus: Math.random() > 0.5 ? 'synced' : 'unsynced', // 模拟同步状态
+            syncClass: Math.random() > 0.5 ? 'sync-synced' : 'sync-unsynced',
+            syncText: Math.random() > 0.5 ? '已同步' : '未同步',
+            conflictStatus: Math.random() > 0.8 ? 'conflict' : 'no-conflict', // 模拟冲突状态
+            conflictClass: Math.random() > 0.8 ? 'conflict-yes' : 'conflict-no',
+            conflictText: Math.random() > 0.8 ? '有冲突' : '无冲突',
+            selected: false,
+            tooltip: key
+          })
         }
-        
+      } catch (error) {
+        // 即使解析失败，也显示基本信息
         data.push({
           key: key,
-          version: parsedKey.version,
-          type: parsedKey.type,
-          typeText: parsedKey.type === ID.TYPES.QUESTION_BANK ? '题库' : '全量区',
-          modeId: parsedKey.modeId,
-          modeClass: parsedKey.modeId === ID.ROOT_ADMIN_MODE_ID ? 'mode-root' : 'mode-other',
-          content: content,
-          pushStatus: Math.random() > 0.5 ? 'pushed' : 'unpushed', // 模拟推送状态
-          pushClass: Math.random() > 0.5 ? 'push-pushed' : 'push-unpushed',
-          pushText: Math.random() > 0.5 ? '已推送' : '未推送',
-          syncStatus: Math.random() > 0.5 ? 'synced' : 'unsynced', // 模拟同步状态
-          syncClass: Math.random() > 0.5 ? 'sync-synced' : 'sync-unsynced',
-          syncText: Math.random() > 0.5 ? '已同步' : '未同步',
-          conflictStatus: Math.random() > 0.8 ? 'conflict' : 'no-conflict', // 模拟冲突状态
-          conflictClass: Math.random() > 0.8 ? 'conflict-yes' : 'conflict-no',
-          conflictText: Math.random() > 0.8 ? '有冲突' : '无冲突',
+          version: '解析错误',
+          type: '解析错误',
+          typeText: '解析错误',
+          modeId: '解析错误',
+          modeClass: 'mode-other',
+          content: '数据解析失败',
+          pushStatus: 'unpushed',
+          pushClass: 'push-unpushed',
+          pushText: '解析失败',
+          syncStatus: 'unsynced',
+          syncClass: 'sync-unsynced',
+          syncText: '解析失败',
+          conflictStatus: 'no-conflict',
+          conflictClass: 'conflict-no',
+          conflictText: '无冲突',
           selected: false,
           tooltip: key
         })
-      } catch (error) {
         console.error('解析数据失败:', key, error)
       }
     }
@@ -330,8 +383,19 @@ const scanLocalStorage = () => {
   allData.value = data
 }
 
+// 定时刷新数据
+let refreshInterval = null
+
 onMounted(() => {
   scanLocalStorage()
+  // 每5秒刷新一次数据
+  refreshInterval = setInterval(scanLocalStorage, 5000)
+})
+
+onUnmounted(() => {
+  if (refreshInterval) {
+    clearInterval(refreshInterval)
+  }
 })
 </script>
 

@@ -1,11 +1,12 @@
 // src/components/Data/dataInstance.js
 import { reactive } from 'vue'
+import { ID } from './services/id.js'
 
 function createDefaultState() {
   return {
     questionBank: { questions: [], categories: [] },
     envSnapshots: [],
-    currentMode: 'root_admin',
+    currentMode: ID.ROOT_ADMIN_MODE_ID,
     cards: [],
     options: {},
     syncHistory: [],
@@ -38,24 +39,19 @@ export const dataInstance = {
 
   utils: {
     generateCardId: function (usedIds) {
-      const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
-      for (let i = 0; i < letters.length; i++) {
-        if (!usedIds.includes(letters[i])) return letters[i]
-      }
-      return `C${Date.now()}`
+      return ID.generateNextCardId(usedIds)
     },
     generateOptionId: function (existingIds) {
-      if (existingIds.length === 0) return '1'
-      const numbers = existingIds.map(id => parseInt(id)).filter(n => !isNaN(n))
-      return numbers.length === 0 ? '1' : (Math.max(...numbers) + 1).toString()
+      const list = existingIds.map(id => ({ id }))
+      return ID.generateNextOptionId(list)
     },
-    compareCardIds: function (id1, id2) { return id1.localeCompare(id2) },
-    isValidCardId: function (cardId) { return /^[A-Z]+$/.test(cardId) },
-    isValidOptionId: function (optionId) { return /^\d+$/.test(optionId) },
-    isValidFullOptionId: function (fullId) { return /^[A-Z]+\d+$/.test(fullId) },
+    compareCardIds: ID.compareCardIds,
+    isValidCardId: ID.isValidCardId,
+    isValidOptionId: ID.isValidOptionId,
+    isValidFullOptionId: ID.isOptionExcelId,
     parseFullOptionId: function (fullId) {
-      if (!this.isValidFullOptionId(fullId)) return null
-      return { cardId: fullId[0], optionId: fullId.slice(1) }
+      const result = ID.parseFullOptionId(fullId)
+      return result.valid ? { cardId: result.cardId, optionId: result.optionId } : null
     }
   },
 
@@ -127,7 +123,7 @@ export const dataInstance = {
       this.state.options[fullId] = newOption
 
       if (!Array.isArray(card.data?.options)) {
-        if (!card.data) card.data = {}
+        if (!card.data) card.data = {};
         card.data.options = []
       }
       card.data.options.push({

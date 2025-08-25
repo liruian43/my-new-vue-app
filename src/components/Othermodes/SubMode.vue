@@ -147,6 +147,7 @@ import { useRoute } from 'vue-router'
 import UniversalCard from '../UniversalCard/UniversalCard.vue'
 import communicationService from '../Data/communicationService.js'
 import matchEngine from '../Data/matchEngine.js'
+import modeManager from '../Data/modeManager.js'
 
 // 获取路由参数
 const route = useRoute()
@@ -179,6 +180,14 @@ let cleanupListener = null
 
 // 初始化
 onMounted(() => {
+  // 检查模式是否仍然存在
+  const modeExists = modeManager.getMode(modeId.value);
+  if (!modeExists && modeId.value !== 'root_admin') {
+    // 如果模式不存在，重定向到首页
+    window.location.href = '/';
+    return;
+  }
+  
   // 初始化模式信息
   modeInfo.value.name = `模式-${modeId.value}`
   

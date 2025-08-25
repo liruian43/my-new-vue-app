@@ -4,6 +4,27 @@ import { ID } from './services/id.js'
 class ModeManager {
   constructor() {
     this.modes = this.loadModesFromStorage()
+    // 添加事件监听器列表
+    this.listeners = {
+      modesChanged: []
+    }
+  }
+
+  // 添加事件监听
+  onModesChanged(callback) {
+    this.listeners.modesChanged.push(callback)
+    // 返回一个取消监听的函数
+    return () => {
+      const index = this.listeners.modesChanged.indexOf(callback)
+      if (index > -1) {
+        this.listeners.modesChanged.splice(index, 1)
+      }
+    }
+  }
+
+  // 触发模式变化事件
+  emitModesChanged() {
+    this.listeners.modesChanged.forEach(callback => callback())
   }
 
   // 创建新子模式
@@ -35,6 +56,7 @@ class ModeManager {
     
     this.modes.push(newMode)
     this.saveModesToStorage()
+    this.emitModesChanged() // 触发模式变化事件
     return newMode
   }
 
@@ -47,6 +69,33 @@ class ModeManager {
     
     this.modes = this.modes.filter(mode => mode.id !== modeId)
     this.saveModesToStorage()
+    
+    // 删除与该模式相关的所有数据
+    this.clearModeData(modeId)
+    this.emitModesChanged() // 触发模式变化事件
+  }
+
+  // 清理模式相关数据
+  clearModeData(modeId) {
+    // 清理localStorage中与该模式相关的数据
+    const modeDataKeys = []
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i)
+      if (key && key.startsWith(`${modeId}:`)) {
+        modeDataKeys.push(key)
+      }
+    }
+    modeDataKeys.forEach(key => localStorage.removeItem(key))
+    
+    // 清理sessionStorage中与该模式相关的数据
+    const sessionDataKeys = []
+    for (let i = 0; i < sessionStorage.length; i++) {
+      const key = sessionStorage.key(i)
+      if (key && key.includes(`:${modeId}:`)) {
+        sessionDataKeys.push(key)
+      }
+    }
+    sessionDataKeys.forEach(key => sessionStorage.removeItem(key))
   }
 
   // 获取所有子模式
@@ -66,6 +115,7 @@ class ModeManager {
       mode.syncStatus = status
       mode.lastSync = new Date().toISOString()
       this.saveModesToStorage()
+      this.emitModesChanged() // 触发模式变化事件
     }
   }
 

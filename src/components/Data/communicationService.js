@@ -7,14 +7,13 @@ class CommunicationService {
   }
 
   // 主模式推送数据到子模式
-  pushDataToMode(targetModeId, data, permissions, withholding) {
+  pushDataToMode(targetModeId, data, permissions) {
     // 创建包含五段式Key信息的数据包
     const packet = {
       sourceModeId: ID.ROOT_ADMIN_MODE_ID,
       targetModeId,
       data,
       permissions,
-      withholding,
       timestamp: new Date().toISOString()
     }
     

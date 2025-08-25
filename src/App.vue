@@ -47,7 +47,7 @@ const router = useRouter();
 const cardStore = useCardStore();
 
 // 直接从modeManager获取模式列表
-const modes = computed(() => modeManager.getModes());
+const modes = ref(modeManager.getModes());
 
 // 仅基于ID过滤root_admin模式，无其他过滤条件
 const filteredModes = computed(() => {
@@ -56,6 +56,11 @@ const filteredModes = computed(() => {
 
 // 选中的模式ID
 const selectedModeId = ref('');
+
+// 更新模式列表
+const updateModes = () => {
+  modes.value = modeManager.getModes();
+};
 
 // 处理模式切换
 const handleModeChange = () => {
@@ -83,6 +88,8 @@ onMounted(() => {
   console.log("App.vue 已挂载");
   // 打印所有模式信息用于调试
   console.log("所有模式列表:", modes.value);
+  // 监听模式变化事件
+  modeManager.onModesChanged(updateModes);
 });
 
 // 监听过滤后的模式列表变化
