@@ -49,15 +49,12 @@ class BrowserLocalStorage {
     const keysToRemove = [];
     for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
-        // 尝试解析 Key：既可能是 buildKey 产生的，也可能是 buildMetaKey 产生的
+        // 统一使用parseKey解析
         const parsedKey = IdSvc.parseKey(key);
-        const parsedMetaKey = IdSvc.parseMetaKey(key);
         
         let targetModeId = null;
-        if (parsedKey.valid) { // 是 buildKey 产生的 Key
+        if (parsedKey.valid) { // 有效的Key
             targetModeId = parsedKey.modeId;
-        } else if (parsedMetaKey.valid) { // 是 buildMetaKey 产生的 Key
-            targetModeId = parsedMetaKey.modeId;
         }
 
         if (targetModeId === modeId) {
@@ -97,8 +94,8 @@ export default class DataManager {
       globalCurrentVersion: 'global_current_version_label' 
     }
 
-    // 运行期缓存：版本标签。它将作为 IdSvc.buildKey/buildMetaKey 中的 'version' 参数
-    this.versionLabel = 'default_version' // 提供一个默认值
+    // 版本标签必须显式传递，不再提供默认值
+    this.versionLabel = null
   }
 
   // ========== 初始化 ==========
@@ -112,21 +109,9 @@ export default class DataManager {
         this.longTermStorage.setItem(this.storageKeys.globalCurrentMode, this.currentModeId);
     }
     console.log(`[DataManager] 初始化 - 当前模式设置为: ${this.currentModeId}`)
-
-    // 2. 初始化版本标签 (从全局存储加载)
-    const savedVer = this.longTermStorage.getItem(this.storageKeys.globalCurrentVersion)
-    if (savedVer && IdSvc.isValidVersionLabel(savedVer)) {
-      this.versionLabel = IdSvc.normalizeVersionLabel(savedVer)
-      console.log(`[DataManager] 初始化 - 版本标签设置为: ${this.versionLabel}`)
-    } else {
-       this.versionLabel = `${this.currentModeId}_v1`; // 默认使用模式ID_v1
-       this.longTermStorage.setItem(this.storageKeys.globalCurrentVersion, this.versionLabel);
-       console.log(`[DataManager] 初始化 - 默认版本标签设置为: ${this.versionLabel}`)
-    }
-
-    // 3. 加载当前模式下的核心数据
-    await this.loadQuestionBank()
-    await this.loadEnvFullSnapshots()
+    
+    // 2. 不强制加载数据，只有实际使用时才校验
+    return true
   }
 
   // ========== 当前模式管理 ==========
@@ -156,14 +141,19 @@ export default class DataManager {
   // ========== 版本标签管理（会影响 Key 的 'version' 段） ==========
   setVersionLabel(label) {
     const v = IdSvc.normalizeVersionLabel(label)
-    if (!IdSvc.isValidVersionLabel(v)) throw new Error('版本号无效或为空！')
+    if (!IdSvc.isValidVersionLabel(v)) {
+      throw new Error('版本号必须是非空字符串')
+    }
     this.versionLabel = v
     this.longTermStorage.setItem(this.storageKeys.globalCurrentVersion, v)
-    console.log(`[DataManager] 全局版本标签设置为: ${v}`)
+    console.log(`[DataManager] 版本号设置为: ${v}`)
     return v
   }
 
   getVersionLabel() {
+    if (!this.versionLabel) {
+      throw new Error('版本号未设置，请先调用setVersionLabel')
+    }
     return this.versionLabel
   }
 
@@ -194,9 +184,14 @@ export default class DataManager {
   // ========== Key 构建（核心） ==========
   // 负责构建五段式 Key，正确传递 modeId 和 version
   buildKey({ type, excelId, modeId, version, prefix } = {}) {
-    // 强制使用 DataManager 的当前模式ID和版本标签，除非显式覆盖
-    const actualModeId = modeId != null ? IdSvc.normalizeModeId(modeId) : this.currentModeId; 
-    const actualVersionLabel = version != null ? IdSvc.normalizeVersionLabel(version) : this.versionLabel;
+    if (version === undefined || version === null) {
+      throw new Error('version参数必须显式传递，不允许为null或undefined。请确保：\n1. 已调用setVersionLabel设置版本号\n2. 调用buildKey时显式传递version参数')
+    }
+    const actualModeId = modeId != null ? IdSvc.normalizeModeId(modeId) : this.currentModeId;
+    const actualVersionLabel = IdSvc.normalizeVersionLabel(version);
+    if (!IdSvc.isValidVersionLabel(actualVersionLabel)) {
+      throw new Error(`无效的版本号: ${version}。版本号必须是非空字符串`)
+    }
 
     return IdSvc.buildKey({ 
       prefix: prefix || IdSvc.getSystemPrefix(),
@@ -209,9 +204,9 @@ export default class DataManager {
 
   // 负责构建 Meta Key （处理整个题库/环境快照等大块数据）
   buildMetaKey({ name, modeId, version, prefix } = {}) {
-    // 同上，强制使用 DataManager 的当前模式ID和版本标签，除非显式覆盖
-    const actualModeId = modeId != null ? IdSvc.normalizeModeId(modeId) : this.currentModeId; 
-    const actualVersionLabel = version != null ? IdSvc.normalizeVersionLabel(version) : this.versionLabel;
+    if (!version) throw new Error('version参数必须显式传递')
+    const actualModeId = modeId != null ? IdSvc.normalizeModeId(modeId) : this.currentModeId;
+    const actualVersionLabel = IdSvc.normalizeVersionLabel(version);
     
     return IdSvc.buildMetaKey({ 
       prefix: prefix || IdSvc.getSystemPrefix(),
@@ -225,9 +220,8 @@ export default class DataManager {
     return IdSvc.parseKey(key)
   }
 
-  parseMetaKey(key) {
-    return IdSvc.parseMetaKey(key)
-  }
+  // 不再需要单独的parseMetaKey方法
+  // 所有Key都通过parseKey解析
 
   // ========== 按 ExcelID 的便捷存取（卡片级数据，模式隔离） ==========
   getByExcelKey({ type, excelId }) {
@@ -251,9 +245,16 @@ export default class DataManager {
 
   // ========== 题库（核心功能，现在使用 Meta Key 实现模式隔离） ==========
   async loadQuestionBank() {
-    const key = this.buildMetaKey({ 
-      name: 'question_bank_main' // 标准化名称，与 Excel ID 区分开
-    }); 
+    // 如果没有设置versionLabel，返回空题库
+    if (!this.versionLabel) {
+      console.warn('[DataManager] 版本号未设置，返回空题库')
+      return { questions: [], categories: [], lastUpdated: null }
+    }
+    const key = this.buildKey({
+      type: IdSvc.TYPES.QUESTION_BANK,
+      excelId: 'main',
+      version: this.versionLabel
+    });
     
     const bank = this.longTermStorage.getItem(key) || {
       questions: [],
@@ -266,8 +267,13 @@ export default class DataManager {
   }
 
   async saveQuestionBank(bankData) {
-    const key = this.buildMetaKey({ 
-      name: 'question_bank_main' // 标准化名称
+    if (!this.versionLabel) {
+      throw new Error('保存题库前必须调用setVersionLabel设置版本号')
+    }
+    const key = this.buildKey({
+      type: IdSvc.TYPES.QUESTION_BANK,
+      excelId: 'main',
+      version: this.versionLabel
     });
 
     const dataToSave = {
@@ -300,8 +306,15 @@ export default class DataManager {
 
   // ========== 环境全量快照（核心功能，现在使用 Meta Key 实现模式隔离） ==========
   async loadEnvFullSnapshots() {
-    const key = this.buildMetaKey({ 
-      name: 'env_full_snapshots_main' // 标准化名称
+    // 如果没有设置versionLabel，返回空快照
+    if (!this.versionLabel) {
+      console.warn('[DataManager] 版本号未设置，返回空快照列表')
+      return []
+    }
+    const key = this.buildKey({
+      type: IdSvc.TYPES.ENV_FULL,
+      excelId: 'snapshots',
+      version: this.versionLabel
     });
 
     const snaps = this.longTermStorage.getItem(key) || [];
@@ -318,8 +331,13 @@ export default class DataManager {
   }
 
   async saveEnvFullSnapshots(snaps) {
-    const key = this.buildMetaKey({ 
-      name: 'env_full_snapshots_main' // 标准化名称
+    if (!this.versionLabel) {
+      throw new Error('保存快照前必须调用setVersionLabel设置版本号')
+    }
+    const key = this.buildKey({
+      type: IdSvc.TYPES.ENV_FULL,
+      excelId: 'snapshots',
+      version: this.versionLabel
     });
 
     const validated = snaps.map(snap => ({

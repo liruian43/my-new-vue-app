@@ -160,7 +160,10 @@ const filteredData = computed(() => {
         result = result.filter(item => item.type === ID.TYPES.QUESTION_BANK)
         break
       case 'env':
-        result = result.filter(item => item.type === ID.TYPES.ENV_FULL)
+        result = result.filter(item => 
+          item.type === ID.TYPES.ENV_FULL || 
+          item.type === '@meta' // 将元数据显示在全量区筛选中
+        )
         break
       case 'root':
         result = result.filter(item => item.modeId === ID.ROOT_ADMIN_MODE_ID)
@@ -303,6 +306,8 @@ const scanLocalStorage = () => {
             typeText = '题库'
           } else if (type === ID.TYPES.ENV_FULL) {
             typeText = '全量区'
+          } else if (type === '@meta') {
+            typeText = '元数据'
           } else if (type) {
             typeText = type
           }
@@ -316,6 +321,13 @@ const scanLocalStorage = () => {
             const cardCount = parsedValue.cards ? Object.keys(parsedValue.cards).length : 0
             const optionCount = parsedValue.options ? Object.keys(parsedValue.options).length : 0
             content = `cards: ${cardCount}, options: ${optionCount}`
+          } else if (type === '@meta' && typeof parsedValue === 'object') {
+            // 元数据显示特定字段
+            if (parsedValue.lastUpdated) {
+              content = `最后更新: ${new Date(parsedValue.lastUpdated).toLocaleString()}`
+            } else {
+              content = '元数据配置'
+            }
           } else if (typeof parsedValue === 'object') {
             // 通用对象显示
             content = JSON.stringify(parsedValue).substring(0, 50) + '...'
@@ -382,14 +394,8 @@ const scanLocalStorage = () => {
   
   allData.value = data
 }
-
-// 定时刷新数据
-let refreshInterval = null
-
 onMounted(() => {
   scanLocalStorage()
-  // 每5秒刷新一次数据
-  refreshInterval = setInterval(scanLocalStorage, 5000)
 })
 
 onUnmounted(() => {

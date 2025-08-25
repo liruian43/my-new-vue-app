@@ -361,10 +361,11 @@ class MatchEngineManager {
   // 获取当前版本
   getCurrentVersion(modeId) {
     // 从本地存储获取当前版本
-    const versionKey = ID.buildMetaKey({
+    const versionKey = ID.buildKey({
       modeId: modeId,
-      version: null, // Meta key
-      name: 'current_version'
+      version: 'meta_version',
+      type: '@meta',
+      excelId: 'current_version'
     })
     
     try {

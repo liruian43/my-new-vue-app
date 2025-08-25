@@ -72,7 +72,8 @@ export function isValidVersionLabel(label) {
 // -----------------------------
 export const TYPES = Object.freeze({
   QUESTION_BANK: 'questionBank',
-  ENV_FULL: 'envFull'
+  ENV_FULL: 'envFull',
+  META: '@meta' // 新增元数据类型
 })
 
 const TYPE_ALIASES = Object.freeze({
@@ -98,7 +99,7 @@ export function normalizeType(type) {
 }
 export function isValidType(type) {
   const t = normalizeType(type)
-  return t === TYPES.QUESTION_BANK || t === TYPES.ENV_FULL
+  return t === TYPES.QUESTION_BANK || t === TYPES.ENV_FULL || t === TYPES.META
 }
 
 // -----------------------------
@@ -320,57 +321,31 @@ export function normalizeMetaName(name) {
 }
 
 export function buildMetaKey({ modeId, version, name, prefix }) {
-  const p = String(prefix || SYSTEM_PREFIX).trim();
-  debugValidate('prefix', (val) => val.length > 0, p, '系统前缀不能为空');
-
-  const m = normalizeModeId(modeId);
-  debugValidate('modeId', isValidModeId, m, '模式ID不能为空或包含特殊字符 (:)');
-
-  const v = normalizeVersionLabel(version);
-  debugValidate('version', isValidVersionLabel, v, '版本号不能为空');
-
-  const n = normalizeMetaName(name);
-
-  return `${enc(p)}:${enc(m)}:${enc(v)}:${enc('@meta')}:${enc(n)}`;
+  return buildKey({
+    prefix,
+    modeId,
+    version,
+    type: '@meta',
+    excelId: name
+  });
 }
 
 export function parseMetaKey(key) {
-  const s = String(key || '');
-  // 长度现在是 5 段
-  const parts = s.split(':');
-  if (parts.length !== 5) return { valid: false, error: 'Meta Key 格式错误：分段数量不匹配' };
-
-  const [p, m, v, t, n] = parts;
-  const prefix = dec(p);
-  const modeId = dec(m); // 新增模式ID
-  const version = dec(v);
-  const tag = dec(t);
-  const name = dec(n);
-
-  const valid =
-    !!prefix &&
-    isValidModeId(modeId) && // 增加模式ID校验
-    isValidVersionLabel(version) &&
-    tag === '@meta' &&
-    !!name;
-
-  if (!valid) {
+  const parsed = parseKey(key);
+  if (!parsed.valid || parsed.type !== '@meta') {
     return {
       valid: false,
-      error: 'Meta Key 内容校验失败',
-      debug: {
-        prefixValid: !!prefix,
-        modeIdValid: isValidModeId(modeId),
-        versionValid: isValidVersionLabel(version),
-        tagValid: tag === '@meta',
-        nameValid: !!name,
-      },
-      rawParts: { p_raw: p, m_raw: m, v_raw: v, t_raw: t, n_raw: n },
-      parsed: { prefix, modeId, version, tag, name }
+      error: '无效的元数据Key',
+      parsed
     };
   }
-
-  return { valid: true, prefix, modeId, version, name };
+  return {
+    valid: true,
+    prefix: parsed.prefix,
+    modeId: parsed.modeId,
+    version: parsed.version,
+    name: parsed.excelId
+  };
 }
 
 // -----------------------------

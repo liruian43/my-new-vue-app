@@ -438,12 +438,16 @@ export async function listEnvFullSnapshots(store) {
     hash: s.hash
   }));
 }
-
 export async function saveEnvFullSnapshot(store, versionLabel) {
   const version = String(versionLabel || '').trim();
   if (!version) {
     store.error = '版本号不能为空';
     return false;
+  }
+
+  // 确保dataManager已设置versionLabel
+  if (!store.dataManager.versionLabel) {
+    store.dataManager.setVersionLabel(version);
   }
 
   // TODO: dataManager 接口需要调整以传递 modeId
