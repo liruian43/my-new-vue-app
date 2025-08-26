@@ -1,6 +1,13 @@
 module.exports = {
   publicPath: '/',
   lintOnSave: false, // 保留你原有的关闭ESLint检查配置
+  
+  // 开发服务器配置
+  devServer: {
+    port: 8080, // 固定使用8080端口
+    host: '0.0.0.0' // 允许外部访问，这样Network会显示真实IP地址
+  },
+  
   // 新增配置：仅添加Vue模板编译支持，不改变其他现有配置
   configureWebpack: {
     resolve: {

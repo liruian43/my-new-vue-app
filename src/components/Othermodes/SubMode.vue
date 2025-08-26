@@ -1,114 +1,70 @@
 <template>
   <div class="sub-mode">
-    <!-- 第一部分：模式信息区 -->
-    <div class="mode-info-bar">
-      <h2>{{ modeInfo.name }} ({{ modeId }})</h2>
-      <p>基于 root_admin 模式创建</p>
-      <div class="sync-status">
-        <span>同步状态: {{ syncStatus }}</span>
-        <span v-if="lastSyncTime">上次同步: {{ lastSyncTime }}</span>
-        <span v-if="currentVersion">当前版本: {{ currentVersion }}</span>
+    <!-- 第一部分：模式信息栏 -->
+    <div class="bar mode-info-bar">
+      <div class="mode-info-content">
+        <h3 class="mode-title">{{ modeInfo.name }}</h3>
+        <span class="mode-status">同步状态: {{ syncStatus }}</span>
+        <span v-if="lastSyncTime" class="sync-time">上次同步: {{ lastSyncTime }}</span>
+        <span v-if="currentVersion" class="current-version">当前版本: {{ currentVersion }}</span>
       </div>
     </div>
 
-    <!-- 第二部分：卡片操作区（复刻CardSection.vue） -->
-    <div class="card-section">
-      <!-- 卡片操作按钮区域 -->
-      <div class="bar ops-bar">
-        <button 
-          class="test-button" 
-          @click="toggleTitleEditing"
-          :disabled="!selectedCardId"
-          :class="{ active: selectedCard?.isTitleEditing }"
-        >
-          {{ selectedCard?.isTitleEditing ? "完成编辑" : "编辑标题" }}
-        </button>
+    <!-- 第二部分：答题区域标题 -->
+    <div class="answer-title-section">
+      <h2 class="answer-title">答题区域</h2>
+      <p class="answer-subtitle">在下方卡片中填写答案，完成后点击提交</p>
+    </div>
 
-        <button
-          class="test-button"
-          @click="toggleSelectEditing"
-          :disabled="!selectedCardId || selectedCard?.isPresetEditing"
-          :class="{ active: selectedCard?.isSelectEditing && !selectedCard?.isPresetEditing }"
-        >
-          {{ selectedCard?.isSelectEditing ? "完成下拉编辑" : "编辑下拉菜单" }}
-        </button>
-
-        <button
-          class="test-button"
-          @click="() => toggleEditableField('optionName')"
-          :disabled="!selectedCardId || selectedCard?.isPresetEditing"
-          :class="{ active: selectedCard?.editableFields.optionName && !selectedCard?.isPresetEditing }"
-        >
-          {{ selectedCard?.editableFields.optionName ? "完成名称编辑" : "编辑选项名称" }}
-        </button>
-
-        <button
-          class="test-button"
-          @click="() => toggleEditableField('optionValue')"
-          :disabled="!selectedCardId || selectedCard?.isPresetEditing"
-          :class="{ active: selectedCard?.editableFields.optionValue && !selectedCard?.isPresetEditing }"
-        >
-          {{ selectedCard?.editableFields.optionValue ? "完成值编辑" : "编辑选项值" }}
-        </button>
-
-        <button
-          class="test-button"
-          @click="() => toggleEditableField('optionUnit')"
-          :disabled="!selectedCardId || selectedCard?.isPresetEditing"
-          :class="{ active: selectedCard?.editableFields.optionUnit && !selectedCard?.isPresetEditing }"
-        >
-          {{ selectedCard?.editableFields.optionUnit ? "完成单位编辑" : "编辑选项单位" }}
-        </button>
-
-        <button
-          class="test-button"
-          @click="() => toggleEditableField('optionCheckbox')"
-          :disabled="!selectedCardId || selectedCard?.isPresetEditing"
-          :class="{ active: selectedCard?.editableFields.optionCheckbox && !selectedCard?.isPresetEditing }"
-        >
-          {{ selectedCard?.editableFields.optionCheckbox ? "隐藏选项复选框" : "显示选项复选框" }}
-        </button>
-      </div>
-
-      <!-- 卡片列表 -->
-      <div class="cards-container">
-        <div
-          v-for="card in cards"
-          :key="card.id"
-          class="card-wrapper"
-          :class="{
-            selected: selectedCardId === card.id,
-            'hide-option-actions': !card.editableFields.optionActions || card.isPresetEditing
+    <!-- 第三部分：卡片展示区域（参考CardSection.vue） -->
+    <div class="cards-container">
+      <div
+        v-for="card in cards"
+        :key="card.id"
+        class="card-wrapper"
+        :class="{
+          selected: selectedCardId === card.id,
+          'hide-option-actions': !card.editableFields.optionActions || card.isPresetEditing
+        }"
+        @click.stop="selectCard(card.id)"
+      >
+        <UniversalCard
+          v-model:modelValue="card.data.title"
+          v-model:options="card.data.options"
+          v-model:selectedValue="card.data.selectedValue"
+          :selectOptions="card.data.selectOptions"
+          :showDropdown="card.showDropdown || card.isPresetEditing"
+          :isTitleEditing="card.isTitleEditing"
+          :isOptionsEditing="card.isPresetEditing || card.isOptionsEditing"
+          :isSelectEditing="card.isPresetEditing || card.isSelectEditing"
+          :on-add-option="(afterId) => handleAddOption(card.id, afterId)"
+          :on-delete-option="(optionId) => handleDeleteOption(card.id, optionId)"
+          :on-add-select-option="(label) => handleAddSelectOption(card.id, label)"
+          :on-delete-select-option="(optionId) => handleDeleteSelectOption(card.id, optionId)"
+          :on-dropdown-toggle="(value) => setShowDropdown(card.id, value)"
+          :editableFields="{
+            ...card.editableFields,
+            optionActions: card.editableFields.optionActions && !card.isPresetEditing,
+            optionCheckbox: card.editableFields.optionCheckbox || card.isPresetEditing
           }"
-          @click.stop="selectCard(card.id)"
-        >
-          <UniversalCard
-            v-model:modelValue="card.data.title"
-            v-model:options="card.data.options"
-            v-model:selectedValue="card.data.selectedValue"
-            :selectOptions="card.data.selectOptions"
-            :showDropdown="card.showDropdown || card.isPresetEditing"
-            :isTitleEditing="card.isTitleEditing"
-            :isOptionsEditing="card.isPresetEditing || card.isOptionsEditing"
-            :isSelectEditing="card.isPresetEditing || card.isSelectEditing"
-            :on-add-option="(afterId) => handleAddOption(card.id, afterId)"
-            :on-delete-option="(optionId) => handleDeleteOption(card.id, optionId)"
-            :on-add-select-option="(label) => handleAddSelectOption(card.id, label)"
-            :on-delete-select-option="(optionId) => handleDeleteSelectOption(card.id, optionId)"
-            :on-dropdown-toggle="(value) => setShowDropdown(card.id, value)"
-            :editableFields="{
-              ...card.editableFields,
-              optionActions: card.editableFields.optionActions && !card.isPresetEditing,
-              optionCheckbox: card.editableFields.optionCheckbox || card.isPresetEditing
-            }"
-            :class="{ selected: selectedCardId === card.id }"
-            :style="{}"
-          />
-        </div>
+          :class="{ selected: selectedCardId === card.id }"
+          :style="{}"
+        />
       </div>
     </div>
 
-    <!-- 第三部分：匹配反馈区 -->
+    <!-- 第四部分：回答提交区域 -->
+    <div class="answer-submit-section">
+      <button 
+        class="answer-submit-button"
+        @click="submitAnswers"
+        :disabled="submittingAnswers"
+      >
+        {{ submittingAnswers ? '提交中...' : '回答完毕' }}
+      </button>
+    </div>
+
+    <!-- 第五部分：匹配反馈区 -->
     <div class="match-feedback-section">
       <div class="bar match-bar">
         <button 
@@ -148,6 +104,12 @@ import UniversalCard from '../UniversalCard/UniversalCard.vue'
 import communicationService from '../Data/communicationService.js'
 import matchEngine from '../Data/matchEngine.js'
 import modeManager from '../Data/modeManager.js'
+import * as idService from '../Data/services/id.js'
+
+// 定义组件名称，用于KeepAlive缓存
+defineOptions({
+  name: 'SubMode'
+})
 
 // 获取路由参数
 const route = useRoute()
@@ -175,6 +137,9 @@ const selectedCard = computed(() => {
 const generatingMatch = ref(false)
 const matchResult = ref(null)
 
+// 提交答案相关
+const submittingAnswers = ref(false)
+
 // 清理函数
 let cleanupListener = null
 
@@ -189,7 +154,12 @@ onMounted(() => {
   }
   
   // 初始化模式信息
-  modeInfo.value.name = `模式-${modeId.value}`
+  const mode = modeManager.getMode(modeId.value)
+  if (mode) {
+    modeInfo.value.name = mode.name
+  } else {
+    modeInfo.value.name = `模式-${modeId.value}`
+  }
   
   // 监听数据推送
   cleanupListener = communicationService.onDataPush(handleIncomingData)
@@ -337,6 +307,54 @@ const setShowDropdown = (cardId, value) => {
   }
 }
 
+// 提交答案到LocalStorage
+const submitAnswers = async () => {
+  submittingAnswers.value = true
+  
+  try {
+    // 收集当前模式的答案数据
+    const answerData = {
+      modeId: modeId.value,
+      modeName: modeInfo.value.name,
+      version: currentVersion.value,
+      timestamp: new Date().toISOString(),
+      cards: cards.value.map(card => ({
+        id: card.id,
+        title: card.data.title,
+        selectedValue: card.data.selectedValue,
+        options: card.data.options?.map(option => ({
+          id: option.id,
+          name: option.name,
+          value: option.value,
+          unit: option.unit,
+          checked: option.checked
+        })) || []
+      }))
+    }
+    
+    // 使用五段Key系统生成存储Key
+    const storageKey = idService.buildKey(
+      idService.getSystemPrefix(),
+      modeId.value,
+      currentVersion.value || 'default',
+      'answers', // 答案类型
+      'user_submission'
+    )
+    
+    // 存储到LocalStorage
+    localStorage.setItem(storageKey, JSON.stringify(answerData))
+    
+    console.log(`模式 ${modeId.value} 的答案已提交，存储Key: ${storageKey}`)
+    alert('答案提交成功！')
+    
+  } catch (error) {
+    console.error('提交答案失败:', error)
+    alert('提交答案失败: ' + error.message)
+  } finally {
+    submittingAnswers.value = false
+  }
+}
+
 // 匹配处理
 const handleGenerateMatch = async () => {
   generatingMatch.value = true
@@ -359,61 +377,121 @@ const handleGenerateMatch = async () => {
 
 <style scoped>
 .sub-mode {
-  padding: 20px;
+  width: 100%;
+  max-width: none;
+  padding: 20px 40px;
+  box-sizing: border-box;
 }
 
-/* 第一部分：模式信息区 */
-.mode-info-bar {
-  border: 1px solid #ddd;
-  background-color: #f5f5f5;
-  padding: 15px;
-  margin-bottom: 20px;
-  border-radius: 4px;
-}
-
-.mode-info-bar h2 {
-  margin: 0 0 10px 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.sync-status {
-  display: flex;
-  gap: 20px;
-  font-size: 14px;
-  color: #666;
-}
-
-/* 第二部分：卡片操作区（复刻CardSection.vue样式） */
-.card-section {
-  margin-bottom: 20px;
-}
-
+/* 通用bar样式（参考root_admin） */
 .bar {
+  width: 100%;
   margin-bottom: 12px;
-  padding: 12px 15px;
+  padding: 15px 20px;
   border: 1px solid #ddd;
   border-radius: 8px;
   background-color: #f9f9f9;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 20px;
   flex-wrap: wrap;
+  box-sizing: border-box;
 }
 
+/* 第一部分：模式信息栏 */
+.mode-info-bar {
+  background-color: #f5f5f5;
+}
+
+.mode-info-content {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+  width: 100%;
+}
+
+.mode-title {
+  margin: 0;
+  font-size: 18px;
+  color: #333;
+  font-weight: bold;
+}
+
+.mode-status,
+.sync-time,
+.current-version {
+  font-size: 14px;
+  color: #666;
+  white-space: nowrap;
+}
+
+/* 第二部分：答题区域标题（居中） */
+.answer-title-section {
+  text-align: center;
+  margin: 30px 0 20px 0;
+}
+
+.answer-title {
+  margin: 0 0 10px 0;
+  font-size: 24px;
+  color: #2e7d32;
+  font-weight: bold;
+}
+
+.answer-subtitle {
+  margin: 0;
+  color: #666;
+  font-size: 16px;
+}
+
+/* 第四部分：回答提交区域（居中） */
+.answer-submit-section {
+  text-align: center;
+  margin: 30px 0;
+  padding: 20px;
+}
+
+.answer-submit-button {
+  padding: 12px 30px;
+  font-size: 16px;
+  font-weight: bold;
+  border: none;
+  border-radius: 6px;
+  background-color: #2196f3;
+  color: white;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.answer-submit-button:hover:not(:disabled) {
+  background-color: #1976d2;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(33, 150, 243, 0.3);
+}
+
+.answer-submit-button:disabled {
+  background-color: #cccccc;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+/* 按钮样式（保持root_admin的按钮风格） */
 .test-button {
-  margin: 5px;
+  margin: 0;
   padding: 8px 16px;
   border: none;
   border-radius: 4px;
   background-color: #4caf50;
   color: white;
   cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s;
 }
 
-.test-button.active {
-  background-color: #2196f3;
+.test-button:hover:not(:disabled) {
+  opacity: 0.9;
 }
 
 .test-button:disabled {
@@ -421,16 +499,24 @@ const handleGenerateMatch = async () => {
   cursor: not-allowed;
 }
 
+/* 第三部分：卡片展示区域（参考CardSection.vue） */
 .cards-container {
   display: flex;
   flex-wrap: wrap;
-  justify-content: center;
-  gap: 6px;
+  justify-content: flex-start;
+  gap: 15px;
+  margin: 20px 0;
+  padding: 20px;
+  background-color: #fafafa;
+  border-radius: 8px;
+  border: 1px solid #e0e0e0;
+  min-height: 200px;
 }
 
 .card-wrapper {
   position: relative;
-  width: 240px;
+  width: 300px;
+  min-width: 280px;
   transition: all 0.3s ease;
   cursor: pointer;
 }
@@ -443,13 +529,21 @@ const handleGenerateMatch = async () => {
   display: none !important;
 }
 
-/* 第三部分：匹配反馈区 */
+/* 第五部分：匹配反馈区 */
+.match-feedback-section {
+  margin-top: 40px;
+}
+
 .match-bar {
   justify-content: center;
+  background-color: #fff3e0;
+  border-color: #ffcc02;
 }
 
 .generate-button {
   background-color: #ff9800;
+  padding: 10px 20px;
+  font-weight: bold;
 }
 
 .match-result-area {
@@ -483,5 +577,37 @@ const handleGenerateMatch = async () => {
   font-style: italic;
   text-align: center;
   padding: 40px 0;
+}
+
+/* PC端大屏幕优化 */
+@media (min-width: 1200px) {
+  .sub-mode {
+    padding: 30px 60px;
+  }
+  
+  .bar {
+    padding: 18px 25px;
+    gap: 25px;
+  }
+  
+  .cards-container {
+    gap: 20px;
+  }
+  
+  .card-wrapper {
+    width: 320px;
+    min-width: 300px;
+  }
+}
+
+@media (min-width: 1600px) {
+  .sub-mode {
+    padding: 40px 80px;
+  }
+  
+  .card-wrapper {
+    width: 350px;
+    min-width: 320px;
+  }
 }
 </style>

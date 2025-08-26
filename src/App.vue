@@ -31,7 +31,11 @@
       
       <h1>通用卡片管理系统</h1>
     </div>
-    <router-view />
+    <router-view v-slot="{ Component, route }">
+      <keep-alive :include="['RootAdmin', 'SubMode']">
+        <component :is="Component" :key="route.fullPath" />
+      </keep-alive>
+    </router-view>
   </div>
 </template>
 

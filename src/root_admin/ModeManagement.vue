@@ -240,25 +240,14 @@
           </div>
         </div>
         
-        <!-- 准备/取消推送按钮 -->
+        <!-- 直接推送按钮 -->
         <div class="valve-row">
           <button 
-            class="action-button prepare-button"
-            :disabled="!selectedTargetMode || pushableModes.length === 0 || !selectedVersion"
-            @click="togglePrepareStatus"
-          >
-            {{ isInPrepareState ? '取消推送' : '准备推送' }}
-          </button>
-        </div>
-        
-        <!-- 确认推送按钮 -->
-        <div class="valve-row" v-if="isInPrepareState">
-          <button 
-            class="action-button confirm-button"
+            class="action-button push-button"
+            :disabled="!selectedTargetMode || pushableModes.length === 0 || !selectedVersion || pushingData"
             @click="pushData"
-            :disabled="pushingData"
           >
-            {{ pushingData ? '推送中...' : '确认推送' }}
+            {{ pushingData ? '推送中...' : '推送配置' }}
           </button>
         </div>
       </div>
@@ -283,7 +272,6 @@ const newModeName = ref('')
 const selectedModeIds = ref([])
 const selectedTargetMode = ref('')
 const selectedVersion = ref('')
-const isInPrepareState = ref(false)
 
 // 匹配引擎控制
 const selectedStrategy = ref('standard')
@@ -384,28 +372,6 @@ const toggleDeleteMode = () => {
   }
   isDeleting.value = !isDeleting.value
   isCreating.value = false
-}
-
-// 切换准备状态
-const togglePrepareStatus = () => {
-  isInPrepareState.value = !isInPrepareState.value
-  if (!isInPrepareState.value) {
-    // 重置配置
-    syncOptions.value = {
-      cardTitle: false,
-      optionName: false,
-      optionValue: false,
-      optionUnit: false
-    }
-    
-    authOptions.value = {
-      cardTitle: false,
-      optionName: false,
-      optionValue: false,
-      optionUnit: false,
-      checkbox: false
-    }
-  }
 }
 
 // 处理删除选中的模式
@@ -531,9 +497,8 @@ const pushData = async () => {
     // 显示成功推送提示
     alert(`数据已成功推送到模式: ${selectedTargetMode.value}`)
     pushingData.value = false
-    selectedTargetMode.value = ''
-    selectedVersion.value = ''
-    isInPrepareState.value = false
+    
+    // 推送成功后保持当前选择，方便用户继续操作
   } catch (error) {
     console.error('推送数据失败:', error)
     // 显示错误推送提示
@@ -797,30 +762,16 @@ const pushData = async () => {
   transition: all 0.2s;
 }
 
-.prepare-button {
-  background-color: #ff9800;
-  color: white;
-}
-
-.prepare-button:hover:not(:disabled) {
-  background-color: #f57c00;
-}
-
-.prepare-button:disabled {
-  background-color: #cccccc;
-  cursor: not-allowed;
-}
-
-.confirm-button {
+.push-button {
   background-color: #4CAF50;
   color: white;
 }
 
-.confirm-button:hover:not(:disabled) {
+.push-button:hover:not(:disabled) {
   background-color: #45a049;
 }
 
-.confirm-button:disabled {
+.push-button:disabled {
   background-color: #cccccc;
   cursor: not-allowed;
 }

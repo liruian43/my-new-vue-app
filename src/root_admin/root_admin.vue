@@ -28,6 +28,11 @@ import DataSection from './DataSection.vue';
 // 导入模式管理组件
 import ModeManagement from './ModeManagement.vue';
 
+// 定义组件名称，用于KeepAlive缓存
+defineOptions({
+  name: 'RootAdmin'
+})
+
 const cardStore = useCardStore();
 const loading = ref(true);
 const error = ref(null);
