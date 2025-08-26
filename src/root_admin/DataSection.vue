@@ -23,6 +23,7 @@
           <button :class="['filter-option', { active: filterType === 'all' }]" @click="setFilterType('all')">全部</button>
           <button :class="['filter-option', 'question', { active: filterType === 'question' }]" @click="setFilterType('question')">题库</button>
           <button :class="['filter-option', 'env', { active: filterType === 'env' }]" @click="setFilterType('env')">全量区</button>
+          <button :class="['filter-option', 'answers', { active: filterType === 'answers' }]" @click="setFilterType('answers')">回答</button>
           <button :class="['filter-option', 'root', { active: filterType === 'root' }]" @click="setFilterType('root')">主模式</button>
           <button :class="['filter-option', 'other-mode', { active: filterType === 'other-mode' }]" @click="setFilterType('other-mode')">其他模式</button>
         </div>
@@ -165,6 +166,9 @@ const filteredData = computed(() => {
           item.type === '@meta' // 将元数据显示在全量区筛选中
         )
         break
+      case 'answers':
+        result = result.filter(item => item.type === ID.TYPES.ANSWERS)
+        break
       case 'root':
         result = result.filter(item => item.modeId === ID.ROOT_ADMIN_MODE_ID)
         break
@@ -306,6 +310,8 @@ const scanLocalStorage = () => {
             typeText = '题库'
           } else if (type === ID.TYPES.ENV_FULL) {
             typeText = '全量区'
+          } else if (type === ID.TYPES.ANSWERS) {
+            typeText = '回答'
           } else if (type === '@meta') {
             typeText = '元数据'
           } else if (type) {
@@ -321,6 +327,12 @@ const scanLocalStorage = () => {
             const cardCount = parsedValue.cards ? Object.keys(parsedValue.cards).length : 0
             const optionCount = parsedValue.options ? Object.keys(parsedValue.options).length : 0
             content = `cards: ${cardCount}, options: ${optionCount}`
+          } else if (type === ID.TYPES.ANSWERS && typeof parsedValue === 'object') {
+            // 对于回答数据，显示答案信息
+            const selectionCount = parsedValue.questionBankAnswers?.selectedOptions?.length || 0
+            const paramCount = Object.keys(parsedValue.envFullAnswers || {}).length
+            const packageType = parsedValue.packageType || '未知类型'
+            content = `${packageType}: ${selectionCount}个选择, ${paramCount}个参数`
           } else if (type === '@meta' && typeof parsedValue === 'object') {
             // 元数据显示特定字段
             if (parsedValue.lastUpdated) {

@@ -4,7 +4,7 @@
 // - 系统前缀：区分 localStorage 命名空间（默认 'APP'）
 // - 模式ID：多模式下区分具体模式的唯一标识（如 'root_admin', '张三', '李四'）
 // - 版号：任意非空字符串（外部保证不重复，如 'V1'、'抓娃娃' 等）
-// - 类型：仅两类 —— 题库(questionBank) 与 全量区(envFull)
+// - 类型：四类 —— 题库(questionBank)、全量区(envFull)、回答(answers)、元数据(@meta)
 // - ExcelID：卡片级（A, B..Z, AA..）或选项级（字母+数字，如 A6、AB12）
 //
 // 说明：你可以分散独立使用其中任意部分（比如只用卡片ID或选项ID），
@@ -73,7 +73,8 @@ export function isValidVersionLabel(label) {
 export const TYPES = Object.freeze({
   QUESTION_BANK: 'questionBank',
   ENV_FULL: 'envFull',
-  META: '@meta' // 新增元数据类型
+  ANSWERS: 'answers', // 新增：子模式回答类型
+  META: '@meta' // 元数据类型
 })
 
 const TYPE_ALIASES = Object.freeze({
@@ -90,7 +91,15 @@ const TYPE_ALIASES = Object.freeze({
   ENV_FULL: TYPES.ENV_FULL,
   full: TYPES.ENV_FULL,
   FULL: TYPES.ENV_FULL,
-  '全量区': TYPES.ENV_FULL
+  '全量区': TYPES.ENV_FULL,
+
+  // 回答（子模式专用）
+  answers: TYPES.ANSWERS,
+  answer: TYPES.ANSWERS,
+  ANSWERS: TYPES.ANSWERS,
+  ANSWER: TYPES.ANSWERS,
+  '回答': TYPES.ANSWERS,
+  '答案': TYPES.ANSWERS
 })
 
 export function normalizeType(type) {
@@ -99,7 +108,7 @@ export function normalizeType(type) {
 }
 export function isValidType(type) {
   const t = normalizeType(type)
-  return t === TYPES.QUESTION_BANK || t === TYPES.ENV_FULL || t === TYPES.META
+  return t === TYPES.QUESTION_BANK || t === TYPES.ENV_FULL || t === TYPES.ANSWERS || t === TYPES.META
 }
 
 // -----------------------------
@@ -248,7 +257,7 @@ export function buildKey({ modeId, version, type, excelId, prefix }) {
   debugValidate('version', isValidVersionLabel, v, '版本号不能为空');
 
   const t = normalizeType(type);
-  debugValidate('type', isValidType, t, '类型无效（应为 questionBank / envFull，或其别名/中文）');
+  debugValidate('type', isValidType, t, '类型无效（应为 questionBank / envFull / answers / @meta，或其别名/中文）');
 
   // excelId 可以是 null/undefined，但经过 normalizeExcelId 应该抛错或成为有效格式
   const e = normalizeExcelId(excelId); // 内部会校验或抛错
