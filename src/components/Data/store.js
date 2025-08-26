@@ -361,6 +361,42 @@ export const useCardStore = defineStore('data', {
       return EnvPart.applyEnvFullSnapshot(this, versionLabel); // <---- 传递 this
     },
 
+    // 获取环境快照数据（用于权限矩阵等功能）
+    async getEnvFullSnapshot(versionLabel) {
+      // 通过serialization模块获取环境快照的原始数据
+      const { Serialization } = await import('./store-parts/serialization.js')
+      
+      // 构造context对象
+      const ctx = {
+        currentModeId: this.currentModeId,
+        currentVersion: versionLabel,
+        versionLabel: versionLabel
+      }
+      
+      // 使用序列化模块的内部方法获取数据
+      const storage = { getItem: key => localStorage.getItem(key) }
+      const key = Serialization._internal.storageKeyForEnv(ctx)
+      
+      const snapData = Serialization._internal.getJSON(storage, key)
+      
+      if (!snapData) {
+        return null
+      }
+      
+      // 确保数据被正确解析为对象
+      let parsedData = snapData
+      if (typeof snapData === 'string') {
+        try {
+          parsedData = JSON.parse(snapData)
+        } catch (error) {
+          console.error('[Store] 解析环境快照数据失败:', error)
+          return null
+        }
+      }
+      
+      return parsedData
+    },
+
     // 题库
     async loadQuestionBank() {
       // dataManager 的 loadQuestionBank 可能需要 modeId，但这不是 envConfigs.js 的职能

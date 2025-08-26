@@ -105,162 +105,23 @@
       </div>
     </div>
     
-    <!-- 数据推送阀门 -->
-    <div class="push-valve-container">
-      <h3>数据推送阀门</h3>
-      
-      <div class="valve-section">
-        <div class="valve-row">
-          <label>选择目标模式:</label>
-          <select 
-            v-model="selectedTargetMode" 
-            class="mode-select"
-            :disabled="pushableModes.length === 0"
-          >
-            <option value="">请选择模式</option>
-            <option 
-              v-for="mode in pushableModes" 
-              :key="mode.id" 
-              :value="mode.id"
-            >
-              {{ mode.name }} ({{ mode.id }})
-            </option>
-          </select>
-          
-          <!-- 同步选项区域 -->
-          <div class="sync-options-inline">
-            <span class="group-label">同步:</span>
-            <div class="option-item">
-              <input 
-                type="checkbox" 
-                id="sync-card-title"
-                v-model="syncOptions.cardTitle"
-                :disabled="!selectedTargetMode"
-              >
-              <label for="sync-card-title">卡片标题</label>
-            </div>
-            <div class="option-item">
-              <input 
-                type="checkbox" 
-                id="sync-option-name"
-                v-model="syncOptions.optionName"
-                :disabled="!selectedTargetMode"
-              >
-              <label for="sync-option-name">选项名称</label>
-            </div>
-            <div class="option-item">
-              <input 
-                type="checkbox" 
-                id="sync-option-value"
-                v-model="syncOptions.optionValue"
-                :disabled="!selectedTargetMode"
-              >
-              <label for="sync-option-value">选项值</label>
-            </div>
-            <div class="option-item">
-              <input 
-                type="checkbox" 
-                id="sync-option-unit"
-                v-model="syncOptions.optionUnit"
-                :disabled="!selectedTargetMode"
-              >
-              <label for="sync-option-unit">选项单位</label>
-            </div>
-            <div class="fixed-sync-hint">
-              (固定同步: 卡片数量、选项数据、卡片顺序、下拉菜单、预设)
-            </div>
-          </div>
-        </div>
-        
-        <div class="valve-row">
-          <label>选择推送版本:</label>
-          <select 
-            v-model="selectedVersion" 
-            class="version-select"
-            :disabled="availableVersions.length === 0 || !selectedTargetMode"
-          >
-            <option value="">请选择版本</option>
-            <option 
-              v-for="version in availableVersions" 
-              :key="version" 
-              :value="version"
-            >
-              {{ version }}
-            </option>
-          </select>
-          
-          <!-- 授权选项区域 -->
-          <div class="auth-options-inline">
-            <span class="group-label">授权:</span>
-            <div class="option-item">
-              <input 
-                type="checkbox" 
-                id="auth-card-title"
-                v-model="authOptions.cardTitle"
-                :disabled="!selectedTargetMode"
-              >
-              <label for="auth-card-title">卡片标题</label>
-            </div>
-            <div class="option-item">
-              <input 
-                type="checkbox" 
-                id="auth-option-name"
-                v-model="authOptions.optionName"
-                :disabled="!selectedTargetMode"
-              >
-              <label for="auth-option-name">选项名称</label>
-            </div>
-            <div class="option-item">
-              <input 
-                type="checkbox" 
-                id="auth-option-value"
-                v-model="authOptions.optionValue"
-                :disabled="!selectedTargetMode"
-              >
-              <label for="auth-option-value">选项值</label>
-            </div>
-            <div class="option-item">
-              <input 
-                type="checkbox" 
-                id="auth-option-unit"
-                v-model="authOptions.optionUnit"
-                :disabled="!selectedTargetMode"
-              >
-              <label for="auth-option-unit">选项单位</label>
-            </div>
-            <div class="option-item">
-              <input 
-                type="checkbox" 
-                id="auth-checkbox"
-                v-model="authOptions.checkbox"
-                :disabled="!selectedTargetMode"
-              >
-              <label for="auth-checkbox">复选框</label>
-            </div>
-          </div>
-        </div>
-        
-        <!-- 直接推送按钮 -->
-        <div class="valve-row">
-          <button 
-            class="action-button push-button"
-            :disabled="!selectedTargetMode || pushableModes.length === 0 || !selectedVersion || pushingData"
-            @click="pushData"
-          >
-            {{ pushingData ? '推送中...' : '推送配置' }}
-          </button>
-        </div>
-      </div>
-    </div>
+    <!-- 引用独立的权限推送阀门组件 -->
+    <PermissionPushValve 
+      :availableModes="pushableModes"
+      :availableVersions="availableVersions"
+      @push-success="handlePushSuccess"
+      @push-error="handlePushError"
+    />
   </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import modeManager from '../components/Data/modeManager.js'
-import communicationService from '../components/Data/communicationService.js'
 import { useCardStore } from '../components/Data/store'
 import { rootMatchController } from '../components/Data/matchEngine.js'
+import * as IdSvc from '../components/Data/services/id.js'
+import PermissionPushValve from '../components/PermissionPushValve.vue'
 
 // 获取卡片存储实例
 const cardStore = useCardStore()
@@ -270,8 +131,6 @@ const isCreating = ref(false)
 const isDeleting = ref(false)
 const newModeName = ref('')
 const selectedModeIds = ref([])
-const selectedTargetMode = ref('')
-const selectedVersion = ref('')
 
 // 匹配引擎控制
 const selectedStrategy = ref('standard')
@@ -280,25 +139,6 @@ const fuzzyConfig = ref({
   allowPartialMatches: true,
   qualityGrading: true
 })
-
-// 同步选项
-const syncOptions = ref({
-  cardTitle: false,
-  optionName: false,
-  optionValue: false,
-  optionUnit: false
-})
-
-// 授权选项
-const authOptions = ref({
-  cardTitle: false,
-  optionName: false,
-  optionValue: false,
-  optionUnit: false,
-  checkbox: false // 控制其他模式是否显示复选框
-})
-
-const pushingData = ref(false)
 
 // 模式列表
 const modes = ref(modeManager.getModes())
@@ -345,8 +185,14 @@ watch(() => cardStore.sessionCards, () => {
 // 加载可用版本
 const loadAvailableVersions = async () => {
   try {
-    const versions = await cardStore.listEnvFullSnapshots()
-    availableVersions.value = versions.map(v => v.version)
+    // 使用ID服务直接从LocalStorage提取root_admin模式的envFull版本
+    const versions = IdSvc.extractKeysFields('version', {
+      modeId: IdSvc.ROOT_ADMIN_MODE_ID,
+      type: 'envFull'
+    })
+    
+    availableVersions.value = versions || []
+    console.log(`[版本加载] 找到 ${versions.length} 个可用版本:`, versions)
   } catch (error) {
     console.error('加载版本列表失败:', error)
     availableVersions.value = []
@@ -431,80 +277,20 @@ const applyStrategy = () => {
   }
 }
 
-// 收集要推送的数据
-const collectPushData = async () => {
-  const data = {}
+// 处理推送成功事件
+const handlePushSuccess = (report) => {
+  console.log('[推送成功]', report)
   
-  // 始终推送卡片结构数据（不可克扣）
-  data.cards = cardStore.sessionCards || []
+  // 更新目标模式的同步状态
+  modeManager.updateSyncStatus(report.targetMode, '已同步')
   
-  // 添加版本信息
-  data.version = selectedVersion.value
-  
-  // 添加匹配策略信息
-  data.matchStrategy = {
-    strategy: selectedStrategy.value,
-    config: selectedStrategy.value === 'fuzzy' ? fuzzyConfig.value : null
-  }
-  
-  // 添加同步选项
-  data.syncOptions = { ...syncOptions.value }
-  
-  // 添加授权选项
-  data.authOptions = { ...authOptions.value }
-  
-  // 加载指定版本的题库
-  await cardStore.loadQuestionBank()
-  data.questionBank = cardStore.questionBank || {}
-  
-  return data
+  console.log(`推送成功报告: 目标=${report.targetMode}, 版本=${report.version}, 条目=${report.copiedCount}`)
 }
 
-// 推送数据到指定模式
-const pushData = async () => {
-  if (!selectedTargetMode.value) {
-    alert('请选择目标模式')
-    return
-  }
-  
-  if (!selectedVersion.value) {
-    alert('请选择推送版本')
-    return
-  }
-  
-  pushingData.value = true
-  
-  try {
-    // 收集要推送的数据
-    const data = await collectPushData()
-    
-    // 构建权限配置
-    const permissions = {
-      editable: authOptions.value, // 使用授权选项作为可编辑配置
-      readOnly: !Object.values(authOptions.value).some(val => val) // 如果没有任何授权项被选中，则为只读
-    }
-    
-    // 使用通信服务推送数据（不再传递withholding参数）
-    communicationService.pushDataToMode(
-      selectedTargetMode.value,
-      data,
-      permissions
-    )
-    
-    // 更新目标模式的同步状态
-    modeManager.updateSyncStatus(selectedTargetMode.value, '已同步')
-    
-    // 显示成功推送提示
-    alert(`数据已成功推送到模式: ${selectedTargetMode.value}`)
-    pushingData.value = false
-    
-    // 推送成功后保持当前选择，方便用户继续操作
-  } catch (error) {
-    console.error('推送数据失败:', error)
-    // 显示错误推送提示
-    alert('推送数据失败: ' + error.message)
-    pushingData.value = false
-  }
+// 处理推送失败事件
+const handlePushError = (error) => {
+  console.error('[推送失败]', error)
+  alert('推送失败: ' + error.message)
 }
 </script>
 

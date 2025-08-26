@@ -8,47 +8,54 @@
         <span v-if="lastSyncTime" class="sync-time">上次同步: {{ lastSyncTime }}</span>
         <span v-if="currentVersion" class="current-version">当前版本: {{ currentVersion }}</span>
       </div>
+      
+      <!-- 自动加载提示区域 -->
+      <div class="auto-load-info">
+        <span v-if="loadingData" class="loading-text">正在加载数据...</span>
+        <span v-else-if="availableVersionsCount > 0" class="versions-text">
+          已加载最新推送数据
+        </span>
+        <span v-else class="no-data-text">暂无数据，请等待主模式推送</span>
+        
+        <button 
+          class="test-button refresh-button" 
+          @click="refreshAndLoadLatest"
+          :disabled="loadingData"
+        >
+          {{ loadingData ? '加载中...' : '刷新数据' }}
+        </button>
+      </div>
     </div>
 
-    <!-- 第二部分：答题区域标题 -->
+    <!-- 第二部分：答题区域标题（居中） -->
     <div class="answer-title-section">
-      <h2 class="answer-title">答题区域</h2>
-      <p class="answer-subtitle">在下方卡片中填写答案，完成后点击提交</p>
+      <h2 class="answer-title">数据展示区域</h2>
+      <p class="answer-subtitle">以下是从LocalStorage加载的快照数据（只读模式）</p>
     </div>
 
-    <!-- 第三部分：卡片展示区域（参考CardSection.vue） -->
+    <!-- 卡片列表（子模式：完全只读展示LocalStorage快照数据） -->
     <div class="cards-container">
       <div
         v-for="card in cards"
         :key="card.id"
         class="card-wrapper"
-        :class="{
-          selected: selectedCardId === card.id,
-          'hide-option-actions': !card.editableFields.optionActions || card.isPresetEditing
-        }"
-        @click.stop="selectCard(card.id)"
       >
         <UniversalCard
-          v-model:modelValue="card.data.title"
-          v-model:options="card.data.options"
-          v-model:selectedValue="card.data.selectedValue"
+          :modelValue="card.data.title"
+          :options="card.data.options"
+          :selectedValue="card.data.selectedValue"
           :selectOptions="card.data.selectOptions"
-          :showDropdown="card.showDropdown || card.isPresetEditing"
-          :isTitleEditing="card.isTitleEditing"
-          :isOptionsEditing="card.isPresetEditing || card.isOptionsEditing"
-          :isSelectEditing="card.isPresetEditing || card.isSelectEditing"
-          :on-add-option="(afterId) => handleAddOption(card.id, afterId)"
-          :on-delete-option="(optionId) => handleDeleteOption(card.id, optionId)"
-          :on-add-select-option="(label) => handleAddSelectOption(card.id, label)"
-          :on-delete-select-option="(optionId) => handleDeleteSelectOption(card.id, optionId)"
-          :on-dropdown-toggle="(value) => setShowDropdown(card.id, value)"
+          :showDropdown="false"
+          :isTitleEditing="false"
+          :isOptionsEditing="false"
+          :isSelectEditing="false"
           :editableFields="{
-            ...card.editableFields,
-            optionActions: card.editableFields.optionActions && !card.isPresetEditing,
-            optionCheckbox: card.editableFields.optionCheckbox || card.isPresetEditing
+            optionName: false,
+            optionValue: false,
+            optionUnit: false,
+            optionCheckbox: false,
+            optionActions: false
           }"
-          :class="{ selected: selectedCardId === card.id }"
-          :style="{}"
         />
       </div>
     </div>
@@ -127,18 +134,9 @@ const currentVersion = ref(null)
 // 卡片数据
 const cards = ref([])
 
-// 选中的卡片
-const selectedCardId = ref(null)
-const selectedCard = computed(() => {
-  return cards.value.find(card => card.id === selectedCardId.value) || null
-})
-
-// 匹配相关
-const generatingMatch = ref(false)
-const matchResult = ref(null)
-
-// 提交答案相关
-const submittingAnswers = ref(false)
+// 自动加载相关
+const loadingData = ref(false)
+const availableVersionsCount = ref(0)
 
 // 清理函数
 let cleanupListener = null
@@ -241,11 +239,182 @@ const updateCardData = (data) => {
   console.log('卡片数据已更新:', cards.value)
 }
 
-// 加载卡片数据
-const loadCardData = () => {
-  // 模拟加载数据
-  // 实际实现中应该从本地存储根据modeId加载数据
-  console.log(`加载模式 ${modeId.value} 的卡片数据`)
+// 加载卡片数据（加载目标模式的唯一版本）
+const loadCardData = async () => {
+  loadingData.value = true
+  
+  try {
+    console.log(`[子模式] 开始加载模式 ${modeId.value} 的唯一版本数据`)
+    
+    // 1. 获取当前模式的所有版本（一模式一版本，应该只有一个）
+    const availableVersions = idService.extractKeysFields('version', {
+      modeId: modeId.value,
+      type: 'envFull'
+    })
+    
+    availableVersionsCount.value = availableVersions.length
+    console.log(`[子模式] 找到 ${availableVersions.length} 个版本:`, availableVersions)
+    
+    if (availableVersions.length === 0) {
+      console.log(`[子模式] 模式 ${modeId.value} 没有可用数据`)
+      cards.value = []
+      currentVersion.value = null
+      syncStatus.value = '暂无数据'
+      return
+    }
+    
+    // 2. 加载唯一版本的数据（正常情况下只有一个版本）
+    const targetVersion = availableVersions[0] // 取第一个（也是唯一一个）
+    console.log(`[子模式] 加载版本: ${targetVersion}`)
+    
+    if (availableVersions.length > 1) {
+      console.warn(`[子模式] 警告：模式 ${modeId.value} 有 ${availableVersions.length} 个版本，不符合一模式一版本的设计`)
+    }
+    
+    // 3. 加载指定版本的数据
+    const success = await loadVersionData(targetVersion)
+    
+    if (success) {
+      currentVersion.value = targetVersion
+      syncStatus.value = '已加载'
+      lastSyncTime.value = new Date().toLocaleString()
+      console.log(`[子模式] 成功加载版本 ${targetVersion} 的数据`)
+    } else {
+      syncStatus.value = '加载失败'
+    }
+    
+  } catch (error) {
+    console.error('[子模式] 加载数据失败:', error)
+    syncStatus.value = '加载失败'
+    availableVersionsCount.value = 0
+  } finally {
+    loadingData.value = false
+  }
+}
+
+// 加载指定版本的数据
+const loadVersionData = async (version, preloadedKeys = null) => {
+  try {
+    // 优先使用预加载的keys，否则重新查询
+    let versionKeys
+    if (preloadedKeys && Array.isArray(preloadedKeys)) {
+      versionKeys = preloadedKeys
+      console.log(`[子模式] 使用预加载的keys，数量: ${versionKeys.length}`)
+    } else {
+      // 获取指定版本的所有envFull数据
+      versionKeys = idService.batchKeyOperation('export', {
+        modeId: modeId.value,
+        version: version,
+        type: 'envFull'
+      })
+      console.log(`[子模式] 查询版本 ${version} 的数据条目: ${versionKeys.length}`)
+    }
+    
+    if (versionKeys.length === 0) {
+      console.warn(`[子模式] 版本 ${version} 没有数据`)
+      return false
+    }
+    
+    // 构建卡片数据结构
+    const cardMap = new Map()
+    
+    versionKeys.forEach(({ key, fields, data }) => {
+      try {
+        const parsedData = JSON.parse(data)
+        const excelId = fields.excelId
+        
+        // 解析ExcelID获取卡片ID和选项ID
+        const excelInfo = idService.splitExcelId(excelId)
+        
+        if (excelInfo.kind === 'card') {
+          // 卡片级数据
+          if (!cardMap.has(excelInfo.cardId)) {
+            cardMap.set(excelInfo.cardId, {
+              id: excelInfo.cardId,
+              data: {
+                title: parsedData.title || `卡片${excelInfo.cardId}`,
+                options: [],
+                selectedValue: null,
+                selectOptions: parsedData.selectOptions || []
+              },
+              editableFields: {
+                optionName: true,
+                optionValue: true,
+                optionUnit: true,
+                optionCheckbox: true,
+                optionActions: false
+              },
+              showDropdown: false,
+              isTitleEditing: false,
+              isOptionsEditing: false,
+              isSelectEditing: false,
+              isPresetEditing: false
+            })
+          }
+        } else if (excelInfo.kind === 'option') {
+          // 选项级数据
+          if (!cardMap.has(excelInfo.cardId)) {
+            cardMap.set(excelInfo.cardId, {
+              id: excelInfo.cardId,
+              data: {
+                title: `卡片${excelInfo.cardId}`,
+                options: [],
+                selectedValue: null,
+                selectOptions: []
+              },
+              editableFields: {
+                optionName: true,
+                optionValue: true,
+                optionUnit: true,
+                optionCheckbox: true,
+                optionActions: false
+              },
+              showDropdown: false,
+              isTitleEditing: false,
+              isOptionsEditing: false,
+              isSelectEditing: false,
+              isPresetEditing: false
+            })
+          }
+          
+          const card = cardMap.get(excelInfo.cardId)
+          card.data.options.push({
+            id: excelInfo.optionId,
+            name: parsedData.name || `选项${excelInfo.optionId}`,
+            value: parsedData.value || '',
+            unit: parsedData.unit || '',
+            checked: false // 子模式默认未勾选
+          })
+        }
+        
+      } catch (parseError) {
+        console.error(`[子模式] 解析数据失败:`, key, parseError)
+      }
+    })
+    
+    // 转换为数组并按卡片ID排序
+    const cardsArray = Array.from(cardMap.values()).sort((a, b) => {
+      return idService.compareCardIds(a.id, b.id)
+    })
+    
+    // 对每张卡片的选项按ID排序
+    cardsArray.forEach(card => {
+      card.data.options.sort((a, b) => parseInt(a.id) - parseInt(b.id))
+    })
+    
+    cards.value = cardsArray
+    console.log(`[子模式] 成功构建 ${cardsArray.length} 张卡片`)
+    
+    return true
+  } catch (error) {
+    console.error(`[子模式] 加载版本 ${version} 数据失败:`, error)
+    return false
+  }
+}
+
+// 刷新并加载最新数据
+const refreshAndLoadLatest = () => {
+  loadCardData()
 }
 
 // 卡片操作方法
@@ -387,43 +556,113 @@ const handleGenerateMatch = async () => {
 .bar {
   width: 100%;
   margin-bottom: 12px;
-  padding: 15px 20px;
+  padding: 8px 15px;
   border: 1px solid #ddd;
   border-radius: 8px;
   background-color: #f9f9f9;
   display: flex;
   align-items: center;
-  gap: 20px;
+  gap: 15px;
   flex-wrap: wrap;
   box-sizing: border-box;
+  min-height: 40px;
 }
 
-/* 第一部分：模式信息栏 */
+/* 第一部分：模式信息栏（细长条样式） */
 .mode-info-bar {
   background-color: #f5f5f5;
+  padding: 6px 15px;
+  min-height: 36px;
+  height: auto;
+  border: 2px solid #ddd;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: nowrap;
 }
 
 .mode-info-content {
   display: flex;
   align-items: center;
-  gap: 20px;
-  flex-wrap: wrap;
-  width: 100%;
+  gap: 8px;
+  flex-wrap: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+/* 自动加载信息区域 */
+.auto-load-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  background-color: #f9f9f9;
+  border-radius: 4px;
+  border: 1px solid #e0e0e0;
+  flex-shrink: 0;
+  white-space: nowrap;
+  font-size: 11px;
 }
 
 .mode-title {
   margin: 0;
-  font-size: 18px;
-  color: #333;
+  font-size: 16px;
+  color: #1976d2;
   font-weight: bold;
+  line-height: 1.2;
+  padding: 4px 0;
+  height: auto;
+  text-shadow: 1px 1px 2px rgba(0,0,0,0.1);
 }
 
 .mode-status,
 .sync-time,
 .current-version {
-  font-size: 14px;
+  font-size: 11px;
   color: #666;
   white-space: nowrap;
+  line-height: 1.2;
+}
+
+.loading-text {
+  color: #2196f3;
+  font-weight: bold;
+  font-size: 12px;
+}
+
+.versions-text {
+  color: #4caf50;
+  font-weight: bold;
+  font-size: 12px;
+}
+
+.no-data-text {
+  color: #ff9800;
+  font-style: italic;
+  font-size: 12px;
+}
+
+.refresh-button {
+  padding: 2px 6px;
+  background-color: #4caf50;
+  color: white;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 10px;
+  transition: background-color 0.2s;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.refresh-button:hover:not(:disabled) {
+  background-color: #1976d2;
+}
+
+.refresh-button:disabled {
+  background-color: #cccccc;
+  cursor: not-allowed;
 }
 
 /* 第二部分：答题区域标题（居中） */
@@ -499,24 +738,17 @@ const handleGenerateMatch = async () => {
   cursor: not-allowed;
 }
 
-/* 第三部分：卡片展示区域（参考CardSection.vue） */
+/* 卡片列表（完全复刻CardSection.vue） */
 .cards-container {
   display: flex;
   flex-wrap: wrap;
-  justify-content: flex-start;
-  gap: 15px;
-  margin: 20px 0;
-  padding: 20px;
-  background-color: #fafafa;
-  border-radius: 8px;
-  border: 1px solid #e0e0e0;
-  min-height: 200px;
+  justify-content: center;
+  gap: 6px;
 }
 
 .card-wrapper {
   position: relative;
-  width: 300px;
-  min-width: 280px;
+  width: 240px;
   transition: all 0.3s ease;
   cursor: pointer;
 }
@@ -525,8 +757,40 @@ const handleGenerateMatch = async () => {
   box-shadow: 0 0 0 3px #4caf50;
 }
 
+.card-wrapper.deleting .universal-card {
+  box-shadow: 0 0 15px rgba(255, 0, 0, 0.5);
+  opacity: 0.9;
+}
+
+/* 仅隐藏"加/减按钮"，不影响名称/值/单位输入框 */
 :deep(.hide-option-actions .option-actions) {
   display: none !important;
+}
+
+/* 删除覆盖层 */
+.delete-overlay {
+  position: absolute;
+  inset: 0;
+  background-color: rgba(255, 0, 0, 0.1);
+  border-radius: inherit;
+  display: flex;
+  justify-content: flex-end;
+  padding: 10px;
+}
+
+.delete-card-button {
+  width: 30px;
+  height: 30px;
+  background-color: #f44336;
+  color: white;
+  border: none;
+  border-radius: 50%;
+  font-size: 20px;
+  font-weight: bold;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 /* 第五部分：匹配反馈区 */
@@ -579,35 +843,25 @@ const handleGenerateMatch = async () => {
   padding: 40px 0;
 }
 
+/* 响应式卡片布局：根据卡片固定宽度自然换行（与CardSection.vue一致） */
+/* 卡片固定宽度240px，浏览器会自动根据容器宽度换行 */
+/* 大屏幕：每行约7-8个卡片，中等屏幕：每行约4-5个卡片，小屏幕：每行约2-3个卡片 */
+
 /* PC端大屏幕优化 */
 @media (min-width: 1200px) {
   .sub-mode {
     padding: 30px 60px;
   }
   
-  .bar {
+  .bar:not(.mode-info-bar) {
     padding: 18px 25px;
     gap: 25px;
-  }
-  
-  .cards-container {
-    gap: 20px;
-  }
-  
-  .card-wrapper {
-    width: 320px;
-    min-width: 300px;
   }
 }
 
 @media (min-width: 1600px) {
   .sub-mode {
     padding: 40px 80px;
-  }
-  
-  .card-wrapper {
-    width: 350px;
-    min-width: 320px;
   }
 }
 </style>
