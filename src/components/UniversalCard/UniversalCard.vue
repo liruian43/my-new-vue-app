@@ -1,6 +1,6 @@
 <template>
   <div :class="['universal-card', className]" :style="style">
-    <!-- 标题：使用 v-model 绑定本地副本 -->
+    <!-- 标题 -->
     <div v-if="!isTitleEditing" class="card-title">{{ modelValue }}</div>
     <input
       v-else
@@ -24,15 +24,17 @@
           :key="option.id"
           :class="['option', isOptionsEditing ? 'editing' : 'view']"
         >
+          <!-- 复选框：卡片级(原key) vs 选项级(独立key) -->
           <input
-            v-if="editableFields.optionCheckbox"
+            v-if="editableFields.optionCheckbox || option.itemCheckbox"
             type="checkbox"
             v-model="option.checked"
             @change="updateOption(option.id, { checked: option.checked })"
           />
 
+          <!-- 选项名称：卡片级(原key) vs 选项级(独立key) -->
           <input
-            v-if="editableFields.optionActions && editableFields.optionName"
+            v-if="(editableFields.optionActions && editableFields.optionName) || option.itemName"
             type="text"
             v-model="option.name"
             @input="updateOption(option.id, { name: option.name })"
@@ -40,8 +42,9 @@
           />
           <span v-else class="option-name">{{ option.name || "未命名" }}</span>
 
+          <!-- 选项值：卡片级(原key) vs 选项级(独立key) -->
           <input
-            v-if="editableFields.optionActions && editableFields.optionValue"
+            v-if="(editableFields.optionActions && editableFields.optionValue) || option.itemValue"
             type="text"
             v-model="option.value"
             @input="updateOption(option.id, { value: option.value || null })"
@@ -49,8 +52,9 @@
           />
           <span v-else class="option-value">{{ option.value ?? "-" }}</span>
 
+          <!-- 选项单位：卡片级(原key) vs 选项级(独立key) -->
           <input
-            v-if="editableFields.optionActions && editableFields.optionUnit"
+            v-if="(editableFields.optionActions && editableFields.optionUnit) || option.itemUnit"
             type="text"
             v-model="option.unit"
             @input="updateOption(option.id, { unit: option.unit || null })"
@@ -58,7 +62,8 @@
           />
           <span v-else class="option-unit">{{ option.unit ?? "-" }}</span>
 
-          <div v-if="editableFields.optionActions" class="option-actions">
+          <!-- 操作按钮：卡片级(原key) vs 选项级(独立key) -->
+          <div v-if="editableFields.optionActions || option.itemActions" class="option-actions">
             <button @click="onAddOption(option.id)" class="action-button add">
               +
             </button>
@@ -73,6 +78,7 @@
         </div>
       </div>
 
+      <!-- 下拉菜单（完全保留原有逻辑） -->
       <div class="searchable-select" ref="selectContainerRef">
         <div class="select-input-container">
           <input
@@ -154,9 +160,8 @@ import {
   defineEmits
 } from "vue";
 
-// 定义 props
+// 定义 props（卡片级保留原key，选项级新增独立不重名key）
 const props = defineProps({
-  // 新增：声明className和style props
   className: {
     type: String,
     default: ''
@@ -165,14 +170,15 @@ const props = defineProps({
     type: Object,
     default: () => ({})
   },
-  // 原有props保持不变
   modelValue: {
     type: String,
     required: true,
   },
+  // 选项数据中包含选项级独立key（itemCheckbox/itemName等）
   options: {
     type: Array,
     required: true,
+    // 选项级key示例：{ id: '1', itemCheckbox: true, itemName: false, ... }
   },
   selectedValue: {
     type: String,
@@ -198,6 +204,7 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  // 卡片级保留原key（optionCheckbox/optionName等）
   editableFields: {
     type: Object,
     default: () => ({
@@ -236,26 +243,26 @@ const props = defineProps({
   },
 });
 
-// 定义 emits
+// 定义 emits（完全保留）
 const emits = defineEmits([
   "update:modelValue",
   "update:options",
   "update:selectedValue",
 ]);
 
-// 数据状态
+// 数据状态（完全保留）
 const localModelValue = ref(props.modelValue);
 const localOptions = ref([...props.options]);
 const localSelectedValue = ref(props.selectedValue);
 const titleInputRef = ref(null);
 
-// 新增：用于动态定位的 ref 和样式对象
+// 下拉菜单相关（完全保留老版本逻辑）
 const selectContainerRef = ref(null);
 const selectInputRef = ref(null);
 const dropdownRef = ref(null);
 const dropdownInlineStyle = ref({});
 
-// 计算属性
+// 计算属性（完全保留）
 const filteredOptions = computed(() => {
   return props.selectOptions.filter((option) =>
     option.label
@@ -280,7 +287,7 @@ const canDelete = computed(() => {
   );
 });
 
-// 监听 props 变化
+// 监听 props 变化（完全保留）
 watch(
   () => props.modelValue,
   (newValue) => {
@@ -302,7 +309,7 @@ watch(
   }
 );
 
-// 方法
+// 方法（完全保留）
 const updateTitle = (newTitle) => {
   localModelValue.value = newTitle;
   emits("update:modelValue", newTitle);
@@ -324,7 +331,7 @@ const updateSelectedValue = (newValue) => {
 
 const selectOption = (option) => {
   updateSelectedValue(option.label);
-  props.onDropdownToggle(false); // 直接使用 props
+  props.onDropdownToggle(false);
 };
 
 const addSelectOption = () => {
@@ -335,7 +342,7 @@ const addSelectOption = () => {
 };
 
 const handleBlur = () => {
-  setTimeout(() => props.onDropdownToggle(false), 200); // 直接使用 props
+  setTimeout(() => props.onDropdownToggle(false), 200);
 };
 
 const deleteSelectedOption = () => {
@@ -345,7 +352,7 @@ const deleteSelectedOption = () => {
   }
 };
 
-// 新增：动态定位计算函数
+// 下拉菜单定位（保留老版本）
 const updateDropdownPosition = () => {
   if (!selectContainerRef.value || !selectInputRef.value || !dropdownRef.value) return;
   
@@ -361,7 +368,6 @@ const updateDropdownPosition = () => {
   };
 };
 
-// 新增：在相关状态变化时重新计算定位
 watch(
   () => [props.showDropdown, props.isSelectEditing, props.editableFields.select],
   async () => {
@@ -370,12 +376,11 @@ watch(
   }
 );
 
-// 新增：窗口尺寸变化时也更新
 const handleResize = () => {
   if (props.showDropdown) updateDropdownPosition();
 };
 
-// 生命周期钩子
+// 生命周期（完全保留）
 onMounted(() => {
   if (props.isTitleEditing && titleInputRef.value) {
     titleInputRef.value.focus();
@@ -383,7 +388,6 @@ onMounted(() => {
   
   window.addEventListener('resize', handleResize);
   
-  // 若初始就显示下拉，确保定位一次
   if (props.showDropdown) {
     nextTick(() => updateDropdownPosition());
   }
@@ -395,7 +399,7 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-/* 样式保持不变 */
+/* 完全保留老版本所有样式 */
 *, *::before, *::after {
   margin: 0;
   padding: 0;
@@ -747,3 +751,4 @@ onBeforeUnmount(() => {
   height: 20px;
 }
 </style>
+    
