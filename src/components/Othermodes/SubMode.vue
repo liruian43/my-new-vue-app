@@ -27,35 +27,39 @@
       </div>
     </div>
 
-    <!-- 第二部分：答题区域标题（居中） -->
+    <!-- 第二部分：应用区域标题（居中） -->
     <div class="answer-title-section">
-      <h2 class="answer-title">数据展示区域</h2>
-      <p class="answer-subtitle">以下是从LocalStorage加载的快照数据（只读模式）</p>
+      <h2 class="answer-title">应用区</h2>
+      <p class="answer-subtitle">以下是从权限推送加载的数据（按权限控制）</p>
     </div>
 
-    <!-- 卡片列表（子模式：完全只读展示LocalStorage快照数据） -->
+    <!-- 卡片列表（子模式：按权限控制的数据展示） -->
     <div class="cards-container">
       <div
         v-for="card in cards"
         :key="card.id"
         class="card-wrapper"
+        :class="{
+          selected: selectedCardId === card.id,
+          'hide-option-actions': !card.editableFields.optionActions
+        }"
+        @click.stop="selectCard(card.id)"
       >
         <UniversalCard
-          :modelValue="card.data.title"
-          :options="card.data.options"
-          :selectedValue="card.data.selectedValue"
+          v-model:modelValue="card.data.title"
+          v-model:options="card.data.options"
+          v-model:selectedValue="card.data.selectedValue"
           :selectOptions="card.data.selectOptions"
-          :showDropdown="false"
-          :isTitleEditing="false"
-          :isOptionsEditing="false"
-          :isSelectEditing="false"
-          :editableFields="{
-            optionName: false,
-            optionValue: false,
-            optionUnit: false,
-            optionCheckbox: false,
-            optionActions: false
-          }"
+          :showDropdown="card.showDropdown"
+          :isTitleEditing="card.isTitleEditing"
+          :isOptionsEditing="card.isOptionsEditing"
+          :isSelectEditing="card.isSelectEditing"
+          :editableFields="card.editableFields"
+          :on-add-option="(afterId) => handleAddOption(card.id, afterId)"
+          :on-delete-option="(optionId) => handleDeleteOption(card.id, optionId)"
+          :on-add-select-option="(label) => handleAddSelectOption(card.id, label)"
+          :on-delete-select-option="(optionId) => handleDeleteSelectOption(card.id, optionId)"
+          :on-dropdown-toggle="(value) => setShowDropdown(card.id, value)"
         />
       </div>
     </div>
@@ -109,11 +113,13 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import UniversalCard from '../UniversalCard/UniversalCard.vue'
 import communicationService from '../Data/communicationService.js'
-import matchEngine from '../Data/matchEngine.js'
+import { matchEngine } from '../Data/matchEngine.js'
 import modeManager from '../Data/modeManager.js'
+import { useCardStore } from '../Data/store.js'
 import * as idService from '../Data/services/id.js'
 
-// 定义组件名称，用于KeepAlive缓存
+// 使用全局store
+const cardStore = useCardStore()
 defineOptions({
   name: 'SubMode'
 })
@@ -131,8 +137,14 @@ const syncStatus = ref('未同步')
 const lastSyncTime = ref(null)
 const currentVersion = ref(null)
 
-// 卡片数据
-const cards = ref([])
+// 卡片数据（从 store 获取）
+const cards = computed(() => cardStore.sessionCards)
+const selectedCardId = ref(null)
+
+// computed 属性
+const selectedCard = computed(() => {
+  return cards.value.find(card => card.id === selectedCardId.value)
+})
 
 // 自动加载相关
 const loadingData = ref(false)
@@ -239,37 +251,33 @@ const updateCardData = (data) => {
   console.log('卡片数据已更新:', cards.value)
 }
 
-// 加载卡片数据（加载目标模式的唯一版本）
+// 加载卡片数据（自动检测自己模式ID下的全量区类型数据）
 const loadCardData = async () => {
   loadingData.value = true
   
   try {
-    console.log(`[子模式] 开始加载模式 ${modeId.value} 的唯一版本数据`)
+    console.log(`[子模式] 开始自动检测模式 ${modeId.value} 下的全量区类型推送数据`)
     
-    // 1. 获取当前模式的所有版本（一模式一版本，应该只有一个）
+    // 1. 获取当前模式ID下的全量区类型版本（只检测envFull类型）
     const availableVersions = idService.extractKeysFields('version', {
-      modeId: modeId.value,
-      type: 'envFull'
+      modeId: modeId.value, // 只检测自己的模式ID
+      type: 'envFull' // 只检测全量区类型数据
     })
     
     availableVersionsCount.value = availableVersions.length
-    console.log(`[子模式] 找到 ${availableVersions.length} 个版本:`, availableVersions)
+    console.log(`[子模式] 模式 ${modeId.value} 下找到 ${availableVersions.length} 个全量区版本:`, availableVersions)
     
     if (availableVersions.length === 0) {
-      console.log(`[子模式] 模式 ${modeId.value} 没有可用数据`)
-      cards.value = []
+      console.log(`[子模式] 模式 ${modeId.value} 没有全量区类型数据，请等待主模式推送`)
+      cardStore.sessionCards = []
       currentVersion.value = null
       syncStatus.value = '暂无数据'
       return
     }
     
-    // 2. 加载唯一版本的数据（正常情况下只有一个版本）
-    const targetVersion = availableVersions[0] // 取第一个（也是唯一一个）
-    console.log(`[子模式] 加载版本: ${targetVersion}`)
-    
-    if (availableVersions.length > 1) {
-      console.warn(`[子模式] 警告：模式 ${modeId.value} 有 ${availableVersions.length} 个版本，不符合一模式一版本的设计`)
-    }
+    // 2. 自动加载最新的全量区数据（取最新版本）
+    const targetVersion = availableVersions[availableVersions.length - 1] // 取最后一个（最新）
+    console.log(`[子模式] 自动加载最新全量区版本: ${targetVersion}`)
     
     // 3. 加载指定版本的数据
     const success = await loadVersionData(targetVersion)
@@ -278,13 +286,13 @@ const loadCardData = async () => {
       currentVersion.value = targetVersion
       syncStatus.value = '已加载'
       lastSyncTime.value = new Date().toLocaleString()
-      console.log(`[子模式] 成功加载版本 ${targetVersion} 的数据`)
+      console.log(`[子模式] 成功自动加载版本 ${targetVersion} 的全量区数据`)
     } else {
       syncStatus.value = '加载失败'
     }
     
   } catch (error) {
-    console.error('[子模式] 加载数据失败:', error)
+    console.error('[子模式] 自动检测和加载数据失败:', error)
     syncStatus.value = '加载失败'
     availableVersionsCount.value = 0
   } finally {
@@ -295,115 +303,122 @@ const loadCardData = async () => {
 // 加载指定版本的数据
 const loadVersionData = async (version, preloadedKeys = null) => {
   try {
-    // 优先使用预加载的keys，否则重新查询
-    let versionKeys
-    if (preloadedKeys && Array.isArray(preloadedKeys)) {
-      versionKeys = preloadedKeys
-      console.log(`[子模式] 使用预加载的keys，数量: ${versionKeys.length}`)
-    } else {
-      // 获取指定版本的所有envFull数据
-      versionKeys = idService.batchKeyOperation('export', {
-        modeId: modeId.value,
-        version: version,
-        type: 'envFull'
-      })
-      console.log(`[子模式] 查询版本 ${version} 的数据条目: ${versionKeys.length}`)
-    }
+    // 1. 使用store统一接口加载权限配置
+    console.log(`\n=== [子模式权限] 开始加载权限配置 ===`)
+    const permissionConfig = cardStore.loadPermissionConfig(modeId.value, version)
+    console.log(`[子模式权限] 权限配置:`, permissionConfig)
     
-    if (versionKeys.length === 0) {
-      console.warn(`[子模式] 版本 ${version} 没有数据`)
+    // 2. 使用store统一接口加载环境数据
+    console.log(`[子模式] 使用store统一接口加载环境数据`)
+    const envData = await cardStore.getEnvFullSnapshot(version)
+    
+    if (!envData || !envData.environment) {
+      console.warn(`[子模式] 版本 ${version} 没有环境数据`)
       return false
     }
     
-    // 构建卡片数据结构
-    const cardMap = new Map()
+    console.log(`[子模式] 成功加载环境数据:`, envData)
     
-    versionKeys.forEach(({ key, fields, data }) => {
-      try {
-        const parsedData = JSON.parse(data)
-        const excelId = fields.excelId
-        
-        // 解析ExcelID获取卡片ID和选项ID
-        const excelInfo = idService.splitExcelId(excelId)
-        
-        if (excelInfo.kind === 'card') {
-          // 卡片级数据
-          if (!cardMap.has(excelInfo.cardId)) {
-            cardMap.set(excelInfo.cardId, {
-              id: excelInfo.cardId,
-              data: {
-                title: parsedData.title || `卡片${excelInfo.cardId}`,
-                options: [],
-                selectedValue: null,
-                selectOptions: parsedData.selectOptions || []
-              },
-              editableFields: {
-                optionName: true,
-                optionValue: true,
-                optionUnit: true,
-                optionCheckbox: true,
-                optionActions: false
-              },
-              showDropdown: false,
-              isTitleEditing: false,
-              isOptionsEditing: false,
-              isSelectEditing: false,
-              isPresetEditing: false
-            })
-          }
-        } else if (excelInfo.kind === 'option') {
-          // 选项级数据
-          if (!cardMap.has(excelInfo.cardId)) {
-            cardMap.set(excelInfo.cardId, {
-              id: excelInfo.cardId,
-              data: {
-                title: `卡片${excelInfo.cardId}`,
-                options: [],
-                selectedValue: null,
-                selectOptions: []
-              },
-              editableFields: {
-                optionName: true,
-                optionValue: true,
-                optionUnit: true,
-                optionCheckbox: true,
-                optionActions: false
-              },
-              showDropdown: false,
-              isTitleEditing: false,
-              isOptionsEditing: false,
-              isSelectEditing: false,
-              isPresetEditing: false
-            })
-          }
-          
-          const card = cardMap.get(excelInfo.cardId)
-          card.data.options.push({
-            id: excelInfo.optionId,
-            name: parsedData.name || `选项${excelInfo.optionId}`,
-            value: parsedData.value || '',
-            unit: parsedData.unit || '',
-            checked: false // 子模式默认未勾选
-          })
-        }
-        
-      } catch (parseError) {
-        console.error(`[子模式] 解析数据失败:`, key, parseError)
+    // 3. 从环境数据中构建卡片结构
+    const cardMap = new Map()
+    const environment = envData.environment || {}
+    const envCards = environment.cards || {}
+    const envOptions = environment.options || {}
+    
+    console.log(`[子模式] 环境卡片:`, envCards)
+    console.log(`[子模式] 环境选项:`, envOptions)
+    
+    // 4. 遍历卡片和选项，构建卡片结构
+    Object.entries(envCards).forEach(([cardId, cardData]) => {
+      if (!cardMap.has(cardId)) {
+        cardMap.set(cardId, {
+          id: cardId,
+          data: {
+            title: cardData.title || `卡片${cardId}`,
+            options: [],
+            selectedValue: null,
+            selectOptions: cardData.dropdown || []
+          },
+          editableFields: {
+            optionName: true,
+            optionValue: true,
+            optionUnit: true,
+            optionCheckbox: true,
+            optionActions: false
+          },
+          showDropdown: false,
+          isTitleEditing: false,
+          isOptionsEditing: false,
+          isSelectEditing: false,
+          isPresetEditing: false
+        })
       }
     })
     
-    // 转换为数组并按卡片ID排序
+    // 5. 处理选项数据
+    Object.entries(envOptions).forEach(([fullId, optionData]) => {
+      const excelInfo = idService.splitExcelId(fullId)
+      if (excelInfo.kind === 'option') {
+        const cardId = excelInfo.cardId
+        
+        // 确保卡片存在
+        if (!cardMap.has(cardId)) {
+          cardMap.set(cardId, {
+            id: cardId,
+            data: {
+              title: `卡片${cardId}`,
+              options: [],
+              selectedValue: null,
+              selectOptions: []
+            },
+            editableFields: {
+              optionName: false,
+              optionValue: false,
+              optionUnit: false,
+              optionCheckbox: true, // 复选框总是显示
+              optionActions: false // 加减按钮总是隐藏
+            },
+            showDropdown: false,
+            isTitleEditing: false,
+            isOptionsEditing: false,
+            isSelectEditing: false,
+            isPresetEditing: false
+          })
+        }
+        
+        const card = cardMap.get(cardId)
+        
+        // 6. 根据权限配置应用"授权 > 同步"原则
+        const processedOptionData = applyPermissionLogic(fullId, optionData, permissionConfig)
+        
+        card.data.options.push({
+          id: excelInfo.optionId,
+          name: processedOptionData.name,
+          value: processedOptionData.value,
+          unit: processedOptionData.unit,
+          checked: false // 子模式默认未勾选
+        })
+      }
+    })
+    
+    // 7. 转换为数组并按卡片ID排序
     const cardsArray = Array.from(cardMap.values()).sort((a, b) => {
       return idService.compareCardIds(a.id, b.id)
     })
     
-    // 对每张卡片的选项按ID排序
+    // 8. 对每张卡片的选项按ID排序
     cardsArray.forEach(card => {
       card.data.options.sort((a, b) => parseInt(a.id) - parseInt(b.id))
+      
+      // 9. 为每张卡片应用权限控制
+      applyCardPermissions(card, permissionConfig)
     })
     
-    cards.value = cardsArray
-    console.log(`[子模式] 成功构建 ${cardsArray.length} 张卡片`)
+    // 10. 将构建的卡片数据保存到store的sessionCards中
+    cardStore.sessionCards = cardsArray
+    console.log(`[子模式] 成功构建 ${cardsArray.length} 张卡片，已保存到store`)
+    console.log(`[子模式权限] 权限配置应用完成`)
+    console.log(`=== [子模式权限] 权限加载结束 ===\n`)
     
     return true
   } catch (error) {
@@ -417,56 +432,149 @@ const refreshAndLoadLatest = () => {
   loadCardData()
 }
 
-// 卡片操作方法
+// === 权限控制核心函数 ===
+// 注意：不再需要loadPermissionConfig函数，直接使用store接口
+
+// 应用权限逻辑："授权 > 同步"原则
+const applyPermissionLogic = (excelId, originalData, permissionConfig) => {
+  const permissions = permissionConfig[excelId]
+  
+  if (!permissions) {
+    console.log(`[子模式权限] ExcelID ${excelId} 无权限配置，显示原始同步数据`)
+    return {
+      name: originalData.name || `选项${excelId}`,
+      value: originalData.value || '',
+      unit: originalData.unit || ''
+    }
+  }
+  
+  const result = {
+    name: applyFieldPermission('name', originalData.name, permissions.name),
+    value: applyFieldPermission('value', originalData.value, permissions.value),
+    unit: applyFieldPermission('unit', originalData.unit, permissions.unit)
+  }
+  
+  console.log(`[子模式权限] ExcelID ${excelId} 权限应用结果:`, {
+    原始: originalData,
+    权限: permissions,
+    结果: result
+  })
+  
+  return result
+}
+
+// 应用单个字段权限："授权 > 同步"原则
+const applyFieldPermission = (fieldName, originalValue, fieldPermission) => {
+  if (!fieldPermission) {
+    // 无权限配置：显示同步的原值
+    return originalValue || ''
+  }
+  
+  const { sync, auth } = fieldPermission
+  
+  // 核心逻辑：授权 > 同步
+  if (auth) {
+    // 有授权：显示空白编辑框，无任何同步信息
+    console.log(`[子模式权限] 字段 ${fieldName}: 有授权权限，显示空白编辑框`)
+    return ''
+  } else if (sync) {
+    // 只有同步，无授权：显示同步的原值（只读）
+    console.log(`[子模式权限] 字段 ${fieldName}: 只有同步权限，显示同步原值（只读）`)
+    return originalValue || ''
+  } else {
+    // 既无同步也无授权：显示空值
+    console.log(`[子模式权限] 字段 ${fieldName}: 无任何权限，显示空值`)
+    return ''
+  }
+}
+
+// 为卡片应用权限控制（只控制加减按钮，保持其他功能原生）
+const applyCardPermissions = (card, permissionConfig) => {
+  console.log(`[子模式权限] 为卡片 ${card.id} 应用权限控制`)
+  
+  // 子模式只需要隐藏加减按钮，其他功能保持原生
+  card.editableFields = {
+    optionName: false,
+    optionValue: false,
+    optionUnit: false,
+    optionCheckbox: true, // 复选框总是显示
+    optionActions: false, // 加减按钮总是隐藏
+    select: true // 下拉选择器保持原生功能
+  }
+  
+  // 根据权限配置设置字段可编辑性
+  card.data.options.forEach(option => {
+    const excelId = `${card.id}${option.id}`
+    const permissions = permissionConfig[excelId]
+    
+    if (permissions) {
+      // 检查各字段的授权状态
+      if (permissions.name?.auth) {
+        card.editableFields.optionName = true
+      }
+      if (permissions.value?.auth) {
+        card.editableFields.optionValue = true
+      }
+      if (permissions.unit?.auth) {
+        card.editableFields.optionUnit = true
+      }
+      
+      // 将权限信息附加到选项上（供调试使用）
+      option.permissions = permissions
+    }
+  })
+  
+  console.log(`[子模式权限] 卡片 ${card.id} 保持原生功能，只隐藏加减按钮`)
+}
+
+// 卡片操作方法（通过store管理）
 const selectCard = (id) => {
   selectedCardId.value = id
 }
 
 const toggleTitleEditing = () => {
   if (selectedCardId.value) {
-    const card = cards.value.find(c => c.id === selectedCardId.value)
-    if (card) {
-      card.isTitleEditing = !card.isTitleEditing
-    }
+    // 使用store的toggleTitleEditing方法
+    cardStore.toggleTitleEditing(selectedCardId.value)
   }
 }
 
 const toggleSelectEditing = () => {
   if (selectedCardId.value) {
-    const card = cards.value.find(c => c.id === selectedCardId.value)
-    if (card) {
-      card.isSelectEditing = !card.isSelectEditing
-    }
+    // 使用store的toggleSelectEditing方法
+    cardStore.toggleSelectEditing(selectedCardId.value)
   }
 }
 
 const toggleEditableField = (field) => {
   if (selectedCardId.value) {
-    const card = cards.value.find(c => c.id === selectedCardId.value)
-    if (card && card.editableFields) {
-      card.editableFields[field] = !card.editableFields[field]
-    }
+    // 使用store的toggleEditableField方法，就像CardSection.vue一样
+    cardStore.toggleEditableField(selectedCardId.value, field)
   }
 }
 
 const handleAddOption = (cardId, afterId) => {
   console.log(`添加选项到卡片 ${cardId}，在 ${afterId} 之后`)
-  // 实际实现中应该添加选项到指定卡片
+  // 使用store的addOption方法
+  cardStore.addOption(cardId, afterId)
 }
 
 const handleDeleteOption = (cardId, optionId) => {
   console.log(`从卡片 ${cardId} 删除选项 ${optionId}`)
-  // 实际实现中应该从指定卡片删除选项
+  // 使用store的deleteOption方法
+  cardStore.deleteOption(cardId, optionId)
 }
 
 const handleAddSelectOption = (cardId, label) => {
   console.log(`添加下拉选项到卡片 ${cardId}: ${label}`)
-  // 实际实现中应该添加下拉选项到指定卡片
+  // 使用store的addSelectOption方法
+  cardStore.addSelectOption(cardId, label)
 }
 
 const handleDeleteSelectOption = (cardId, optionId) => {
   console.log(`从卡片 ${cardId} 删除下拉选项 ${optionId}`)
-  // 实际实现中应该从指定卡片删除下拉选项
+  // 使用store的deleteSelectOption方法
+  cardStore.deleteSelectOption(cardId, optionId)
 }
 
 const setShowDropdown = (cardId, value) => {
@@ -548,8 +656,10 @@ const handleGenerateMatch = async () => {
 .sub-mode {
   width: 100%;
   max-width: none;
+  min-width: 1760px; /* 确保能容纳7张卡片: 240*7 + 6*6 + 余量 = 1760px */
   padding: 20px 40px;
   box-sizing: border-box;
+  overflow-x: auto; /* 小屏幕时允许水平滚动 */
 }
 
 /* 通用bar样式（参考root_admin） */
@@ -681,7 +791,7 @@ const handleGenerateMatch = async () => {
 .answer-subtitle {
   margin: 0;
   color: #666;
-  font-size: 16px;
+  font-size: 12px;
 }
 
 /* 第四部分：回答提交区域（居中） */
@@ -843,14 +953,14 @@ const handleGenerateMatch = async () => {
   padding: 40px 0;
 }
 
-/* 响应式卡片布局：根据卡片固定宽度自然换行（与CardSection.vue一致） */
-/* 卡片固定宽度240px，浏览器会自动根据容器宽度换行 */
-/* 大屏幕：每行约7-8个卡片，中等屏幕：每行约4-5个卡片，小屏幕：每行约2-3个卡片 */
+/* 响应式卡片布局：确保7张卡片才换行（与CardSection.vue一致） */
+/* 卡片固定宽度240px，7张卡片需要约1760px容器宽度 */
 
 /* PC端大屏幕优化 */
 @media (min-width: 1200px) {
   .sub-mode {
     padding: 30px 60px;
+    min-width: 1800px; /* 稍微增加一些余量 */
   }
   
   .bar:not(.mode-info-bar) {
@@ -862,6 +972,19 @@ const handleGenerateMatch = async () => {
 @media (min-width: 1600px) {
   .sub-mode {
     padding: 40px 80px;
+    min-width: 1900px; /* 超大屏幕时给更多空间 */
+  }
+}
+
+/* 小屏幕时的处理 */
+@media (max-width: 1760px) {
+  .sub-mode {
+    min-width: auto;
+    overflow-x: auto;
+  }
+  
+  .cards-container {
+    min-width: 1720px; /* 保证7张卡片的最小宽度 */
   }
 }
 </style>

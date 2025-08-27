@@ -6,7 +6,7 @@ function createDefaultState() {
   return {
     questionBank: { questions: [], categories: [] },
     envSnapshots: [],
-    currentMode: ID.ROOT_ADMIN_MODE_ID,
+    currentMode: 'root_admin',
     cards: [],
     options: {},
     syncHistory: [],
@@ -42,16 +42,22 @@ export const dataInstance = {
       return ID.generateNextCardId(usedIds)
     },
     generateOptionId: function (existingIds) {
-      const list = existingIds.map(id => ({ id }))
-      return ID.generateNextOptionId(list)
+      return ID.generateNextOptionId(existingIds)
     },
-    compareCardIds: ID.compareCardIds,
-    isValidCardId: ID.isValidCardId,
-    isValidOptionId: ID.isValidOptionId,
-    isValidFullOptionId: ID.isOptionExcelId,
+    compareCardIds: function (id1, id2) { 
+      return ID.compareCardIds(id1, id2) 
+    },
+    isValidCardId: function (cardId) { 
+      return ID.isValidCardId(cardId) 
+    },
+    isValidOptionId: function (optionId) { 
+      return ID.isValidOptionId(optionId) 
+    },
+    isValidFullOptionId: function (fullId) { 
+      return ID.isValidFullOptionId(fullId) 
+    },
     parseFullOptionId: function (fullId) {
-      const result = ID.parseFullOptionId(fullId)
-      return result.valid ? { cardId: result.cardId, optionId: result.optionId } : null
+      return ID.parseFullOptionId(fullId)
     }
   },
 
@@ -123,7 +129,7 @@ export const dataInstance = {
       this.state.options[fullId] = newOption
 
       if (!Array.isArray(card.data?.options)) {
-        if (!card.data) card.data = {};
+        if (!card.data) card.data = {}
         card.data.options = []
       }
       card.data.options.push({

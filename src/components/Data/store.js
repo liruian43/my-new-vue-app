@@ -19,6 +19,7 @@ import * as QuestionsPart from './store-parts/questions'
 import * as Normalize from './store-parts/normalize'
 import * as LongTerm from './services/longTerm'
 import * as IO from './services/io'
+import * as Serialization from './store-parts/serialization'  // 添加序列化模块
 
 // 引入校验函数
 import { hasAtLeastOneCardAndOptionInSession } from './utils/emptiness'
@@ -100,6 +101,13 @@ dataManager.isValidCardId = (id) => IdSvc.isValidCardId(String(id || ''))
 
 export const useCardStore = defineStore('data', {
   state: () => ({
+    // 管理器实例
+    dataManager: dataManager,
+    longTermStorage: LongTerm,
+    validator: validator,
+    instance: instance,
+    sessionStorageEnhancer: sessionStorageEnhancer,
+    
     // 主模式配置
     rootMode: {
       dataStandards: {
@@ -162,12 +170,63 @@ export const useCardStore = defineStore('data', {
     // 暴露常量
     FIELD_IDS: () => FIELD_IDS,
     
-    // 暴露服务实例
-    sessionStorageEnhancer: () => sessionStorageEnhancer,
-    dataManager: () => dataManager,
-    instance: () => instance,
-    validator: () => validator,
-    longTermStorage: () => dataManager.longTermStorage,
+    // 数据处理能力（通过 serialization 模块）
+    getJSON: () => (storage, key) => {
+      if (!storage) return null
+      const val = storage.getItem(key)
+      if (typeof val === 'string') {
+        try { return JSON.parse(val) } catch { return null }
+      }
+      return val || null
+    },
+    
+    setJSON: () => (storage, key, value) => {
+      if (!storage) return false
+      console.log('[Store序列化] 保存数据:', { key, value })
+      return storage.setItem(key, JSON.stringify(value))
+    },
+
+    // 权限配置管理（统一接口）
+    loadPermissionConfig: () => (modeId, version) => {
+      try {
+        const permissionKey = `permission:${modeId}:${version}:config`
+        const configData = localStorage.getItem(permissionKey)
+        if (configData) {
+          const config = JSON.parse(configData)
+          console.log('[Store权限] 成功加载权限配置:', config)
+          return config.permissions || {}
+        } else {
+          console.log('[Store权限] 未找到权限配置:', permissionKey)
+          return {}
+        }
+      } catch (error) {
+        console.error('[Store权限] 加载权限配置失败:', error)
+        return {}
+      }
+    },
+    
+    savePermissionConfig: () => (modeId, version, permissions, metadata = {}) => {
+      try {
+        const permissionKey = `permission:${modeId}:${version}:config`
+        const permissionConfig = {
+          targetMode: modeId,
+          version: version,
+          permissions: permissions,
+          timestamp: new Date().toISOString(),
+          pushedBy: metadata.pushedBy || IdSvc.ROOT_ADMIN_MODE_ID,
+          ...metadata
+        }
+        
+        localStorage.setItem(permissionKey, JSON.stringify(permissionConfig))
+        console.log('[Store权限] 成功保存权限配置:', permissionConfig)
+        return true
+      } catch (error) {
+        console.error('[Store权限] 保存权限配置失败:', error)
+        return false
+      }
+    },
+
+
 
     // 基础模式判断（固定为root_admin）
     isRootMode() { return true }, // <---- 保持简单，因为目前只考虑单模式
@@ -461,17 +520,17 @@ export const useCardStore = defineStore('data', {
     // 导出 / 导入
     exportData(fileName = 'card_data.json') {
       // IO.exportData 需要 modeId
-      return IO.exportData(this.longTermStorage, { modeId: this.currentModeId, fileName }) // <---- 传入 this.currentModeId
+      return IO.exportData(LongTerm, { modeId: this.currentModeId, fileName }) // <---- 传入 this.currentModeId
     },
     async importData(file) {
       // IO.importToLongTerm 需要 modeId
       return IO.importFromFile(file).then(data =>
-        IO.importToLongTerm(this.longTermStorage, data, { modeId: this.currentModeId }) // <---- 传入 this.currentModeId
+        IO.importToLongTerm(LongTerm, data, { modeId: this.currentModeId }) // <---- 传入 this.currentModeId
       )
     },
 
     // 模式管理（仅保留主模式相关）
-    getMode(modeId) { return ModesPart.getMode(this, this.longTermStorage, modeId) },
+    getMode(modeId) { return ModesPart.getMode(this, LongTerm, modeId) },
 
     // 数据段管理
     isModeData(item) { return DataSectionPart.isModeData(this, item) },
@@ -513,19 +572,19 @@ export const useCardStore = defineStore('data', {
     // 长期存储
     saveToLongTerm(modeId, namespace, dataId, data) {
       // LongTerm.saveToLongTerm 签名已调整为接收 modeId
-      return LongTerm.saveToLongTerm(this.longTermStorage, modeId || this.currentModeId, namespace, dataId, data, this.validator) // <---- 确保传递 this.currentModeId
+      return LongTerm.saveToLongTerm(LongTerm, modeId || this.currentModeId, namespace, dataId, data, this.validator) // <---- 确保传递 this.currentModeId
     },
     getFromLongTerm(modeId, namespace, dataId) {
       // LongTerm.getFromLongTerm 签名已调整为接收 modeId
-      return LongTerm.getFromLongTerm(this.longTermStorage, modeId || this.currentModeId, namespace, dataId) // <---- 确保传递 this.currentModeId
+      return LongTerm.getFromLongTerm(LongTerm, modeId || this.currentModeId, namespace, dataId) // <---- 确保传递 this.currentModeId
     },
     deleteFromLongTerm(modeId, namespace, dataId) {
       // LongTerm.deleteFromLongTerm 签名已调整为接收 modeId
-      return LongTerm.deleteFromLongTerm(this.longTermStorage, modeId || this.currentModeId, namespace, dataId) // <---- 确保传递 this.currentModeId
+      return LongTerm.deleteFromLongTerm(LongTerm, modeId || this.currentModeId, namespace, dataId) // <---- 确保传递 this.currentModeId
     },
     clearLongTermByMode(modeId) {
       // LongTerm.clearLongTermByMode 签名已调整为接收 modeId
-      return LongTerm.clearLongTermByMode(this.longTermStorage, modeId || this.currentModeId, this.dataManager.rootAdminId) // <---- 确保传递 this.currentModeId
+      return LongTerm.clearLongTermByMode(LongTerm, modeId || this.currentModeId, this.dataManager.rootAdminId) // <---- 确保传递 this.currentModeId
     }
   }
 })

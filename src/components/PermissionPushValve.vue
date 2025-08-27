@@ -38,16 +38,17 @@
         </select>
       </div>
       
-      <!-- 数据加载状态 -->
-      <div class="valve-row" v-if="selectedVersion">
+      <!-- 数据加载状态 - 默认显示，版本选择后显示具体内容 -->
+      <div class="valve-row">
         <div class="data-status">
           <span class="status-label">数据状态:</span>
-          <span class="excel-count">{{ currentExcelIds.length }} 个ExcelID</span>
-          <span class="version-info">版本: {{ selectedVersion }}</span>
+          <span class="excel-count">
+            {{ selectedVersion ? `${currentExcelIds.length} 个ExcelID` : '未选择版本' }}
+          </span>
+          <span class="version-info" v-if="selectedVersion">版本: {{ selectedVersion }}</span>
           <span class="mode-info">模式: {{ IdSvc.ROOT_ADMIN_MODE_ID }}</span>
-          <button @click="loadPermissionData" class="reload-btn">重新加载</button>
-          <button @click="savePermissionData" class="save-btn" :disabled="!hasUnsavedChanges">保存配置</button>
-          <button @click="debugCurrentData" class="debug-btn">调试数据</button>
+          <button @click="loadPermissionData" class="reload-btn" :disabled="!selectedVersion">重新加载</button>
+          <button @click="debugCurrentData" class="debug-btn" :disabled="!selectedVersion">调试数据</button>
         </div>
       </div>
       
@@ -62,83 +63,180 @@
           <span class="fixed-field">下拉菜单</span>
           <span class="fixed-field">预设配置</span>
         </div>
+        <div class="logic-explanation">
+          <small>
+            📝 <strong>权限逻辑说明</strong>：
+            <strong>同步</strong>和<strong>授权</strong>完全独立，互不干扰。
+            同步决定数据内容（原值/null），授权决定编辑权限（可编辑/只读）。
+            无论如何设置，字段架构始终存在。
+          </small>
+        </div>
       </div>
       
-      <!-- 精细化权限矩阵 - 弹性显示增强版 -->
-      <div class="permission-matrix" v-if="currentExcelIds.length > 0">
-        <h4>精细化权限控制矩阵 <span class="matrix-info">({{ currentExcelIds.length }} 个ExcelID)</span></h4>
+      <!-- 精细化权限矩阵 - 默认显示，支持多列布局 -->
+      <div class="permission-matrix">
+        <h4>精细化权限控制矩阵 
+          <span class="matrix-info" v-if="selectedVersion">
+            ({{ currentExcelIds.length }} 个ExcelID)
+          </span>
+          <span class="matrix-info" v-else>
+            (请选择版本以加载数据)
+          </span>
+        </h4>
         
         <!-- 调试信息 -->
-        <div class="matrix-debug" v-if="currentExcelIds.length > 0">
+        <div class="matrix-debug" v-if="selectedVersion && currentExcelIds.length > 0">
           <small>当前ExcelID: {{ currentExcelIds.join(', ') }}</small>
         </div>
+        <div class="matrix-debug" v-else-if="selectedVersion">
+          <small>当前版本无ExcelID数据</small>
+        </div>
         
-        <!-- 弹性矩阵容器 -->
-        <div class="matrix-container">
-          <!-- 表头 -->
-          <div class="matrix-header">
-            <div class="excel-id-header">ExcelID</div>
-            <div class="field-header" v-for="field in fieldTypes" :key="field">
-              {{ fieldLabels[field] }}
-              <div class="field-sub-headers">
-                <span class="sync-header">同步</span>
-                <span class="auth-header">授权</span>
+        <!-- 双列表格矩阵容器 -->
+        <div class="matrix-container" v-if="selectedVersion">
+          <!-- 分组显示矩阵 -->
+          <div class="matrix-columns" v-if="currentExcelIds.length > 0">
+            <!-- 左列矩阵 -->
+            <div class="matrix-column" v-if="leftColumnIds.length > 0">
+              <!-- 表头 -->
+              <div class="matrix-header">
+                <div class="excel-id-header">ExcelID</div>
+                <div class="field-header" v-for="field in fieldTypes" :key="field">
+                  {{ fieldLabels[field] }}
+                  <div class="field-sub-headers">
+                    <span class="sync-header">同步</span>
+                    <span class="auth-header">授权</span>
+                  </div>
+                </div>
+              </div>
+              
+              <!-- 矩阵内容 -->
+              <div class="matrix-content">
+                <div 
+                  v-for="excelId in leftColumnIds" 
+                  :key="excelId" 
+                  class="matrix-row"
+                  :data-excel-id="excelId"
+                >
+                  <div class="excel-id-cell">{{ excelId }}</div>
+                  <div 
+                    v-for="field in fieldTypes" 
+                    :key="field" 
+                    class="field-cell"
+                  >
+                    <div class="field-controls-matrix" v-if="fineGrainedPermissions[excelId] && fineGrainedPermissions[excelId][field]">
+                      <label class="matrix-checkbox sync">
+                        <input 
+                          type="checkbox" 
+                          v-model="fineGrainedPermissions[excelId][field].sync"
+                          :disabled="!selectedTargetMode"
+                          @change="onSyncChange(excelId, field, $event.target.checked)"
+                        >
+                      </label>
+                      <label class="matrix-checkbox auth">
+                        <input 
+                          type="checkbox" 
+                          v-model="fineGrainedPermissions[excelId][field].auth"
+                          :disabled="!selectedTargetMode"
+                          @change="onAuthChange(excelId, field, $event.target.checked)"
+                        >
+                      </label>
+                    </div>
+                    <div class="field-controls-error" v-else>
+                      <span class="error-text">未初始化</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <!-- 右列矩阵 -->
+            <div class="matrix-column" v-if="rightColumnIds.length > 0">
+              <!-- 表头 -->
+              <div class="matrix-header">
+                <div class="excel-id-header">ExcelID</div>
+                <div class="field-header" v-for="field in fieldTypes" :key="field">
+                  {{ fieldLabels[field] }}
+                  <div class="field-sub-headers">
+                    <span class="sync-header">同步</span>
+                    <span class="auth-header">授权</span>
+                  </div>
+                </div>
+              </div>
+              
+              <!-- 矩阵内容 -->
+              <div class="matrix-content">
+                <div 
+                  v-for="excelId in rightColumnIds" 
+                  :key="excelId" 
+                  class="matrix-row"
+                  :data-excel-id="excelId"
+                >
+                  <div class="excel-id-cell">{{ excelId }}</div>
+                  <div 
+                    v-for="field in fieldTypes" 
+                    :key="field" 
+                    class="field-cell"
+                  >
+                    <div class="field-controls-matrix" v-if="fineGrainedPermissions[excelId] && fineGrainedPermissions[excelId][field]">
+                      <label class="matrix-checkbox sync">
+                        <input 
+                          type="checkbox" 
+                          v-model="fineGrainedPermissions[excelId][field].sync"
+                          :disabled="!selectedTargetMode"
+                          @change="onSyncChange(excelId, field, $event.target.checked)"
+                        >
+                      </label>
+                      <label class="matrix-checkbox auth">
+                        <input 
+                          type="checkbox" 
+                          v-model="fineGrainedPermissions[excelId][field].auth"
+                          :disabled="!selectedTargetMode"
+                          @change="onAuthChange(excelId, field, $event.target.checked)"
+                        >
+                      </label>
+                    </div>
+                    <div class="field-controls-error" v-else>
+                      <span class="error-text">未初始化</span>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
           
-          <!-- 矩阵内容 - 确保所有ExcelID都显示 -->
-          <div class="matrix-content">
-            <div 
-              v-for="excelId in currentExcelIds" 
-              :key="excelId" 
-              class="matrix-row"
-              :data-excel-id="excelId"
-            >
-              <div class="excel-id-cell">{{ excelId }}</div>
-              <div 
-                v-for="field in fieldTypes" 
-                :key="field" 
-                class="field-cell"
-              >
-                <div class="field-controls-matrix" v-if="fineGrainedPermissions[excelId] && fineGrainedPermissions[excelId][field]">
-                  <label class="matrix-checkbox sync">
-                    <input 
-                      type="checkbox" 
-                      v-model="fineGrainedPermissions[excelId][field].sync"
-                      :disabled="!selectedTargetMode"
-                      @change="onSyncChange(excelId, field, $event.target.checked)"
-                    >
-                  </label>
-                  <label class="matrix-checkbox auth">
-                    <input 
-                      type="checkbox" 
-                      v-model="fineGrainedPermissions[excelId][field].auth"
-                      :disabled="!selectedTargetMode"
-                      @change="onAuthChange(excelId, field, $event.target.checked)"
-                    >
-                  </label>
-                </div>
-                <div class="field-controls-error" v-else>
-                  <span class="error-text">数据未初始化</span>
-                </div>
-              </div>
-            </div>
+          <!-- 无数据提示 -->
+          <div class="matrix-empty" v-else>
+            <p>当前版本没有ExcelID数据，或数据加载中...</p>
           </div>
+        </div>
+        
+        <!-- 未选择版本提示 -->
+        <div class="matrix-placeholder" v-else>
+          <p>请选择版本以显示权限控制矩阵</p>
         </div>
         
         <!-- 批量操作 -->
         <div class="matrix-actions">
-          <button @click="batchOperation('allSync')" class="matrix-btn">全部同步</button>
-          <button @click="batchOperation('allAuth')" class="matrix-btn">全部授权</button>
-          <button @click="batchOperation('clearAll')" class="matrix-btn">清空所有</button>
-          <button @click="batchOperation('syncToAuth')" class="matrix-btn">同步→授权</button>
-          <button @click="batchOperation('random')" class="matrix-btn">随机配置</button>
+          <button @click="batchOperation('allSync')" class="matrix-btn" :disabled="!selectedVersion || currentExcelIds.length === 0">全部同步</button>
+          <button @click="batchOperation('allAuth')" class="matrix-btn" :disabled="!selectedVersion || currentExcelIds.length === 0">全部授权</button>
+          <button @click="batchOperation('syncToAuth')" class="matrix-btn" :disabled="!selectedVersion || currentExcelIds.length === 0">同步→授权</button>
+          <button @click="batchOperation('syncPlusAuth')" class="matrix-btn" :disabled="!selectedVersion || currentExcelIds.length === 0">同步+授权</button>
+          <button @click="batchOperation('random')" class="matrix-btn" :disabled="!selectedVersion || currentExcelIds.length === 0">随机配置</button>
+          <button @click="batchOperation('clearAll')" class="matrix-btn" :disabled="!selectedVersion || currentExcelIds.length === 0">清空所有</button>
         </div>
       </div>
       
       <!-- 推送按钮 -->
       <div class="valve-row push-action">
+        <button 
+          @click="savePermissionData" 
+          class="save-btn" 
+          :disabled="!hasUnsavedChanges || !selectedVersion"
+        >
+          保存配置
+        </button>
+        
         <button 
           class="action-button push-button"
           :disabled="!selectedTargetMode || !selectedVersion || isPushing || currentExcelIds.length === 0"
@@ -159,7 +257,7 @@
 </template>
 
 <script setup>
-import { ref, watch } from 'vue'
+import { ref, watch, computed } from 'vue'
 import * as IdSvc from './Data/services/id.js'
 import { useCardStore } from './Data/store.js'
 
@@ -200,6 +298,15 @@ const fineGrainedPermissions = ref({})
 
 // 存储异步获取的ExcelID列表
 const currentExcelIds = ref([])
+
+// 简单的左右交替排列
+const leftColumnIds = computed(() => {
+  return currentExcelIds.value.filter((_, index) => index % 2 === 0)
+})
+
+const rightColumnIds = computed(() => {
+  return currentExcelIds.value.filter((_, index) => index % 2 === 1)
+})
 
 // 通过store统一获取ExcelID列表 - 符合全局架构一致性
 const loadCurrentExcelIds = async () => {
@@ -340,22 +447,20 @@ const loadPermissionData = () => {
 const loadPermissionDataCore = () => {
   
   try {
-    // 构建权限配置的存储Key
-    const permissionKey = `permission:${selectedTargetMode.value}:${selectedVersion.value}`
-    const savedPermissions = localStorage.getItem(permissionKey)
+    // 使用store统一接口加载权限配置
+    const savedPermissions = cardStore.loadPermissionConfig(selectedTargetMode.value, selectedVersion.value)
     
-    if (savedPermissions) {
-      const parsed = JSON.parse(savedPermissions)
-      console.log('[权限加载] 加载已保存的权限配置:', parsed)
+    if (Object.keys(savedPermissions).length > 0) {
+      console.log('[权限加载] 加载已保存的权限配置:', savedPermissions)
       
       // 合并加载的配置和当前ExcelID列表
       const currentIds = currentExcelIds.value
       const newPermissions = {}
       
       currentIds.forEach(excelId => {
-        if (parsed[excelId]) {
+        if (savedPermissions[excelId]) {
           // 使用已保存的配置
-          newPermissions[excelId] = parsed[excelId]
+          newPermissions[excelId] = savedPermissions[excelId]
         } else {
           // 新的ExcelID，使用默认配置
           newPermissions[excelId] = {
@@ -389,15 +494,25 @@ const savePermissionData = () => {
   }
   
   try {
-    const permissionKey = `permission:${selectedTargetMode.value}:${selectedVersion.value}`
-    const dataToSave = JSON.stringify(fineGrainedPermissions.value, null, 2)
+    // 使用store统一接口保存权限配置
+    const success = cardStore.savePermissionConfig(
+      selectedTargetMode.value, 
+      selectedVersion.value, 
+      fineGrainedPermissions.value,
+      {
+        pushedBy: IdSvc.ROOT_ADMIN_MODE_ID,
+        configuredExcelIds: currentExcelIds.value.length,
+        configuredAt: new Date().toISOString()
+      }
+    )
     
-    localStorage.setItem(permissionKey, dataToSave)
-    hasUnsavedChanges.value = false
-    
-    console.log('[权限保存] 成功保存到:', permissionKey)
-    console.log('[权限保存] 数据:', fineGrainedPermissions.value)
-    alert('权限配置已保存')
+    if (success) {
+      hasUnsavedChanges.value = false
+      console.log('[权限保存] 成功保存权限配置')
+      alert('权限配置已保存')
+    } else {
+      throw new Error('保存失败')
+    }
   } catch (error) {
     console.error('[权限保存] 保存失败:', error)
     alert('保存失败: ' + error.message)
@@ -652,59 +767,90 @@ ${uniqueExcelIds.length === 0 ? '1. 检查数据是否正确保存\n2. 确认版
   }
 }
 
-// 同步变化处理 (智能关联：勾选授权时自动勾选同步)
+// 同步变化处理（完全独立，无关联）
+// eslint-disable-next-line no-unused-vars
 const onSyncChange = (excelId, field, checked) => {
-  if (!checked) {
-    // 取消同步时，自动取消授权
-    fineGrainedPermissions.value[excelId][field].auth = false
-  }
+  // 同步变化不影响授权状态
   hasUnsavedChanges.value = true
 }
 
-// 授权变化处理 (智能关联：勾选授权时自动勾选同步)
+// 授权变化处理（完全独立，无关联）
+// eslint-disable-next-line no-unused-vars
 const onAuthChange = (excelId, field, checked) => {
-  if (checked) {
-    // 勾选授权时，自动勾选同步
-    fineGrainedPermissions.value[excelId][field].sync = true
-  }
+  // 授权变化不影响同步状态
   hasUnsavedChanges.value = true
 }
 
-// 批量操作
+// 批量操作（同步和授权完全独立）
 const batchOperation = (action) => {
+  console.log(`[批量操作] 执行操作: ${action}`)
   const excelIds = currentExcelIds.value
   const fields = fieldTypes
   
+  if (excelIds.length === 0) {
+    console.warn('[批量操作] 没有可操作的ExcelID')
+    return
+  }
+  
+  console.log(`[批量操作] 将对 ${excelIds.length} 个ExcelID 的 ${fields.length} 个字段执行操作`)
+  
   excelIds.forEach(excelId => {
+    if (!fineGrainedPermissions.value[excelId]) {
+      console.warn(`[批量操作] ExcelID ${excelId} 的权限数据未初始化，跳过`)
+      return
+    }
+    
     fields.forEach(field => {
+      if (!fineGrainedPermissions.value[excelId][field]) {
+        console.warn(`[批量操作] ExcelID ${excelId} 的字段 ${field} 未初始化，跳过`)
+        return
+      }
+      
       switch (action) {
         case 'allSync':
+          // 全部同步：只操作同步，不影响授权
           fineGrainedPermissions.value[excelId][field].sync = true
           break
+          
         case 'allAuth':
+          // 全部授权：只操作授权，不影响同步
           fineGrainedPermissions.value[excelId][field].auth = true
-          // 授权时自动同步
-          fineGrainedPermissions.value[excelId][field].sync = true
           break
+          
         case 'clearAll':
+          // 清空所有：清空同步和授权
           fineGrainedPermissions.value[excelId][field].sync = false
           fineGrainedPermissions.value[excelId][field].auth = false
           break
+          
         case 'syncToAuth':
+          // 同步→授权：将已勾选同步的项目设置为授权
           if (fineGrainedPermissions.value[excelId][field].sync) {
             fineGrainedPermissions.value[excelId][field].auth = true
           }
           break
+          
+        case 'syncPlusAuth':
+          // 同步+授权：同时全选同步和授权
+          fineGrainedPermissions.value[excelId][field].sync = true
+          fineGrainedPermissions.value[excelId][field].auth = true
+          break
+          
         case 'random': {
-          const shouldSync = Math.random() > 0.5
-          fineGrainedPermissions.value[excelId][field].sync = shouldSync
-          fineGrainedPermissions.value[excelId][field].auth = shouldSync ? Math.random() > 0.3 : false
+          // 随机配置：独立随机设置同步和授权
+          fineGrainedPermissions.value[excelId][field].sync = Math.random() > 0.5
+          fineGrainedPermissions.value[excelId][field].auth = Math.random() > 0.5
           break
         }
+        
+        default:
+          console.warn(`[批量操作] 未知操作类型: ${action}`)
+          return
       }
     })
   })
   
+  console.log(`[批量操作] 操作 ${action} 完成`)
   hasUnsavedChanges.value = true
 }
 
@@ -866,18 +1012,11 @@ const tamperDataWithPermissions = (originalData, excelId) => {
   }
 }
 
-// 执行推送 - 支持环境快照模式
+// 执行推送 - 确保目标模式ID下最多只有一条全量区内容
 const executePush = async () => {
   if (!selectedTargetMode.value || !selectedVersion.value) {
     alert('请选择目标模式和版本')
     return
-  }
-  
-  if (hasUnsavedChanges.value) {
-    const shouldSave = confirm('您有未保存的权限配置，是否先保存？')
-    if (shouldSave) {
-      savePermissionData()
-    }
   }
   
   isPushing.value = true
@@ -886,12 +1025,38 @@ const executePush = async () => {
     console.log(`[推送] 开始精细化推送: ${selectedVersion.value} -> ${selectedTargetMode.value}`)
     console.log(`[推送] 使用权限配置:`, fineGrainedPermissions.value)
     
-    // 1. 清理目标模式旧数据
-    const deletedCount = IdSvc.batchKeyOperation('delete', {
-      modeId: selectedTargetMode.value,
-      type: 'envFull'
-    })
-    console.log(`[推送] 清理旧数据: ${deletedCount} 条`)
+    // 1. 检查目标模式类型，主模式不受唯一性限制
+    const isTargetRootAdmin = selectedTargetMode.value === IdSvc.ROOT_ADMIN_MODE_ID
+    console.log(`[推送] 目标模式: ${selectedTargetMode.value}, 是否为主模式: ${isTargetRootAdmin}`)
+    
+    let deletedCount = 0
+    
+    if (isTargetRootAdmin) {
+      // 主模式：无限制，允许多条全量区内容
+      console.log(`[推送] 目标为主模式 ${selectedTargetMode.value}，跳过唯一性控制`)
+      console.log(`[推送] 主模式允许任意数量的全量区内容，版本间独立存储`)
+    } else {
+      // 其他模式：严格唯一性控制
+      console.log(`[推送] 目标为其他模式 ${selectedTargetMode.value}，执行唯一性控制`)
+      
+      const existingKeys = IdSvc.batchKeyOperation('export', {
+        modeId: selectedTargetMode.value,
+        type: 'envFull'
+      })
+      
+      console.log(`[推送] 其他模式下现有全量区内容: ${existingKeys.length} 条`)
+      
+      if (existingKeys.length > 1) {
+        console.warn(`[推送] ⚠️ 发现异常：其他模式下有 ${existingKeys.length} 条全量区内容，违反唯一性规则！`)
+      }
+      
+      // 清理其他模式下的所有全量区内容（确保唯一性）
+      deletedCount = IdSvc.batchKeyOperation('delete', {
+        modeId: selectedTargetMode.value,
+        type: 'envFull'
+      })
+      console.log(`[推送] 清理其他模式下所有全量区内容: ${deletedCount} 条`)
+    }
     
     // 2. 获取源数据（环境快照）
     const sourceKeys = IdSvc.batchKeyOperation('export', {
@@ -906,27 +1071,33 @@ const executePush = async () => {
       throw new Error('没有可推送的数据')
     }
     
-    // 3. 处理环境快照数据并推送
+    if (sourceKeys.length > 1) {
+      console.warn(`[推送] ⚠️ 源数据异常：发现 ${sourceKeys.length} 条全量区数据`)
+    }
+    
+    // 3. 处理环境快照数据并推送（只推送一条）
     let copiedCount = 0
     let tamperReports = []
     
-    sourceKeys.forEach(({ key, fields, data }) => {
+    // 只处理第一条数据，确保目标模式下只有一条全量区内容
+    const sourceData = sourceKeys[0]
+    if (sourceData) {
       try {
-        console.log(`[推送] 处理环境快照: ${key}`)
+        console.log(`[推送] 处理唯一环境快照: ${sourceData.key}`)
         
         // 数据篡改 (根据精细化权限配置)
-        const { modifiedData, tamperReport } = tamperDataWithPermissions(data, fields.excelId)
+        const { modifiedData, tamperReport } = tamperDataWithPermissions(sourceData.data, sourceData.fields.excelId)
         
-        // 构建目标Key
+        // 构建目标Key（使用相同版本确保一致性）
         const targetKey = IdSvc.buildKey({
-          prefix: fields.prefix,
+          prefix: sourceData.fields.prefix,
           modeId: selectedTargetMode.value,
-          version: fields.version,
-          type: fields.type,
-          excelId: fields.excelId
+          version: sourceData.fields.version, // 保持源版本一致性
+          type: sourceData.fields.type,
+          excelId: sourceData.fields.excelId
         })
         
-        // 存储到目标位置
+        // 存储到目标位置（现在目标模式下确保只有这一条）
         localStorage.setItem(targetKey, modifiedData)
         copiedCount++
         
@@ -934,24 +1105,82 @@ const executePush = async () => {
           tamperReports.push(`环境快照: ${tamperReport.join(', ')}`)
         }
         
-        console.log(`[推送] 处理完成: ${key} -> ${targetKey}`)
+        console.log(`[推送] 唯一全量区内容推送完成: ${sourceData.key} -> ${targetKey}`)
+        console.log(`[推送] 目标模式 ${selectedTargetMode.value} 现在有且仅有 1 条全量区内容`)
         console.log(`[推送] 篡改报告:`, tamperReport)
       } catch (error) {
-        console.error(`[推送] 处理失败:`, key, error)
+        console.error(`[推送] 处理失败:`, sourceData.key, error)
       }
+    }
+    
+    // 4. 推送权限配置信息（使用store统一接口）
+    const permissionSaveSuccess = cardStore.savePermissionConfig(
+      selectedTargetMode.value,
+      selectedVersion.value,
+      fineGrainedPermissions.value,
+      {
+        pushedBy: IdSvc.ROOT_ADMIN_MODE_ID,
+        pushedAt: new Date().toISOString(),
+        sourceVersion: selectedVersion.value,
+        copiedCount: copiedCount,
+        uniquenessRule: '目标模式下最多只能有一条全量区内容'
+      }
+    )
+    
+    if (permissionSaveSuccess) {
+      console.log(`[推送] 权限配置已推送`)
+    } else {
+      console.warn(`[推送] 权限配置推送失败`)
+    }
+    
+    // 5. 最终验证：根据模式类型进行相应验证
+    const finalCheck = IdSvc.batchKeyOperation('export', {
+      modeId: selectedTargetMode.value,
+      type: 'envFull'
     })
     
-    // 4. 构建推送报告
+    let uniquenessValidation = {}
+    
+    if (isTargetRootAdmin) {
+      // 主模式：无需验证唯一性，允许多条
+      console.log(`[推送] ✅ 主模式验证：${selectedTargetMode.value} 下有 ${finalCheck.length} 条全量区内容（无限制）`)
+      uniquenessValidation = {
+        finalCount: finalCheck.length,
+        isValid: true,
+        rule: '主模式无唯一性限制，允许任意数量全量区内容'
+      }
+    } else {
+      // 其他模式：验证唯一性
+      if (finalCheck.length === 1) {
+        console.log(`[推送] ✅ 其他模式验证通过：${selectedTargetMode.value} 下有且仅有 1 条全量区内容`)
+        uniquenessValidation = {
+          finalCount: finalCheck.length,
+          isValid: true,
+          rule: '其他模式下最多只能有一条全量区内容'
+        }
+      } else {
+        console.error(`[推送] ❌ 其他模式验证失败：下有 ${finalCheck.length} 条全量区内容，违反唯一性规则！`)
+        uniquenessValidation = {
+          finalCount: finalCheck.length,
+          isValid: false,
+          rule: '其他模式下最多只能有一条全量区内容'
+        }
+      }
+    }
+    
+    // 6. 构建推送报告
     const report = {
       targetMode: selectedTargetMode.value,
       version: selectedVersion.value,
       copiedCount,
       tamperReports,
       permissionSummary: generatePermissionSummary(),
-      timestamp: new Date().toISOString()
+      permissionConfig: fineGrainedPermissions.value,
+      timestamp: new Date().toISOString(),
+      uniquenessValidation
     }
     
-    // 5. 成功回调
+    // 7. 成功回调
     emit('push-success', report)
     
     // 显示成功信息
@@ -960,8 +1189,12 @@ const executePush = async () => {
       : '\n无数据篡改'
     
     const excelIdCount = currentExcelIds.value.length
+    const permissionCount = Object.keys(fineGrainedPermissions.value).length
+    const uniquenessStatus = uniquenessValidation.isValid ? 
+      `✅ 唯一性检查通过 (${isTargetRootAdmin ? '主模式无限制' : '其他模式唯一性'})` : 
+      `❌ 唯一性检查失败(${finalCheck.length}条)`
     
-    alert(`推送成功！\n目标: ${selectedTargetMode.value}\n版本: ${selectedVersion.value}\n条目: ${copiedCount}\nExcelID: ${excelIdCount} 个${tamperSummary}`)
+    alert(`推送成功！\n目标: ${selectedTargetMode.value}\n版本: ${selectedVersion.value}\n条目: ${copiedCount}\nExcelID: ${excelIdCount} 个\n权限配置: ${permissionCount} 个ExcelID${tamperSummary}\n${uniquenessStatus}`)
     
   } catch (error) {
     console.error('[推送] 失败:', error)
@@ -1136,6 +1369,7 @@ const generatePermissionSummary = () => {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  margin-bottom: 10px;
 }
 
 .fixed-field {
@@ -1147,7 +1381,20 @@ const generatePermissionSummary = () => {
   color: #2e7d32;
 }
 
-/* 权限矩阵样式 - 弹性显示增强版 */
+.logic-explanation {
+  background-color: #f8f9fa;
+  border: 1px solid #dee2e6;
+  border-radius: 4px;
+  padding: 8px 12px;
+  margin-top: 10px;
+}
+
+.logic-explanation small {
+  color: #6c757d;
+  line-height: 1.4;
+}
+
+/* 权限矩阵样式 - 双列表格布局 */
 .permission-matrix {
   border: 1px solid #eee;
   border-radius: 6px;
@@ -1174,10 +1421,26 @@ const generatePermissionSummary = () => {
 
 .matrix-container {
   width: 100%;
-  overflow-x: auto;
-  overflow-y: visible;
+  margin-bottom: 15px;
 }
 
+/* 双列布局 */
+.matrix-columns {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.matrix-column {
+  flex: 1;
+  min-width: 400px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  overflow: hidden;
+  background-color: white;
+}
+
+/* 表头样式 */
 .matrix-header {
   display: flex;
   border-bottom: 2px solid #333;
@@ -1226,12 +1489,12 @@ const generatePermissionSummary = () => {
   font-weight: bold;
 }
 
+/* 矩阵内容样式 */
 .matrix-content {
   max-height: 500px;
   overflow-y: auto;
   overflow-x: visible;
   width: 100%;
-  border: 1px solid #eee;
   border-top: none;
 }
 
@@ -1325,6 +1588,48 @@ const generatePermissionSummary = () => {
 
 .matrix-checkbox.auth input[type="checkbox"]:checked {
   accent-color: #ff9800;
+}
+
+/* 空状态和占位符 */
+.matrix-empty, .matrix-placeholder {
+  text-align: center;
+  padding: 40px 20px;
+  color: #666;
+  background-color: #f8f9fa;
+  border-radius: 6px;
+  border: 1px dashed #ddd;
+}
+
+.matrix-empty p, .matrix-placeholder p {
+  margin: 0;
+  font-size: 14px;
+}
+
+/* 响应式调整 */
+@media (max-width: 1000px) {
+  .matrix-columns {
+    flex-direction: column;
+  }
+  
+  .matrix-column {
+    min-width: 100%;
+  }
+}
+
+@media (max-width: 600px) {
+  .matrix-column {
+    min-width: 100%;
+  }
+  
+  .field-header, .field-cell {
+    min-width: 100px;
+    width: 100px;
+  }
+  
+  .excel-id-header, .excel-id-cell {
+    min-width: 80px;
+    width: 80px;
+  }
 }
 
 .matrix-actions {
