@@ -1,6 +1,6 @@
 <template>
   <div :class="['universal-card', className]" :style="style">
-    <!-- 标题 -->
+    <!-- 标题：使用 v-model 绑定本地副本 -->
     <div v-if="!isTitleEditing" class="card-title">{{ modelValue }}</div>
     <input
       v-else
@@ -24,46 +24,41 @@
           :key="option.id"
           :class="['option', isOptionsEditing ? 'editing' : 'view']"
         >
-          <!-- 复选框：卡片级(原key) vs 选项级(独立key) -->
           <input
-            v-if="editableFields.optionCheckbox || option.itemCheckbox"
+            v-if="editableFields.optionCheckbox"
             type="checkbox"
             v-model="option.checked"
             @change="updateOption(option.id, { checked: option.checked })"
           />
 
-          <!-- 选项名称：卡片级(原key) vs 选项级(独立key) -->
           <input
-            v-if="(editableFields.optionActions && editableFields.optionName) || option.itemName"
+            v-if="isEdit(option.id, 'name')"
             type="text"
             v-model="option.name"
             @input="updateOption(option.id, { name: option.name })"
             class="option-name-input"
           />
-          <span v-else class="option-name">{{ option.name || "未命名" }}</span>
+          <span v-else-if="!isEdit(option.id, 'name')" class="option-name">{{ option.name || "未命名" }}</span>
 
-          <!-- 选项值：卡片级(原key) vs 选项级(独立key) -->
           <input
-            v-if="(editableFields.optionActions && editableFields.optionValue) || option.itemValue"
+            v-if="isEdit(option.id, 'value')"
             type="text"
             v-model="option.value"
             @input="updateOption(option.id, { value: option.value || null })"
             class="option-value-input"
           />
-          <span v-else class="option-value">{{ option.value ?? "-" }}</span>
+          <span v-else-if="!isEdit(option.id, 'value')" class="option-value">{{ option.value ?? "-" }}</span>
 
-          <!-- 选项单位：卡片级(原key) vs 选项级(独立key) -->
           <input
-            v-if="(editableFields.optionActions && editableFields.optionUnit) || option.itemUnit"
+            v-if="isEdit(option.id, 'unit')"
             type="text"
             v-model="option.unit"
             @input="updateOption(option.id, { unit: option.unit || null })"
             class="option-unit-input"
           />
-          <span v-else class="option-unit">{{ option.unit ?? "-" }}</span>
+          <span v-else-if="!isEdit(option.id, 'unit')" class="option-unit">{{ option.unit ?? "-" }}</span>
 
-          <!-- 操作按钮：卡片级(原key) vs 选项级(独立key) -->
-          <div v-if="editableFields.optionActions || option.itemActions" class="option-actions">
+          <div v-if="editableFields.optionActions" class="option-actions">
             <button @click="onAddOption(option.id)" class="action-button add">
               +
             </button>
@@ -78,7 +73,6 @@
         </div>
       </div>
 
-      <!-- 下拉菜单（完全保留原有逻辑） -->
       <div class="searchable-select" ref="selectContainerRef">
         <div class="select-input-container">
           <input
@@ -160,8 +154,9 @@ import {
   defineEmits
 } from "vue";
 
-// 定义 props（卡片级保留原key，选项级新增独立不重名key）
+// 定义 props
 const props = defineProps({
+  // 原有：className 和 style
   className: {
     type: String,
     default: ''
@@ -170,15 +165,14 @@ const props = defineProps({
     type: Object,
     default: () => ({})
   },
+  // 原有受控数据 props（保持不变）
   modelValue: {
     type: String,
     required: true,
   },
-  // 选项数据中包含选项级独立key（itemCheckbox/itemName等）
   options: {
     type: Array,
     required: true,
-    // 选项级key示例：{ id: '1', itemCheckbox: true, itemName: false, ... }
   },
   selectedValue: {
     type: String,
@@ -204,19 +198,22 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
-  // 卡片级保留原key（optionCheckbox/optionName等）
+
+  // 可见性类能力（保留）：不再用于 name/value/unit 的编辑态控制
   editableFields: {
     type: Object,
     default: () => ({
       title: true,
-      optionName: true,
-      optionValue: true,
-      optionUnit: true,
+      optionName: true,   // 兼容保留，但不再用于编辑态判断
+      optionValue: true,  // 兼容保留，但不再用于编辑态判断
+      optionUnit: true,   // 兼容保留，但不再用于编辑态判断
       optionCheckbox: true,
       select: true,
       optionActions: true,
     }),
   },
+
+  // 回调（保持不变）
   onAddOption: {
     type: Function,
     required: true,
@@ -241,28 +238,47 @@ const props = defineProps({
     type: Function,
     default: () => {},
   },
+
+  // 新增：声明式受控编辑态（父组件提供；稀疏映射）
+  // 形如：{ [optionId]: { name?: boolean, value?: boolean, unit?: boolean } }
+  editState: {
+    type: Object,
+    default: () => ({})
+  },
+  // 新增：字段级默认回退（父组件提供；不提供则默认 false）
+  // 形如：{ name?: boolean, value?: boolean, unit?: boolean }
+  editDefaults: {
+    type: Object,
+    default: () => ({})
+  },
+
+  // 兼容保留（已废弃）：命令式指令，不再在子组件内落地为状态
+  writeField: {
+    type: Object,
+    default: () => ({})
+  }
 });
 
-// 定义 emits（完全保留）
+// emits（保持不变）
 const emits = defineEmits([
   "update:modelValue",
   "update:options",
   "update:selectedValue",
 ]);
 
-// 数据状态（完全保留）
+// 本地镜像（受控数据）
 const localModelValue = ref(props.modelValue);
 const localOptions = ref([...props.options]);
 const localSelectedValue = ref(props.selectedValue);
 const titleInputRef = ref(null);
 
-// 下拉菜单相关（完全保留老版本逻辑）
+// 下拉定位 refs
 const selectContainerRef = ref(null);
 const selectInputRef = ref(null);
 const dropdownRef = ref(null);
 const dropdownInlineStyle = ref({});
 
-// 计算属性（完全保留）
+// 计算属性
 const filteredOptions = computed(() => {
   return props.selectOptions.filter((option) =>
     option.label
@@ -287,29 +303,16 @@ const canDelete = computed(() => {
   );
 });
 
-// 监听 props 变化（完全保留）
-watch(
-  () => props.modelValue,
-  (newValue) => {
-    localModelValue.value = newValue;
-  }
-);
+// 纯受控编辑态：由 editState + editDefaults 决定
+const isEdit = (id, f) => {
+  const st = props.editState?.[id]?.[f];
+  if (typeof st === 'boolean') return st;
+  const def = props.editDefaults?.[f];
+  if (typeof def === 'boolean') return def;
+  return false; // 安全缺省：只读
+};
 
-watch(
-  () => props.options,
-  (newOptions) => {
-    localOptions.value = [...newOptions];
-  }
-);
-
-watch(
-  () => props.selectedValue,
-  (newValue) => {
-    localSelectedValue.value = newValue;
-  }
-);
-
-// 方法（完全保留）
+// 方法
 const updateTitle = (newTitle) => {
   localModelValue.value = newTitle;
   emits("update:modelValue", newTitle);
@@ -352,14 +355,14 @@ const deleteSelectedOption = () => {
   }
 };
 
-// 下拉菜单定位（保留老版本）
+// 下拉定位
 const updateDropdownPosition = () => {
   if (!selectContainerRef.value || !selectInputRef.value || !dropdownRef.value) return;
-  
+
   const containerRect = selectContainerRef.value.getBoundingClientRect();
   const inputRect = selectInputRef.value.getBoundingClientRect();
   const left = inputRect.left - containerRect.left;
-  
+
   dropdownInlineStyle.value = {
     left: `${left}px`,
     right: 'auto',
@@ -380,14 +383,14 @@ const handleResize = () => {
   if (props.showDropdown) updateDropdownPosition();
 };
 
-// 生命周期（完全保留）
+// 生命周期
 onMounted(() => {
   if (props.isTitleEditing && titleInputRef.value) {
     titleInputRef.value.focus();
   }
-  
+
   window.addEventListener('resize', handleResize);
-  
+
   if (props.showDropdown) {
     nextTick(() => updateDropdownPosition());
   }
@@ -396,10 +399,47 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.removeEventListener('resize', handleResize);
 });
+
+// 同步 props → 本地镜像
+watch(
+  () => props.modelValue,
+  (newValue) => {
+    localModelValue.value = newValue;
+  }
+);
+
+watch(
+  () => props.options,
+  (newOptions) => {
+    localOptions.value = [...newOptions];
+  }
+);
+
+watch(
+  () => props.selectedValue,
+  (newValue) => {
+    localSelectedValue.value = newValue;
+  }
+);
+
+// 兼容提示：writeField 已废弃，子组件不再处理（避免破坏单向流）
+watch(
+  () => props.writeField,
+  (wf) => {
+    if (wf && (wf.type || wf.field)) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        '[UniversalCard] writeField 已废弃，请在父组件维护 editState/editDefaults 并下发；当前传入的 writeField 将被忽略：',
+        wf
+      );
+    }
+  },
+  { deep: true, immediate: true }
+);
 </script>
 
 <style scoped>
-/* 完全保留老版本所有样式 */
+/* 样式保持不变 */
 *, *::before, *::after {
   margin: 0;
   padding: 0;
@@ -554,7 +594,7 @@ onBeforeUnmount(() => {
   overflow-x: auto;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: nowrap.
 }
 
 .option-name-input {
@@ -751,4 +791,3 @@ onBeforeUnmount(() => {
   height: 20px;
 }
 </style>
-    
