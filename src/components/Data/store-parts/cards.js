@@ -1,14 +1,11 @@
 // src/components/Data/store-parts/cards.js
 // 会话卡片/临时卡片/选项/下拉/编辑态/导入导出等
-// 合并版本：保留原A.js拆分版本和B.js拆分版本的所有功能
 
-import { normalizeDataStructure } from './normalize';
-// 导入新的ID生成服务
-import { generateNextCardId } from '../services/id.js';
+import { normalizeDataStructure } from './normalize'
+import { generateNextCardId, ROOT_ADMIN_MODE_ID } from '../services/id.js'
 
 // 从store中获取下一个可用的卡片ID（仅使用新方法）
 function nextCardIdFromStore(store) {
-  // 提取当前所有已使用的卡片ID（包括会话卡片、临时卡片和中期存储卡片）
   const used = new Set(
     [
       ...(store.sessionCards || []),
@@ -17,11 +14,11 @@ function nextCardIdFromStore(store) {
     ]
       .map(c => (c.id || '').toString().toUpperCase())
       .filter(Boolean)
-  );
-  return generateNextCardId(used);
+  )
+  return generateNextCardId(used)
 }
 
-// ================ 新增内容（来自新拆分版本） ================
+// ================ 数据模板 ================
 export const CARD_DATA_TEMPLATE = {
   title: null,
   options: [{ name: null, value: null, unit: null }],
@@ -35,7 +32,7 @@ export const CARD_DATA_TEMPLATE = {
     },
     selectOptions: { hasSync: true, isAuthorized: false }
   }
-};
+}
 
 export function normalizeCardForStorage(card) {
   return normalizeDataStructure(card, {
@@ -50,25 +47,23 @@ export function normalizeCardForStorage(card) {
     syncStatus: CARD_DATA_TEMPLATE.syncStatus,
     data: CARD_DATA_TEMPLATE,
     editableFields: {}
-  });
+  })
 }
 
-// ================ 原有内容（来自上个版本） ================
+// ================ 工具函数 ================
 
-// 工具：把某卡片的选项 id 强制重排为 1..N（字符串）
+// 把某卡片的选项 id 强制重排为 1..N（字符串）
 function renumberOptions1toN(card) {
   const opts = Array.isArray(card?.data?.options) ? card.data.options : []
   opts.forEach((o, i) => { o.id = String(i + 1) })
 }
 
-// 工具：按 1..N 重建某卡在 environmentConfigs.options 下的 A1/A2… 映射
+// 按 1..N 重建 environmentConfigs.options 下的 A1/A2… 映射
 function rebuildEnvOptionsForCard(store, cardId, card) {
   const cid = String(cardId)
-  // 先清空该卡原有的 A* 项
   Object.keys(store.environmentConfigs.options || {}).forEach(fullId => {
     if (fullId.startsWith(cid)) delete store.environmentConfigs.options[fullId]
   })
-  // 再按 1..N 写入
   const opts = Array.isArray(card?.data?.options) ? card.data.options : []
   opts.forEach((o, i) => {
     const fullId = `${cid}${i + 1}`
@@ -80,6 +75,7 @@ function rebuildEnvOptionsForCard(store, cardId, card) {
   })
 }
 
+// ================ 会话卡片加载/规范化 ================
 export function loadSessionCards(store, modeId) {
   const rawCards = store.sessionStorageEnhancer.load(modeId, 'cards') || []
   store.sessionCards = rawCards.map(card => normalizeCardStructure(store, card))
@@ -88,7 +84,6 @@ export function loadSessionCards(store, modeId) {
 export function normalizeCardStructure(store, card) {
   const normalizeOptions = (options) => {
     const list = Array.isArray(options) ? options : []
-    // 强制：忽略外部传入的 id，按位置编号为 1..N（字符串）
     return list.map((opt, idx) => ({ ...opt, id: String(idx + 1) }))
   }
   const normalizeSelectOptions = (options) => {
@@ -100,10 +95,9 @@ export function normalizeCardStructure(store, card) {
     })
   }
 
-  // 完全使用新的ID生成方式，不依赖旧方法
   let cardId = card.id
   if (!cardId || !store.rootMode.dataStandards.cardIdPattern.test(cardId)) {
-    cardId = nextCardIdFromStore(store);
+    cardId = nextCardIdFromStore(store)
   }
 
   return {
@@ -161,12 +155,11 @@ export function normalizeCardStructure(store, card) {
   }
 }
 
+// ================ 增删改卡片/选项 ================
 export function addCard(store, cardData) {
-  // 完全移除旧的ID生成方法，只使用新服务
   let newCardId = null
   const requestedId = cardData?.id
 
-  // 检查请求的ID是否有效且未被使用
   if (requestedId && store.isValidCardId(requestedId)) {
     const usedIds = new Set(
       [
@@ -176,17 +169,14 @@ export function addCard(store, cardData) {
       ]
         .map(c => c.id)
         .filter(Boolean)
-    );
-    
+    )
     if (!usedIds.has(requestedId)) {
       newCardId = requestedId
     } else {
-      // 请求的ID已被使用，生成新的ID
-      newCardId = nextCardIdFromStore(store);
+      newCardId = nextCardIdFromStore(store)
     }
   } else {
-    // 生成新的卡片ID
-    newCardId = nextCardIdFromStore(store);
+    newCardId = nextCardIdFromStore(store)
   }
 
   const normalized = normalizeCardStructure(store, {
@@ -203,7 +193,6 @@ export function addCard(store, cardData) {
     dropdown: (normalized.data.selectOptions || []).map(opt => opt?.label ?? null)
   }
 
-  // 关键：用 1..N 重建 A1/A2… 映射
   rebuildEnvOptionsForCard(store, newCardId, normalized)
 
   store.selectedCardId = newCardId
@@ -284,11 +273,8 @@ export function updateCardTitle(store, cardId, newTitle) {
 
 export function updateCardOptions(store, cardId, updatedOptions) {
   const assignTo = (card) => {
-    // 强制重排为 1..N
     const safe = (Array.isArray(updatedOptions) ? updatedOptions : []).map((o, i) => ({ ...o, id: String(i + 1) }))
     card.data.options = safe
-
-    // 统一重建环境映射（清 A* -> 写入 1..N）
     rebuildEnvOptionsForCard(store, cardId, card)
     store.notifyEnvConfigChanged()
     return card
@@ -307,7 +293,7 @@ export function addOption(store, cardId, afterId) {
   }
 
   const newOption = {
-    id: '0', // 占位，稍后重排为 1..N
+    id: '0',
     name: null, value: null, unit: null,
     checked: false,
     localName: null, localValue: null, localUnit: null
@@ -323,8 +309,6 @@ export function addOption(store, cardId, afterId) {
       options.push(newOption)
     }
     card.data.options = options
-
-    // 插入后重排 1..N，并重建 A1/A2…
     renumberOptions1toN(card)
     rebuildEnvOptionsForCard(store, cardId, card)
     store.notifyEnvConfigChanged()
@@ -413,6 +397,7 @@ export function generateNextSelectOptionId(store, cardId) {
   return String((maxSelectId || 0) + 1)
 }
 
+// ================ 编辑态开关（保持与旧交互一致，但仅作“可见性/模式”层） ================
 export function toggleSelectEditing(store, cardId) {
   const temp = store.tempCards.find(c => c.id === cardId)
   if (temp) { if (temp.isPresetEditing) return; temp.isSelectEditing = !temp.isSelectEditing; return }
@@ -428,7 +413,7 @@ export function toggleTitleEditingForRoot(store, cardId) {
   const sIdx = store.sessionCards.findIndex(c => c.id === cardId)
   if (sIdx !== -1) {
     const card = store.sessionCards[sIdx]
-    if (store.currentModeId === 'root_admin' || card.syncStatus.title.isAuthorized) {
+    if (store.currentModeId === ROOT_ADMIN_MODE_ID || card.syncStatus.title.isAuthorized) {
       card.isTitleEditing = !card.isTitleEditing
     }
   }
@@ -441,7 +426,7 @@ export function toggleOptionsEditing(store, cardId) {
   if (card) {
     if (card.isPresetEditing) return
     let canEdit = false
-    if (store.currentModeId === 'root_admin') canEdit = true
+    if (store.currentModeId === ROOT_ADMIN_MODE_ID) canEdit = true
     else {
       canEdit =
         card.syncStatus.options.name.isAuthorized ||
@@ -496,6 +481,10 @@ export function toggleEditableField(store, cardId, field) {
   }
 }
 
+// 注意：删去“选项级别 UI 细化控制”，改由父层通过 editState/editDefaults 下发（UniversalCard 受控）
+// toggleOptionFieldEditable / toggleOptionActionsVisible 已删除
+
+// ================ 持久化/中期存储/导入导出 ================
 export function saveSessionCards(store, modeId) {
   if (!store.dataManager || !store.dataManager.validator) {
     console.error('数据管理器未正确初始化')
@@ -520,8 +509,8 @@ export function loadAllMediumCards(store) {
 }
 
 export function saveToMedium(store) {
-  const currentMode = store.currentMode
-  if (!currentMode) return []
+  const currentModeId = store.currentModeId
+  if (!currentModeId) return []
 
   const validation = store.dataManager.validator.validateConfig(store.sessionCards)
   if (!validation.pass) {
@@ -532,12 +521,12 @@ export function saveToMedium(store) {
 
   const mediumData = validation.validCards.map(card => ({
     ...card,
-    modeId: currentMode.id,
+    modeId: currentModeId, // 使用当前模式ID，避免取不到 rootMode.id
     storedAt: new Date().toISOString()
   }))
 
   store.mediumCards = [
-    ...store.mediumCards.filter(c => !(c.modeId === currentMode.id && mediumData.some(m => m.id === c.id))),
+    ...store.mediumCards.filter(c => !(c.modeId === currentModeId && mediumData.some(m => m.id === c.id))),
     ...mediumData
   ]
 
@@ -720,16 +709,14 @@ function _buildOptionsIndexFromCards(cards) {
 }
 
 // 保存当前操作台为“全量库的一个版本”
-// 若该版本已存在，则被覆盖（这正是“唯一指向性”：版本内 A1/A2… 唯一）
 export function saveFullVersionFromSession(store, version) {
   const v = String(version || '').trim()
   if (!v) { store.error = '版本号不能为空'; return false }
 
-  // 1) 取当前操作台的卡片，确保编号规范（我们前面的逻辑已保证）
-  // 若你不放心，可再排序一次
+  // 1) 排序卡片（A/B/C…）
   store.sessionCards.sort((a, b) => store.compareCardIds(a.id, b.id))
 
-  // 2) 构造一个“干净快照”：卡片 A/B/C…，选项 1..N
+  // 2) 构造干净快照
   const snapshotCards = (store.sessionCards || []).map(c => ({
     id: c.id,
     data: {
@@ -747,7 +734,7 @@ export function saveFullVersionFromSession(store, version) {
     }
   }))
 
-  // 3) 构建“版本内 ExcelID -> 值”的索引（A1/A2…）
+  // 3) ExcelID -> 值 索引
   const optionsIndex = _buildOptionsIndexFromCards(snapshotCards)
 
   // 4) 写入版本盘（覆盖式）
@@ -755,7 +742,7 @@ export function saveFullVersionFromSession(store, version) {
   bank.versions[v] = {
     version: v,
     cards: snapshotCards,
-    optionsIndex, // 唯一指向性键：A1/A2… -> 值
+    optionsIndex,
     savedAt: new Date().toISOString()
   }
   _saveEnvBank(bank)
@@ -763,7 +750,6 @@ export function saveFullVersionFromSession(store, version) {
 }
 
 // 从“全量库的一个版本”加载到操作台（覆盖操作台）
-// editMode: 'none'（默认全部编辑关闭） | 'checkbox'（只开复选框）
 export function loadFullVersion(store, version, { editMode = 'none' } = {}) {
   const v = String(version || '').trim()
   if (!v) { store.error = '版本号不能为空'; return false }
@@ -775,9 +761,8 @@ export function loadFullVersion(store, version, { editMode = 'none' } = {}) {
     return false
   }
 
-  // 用 replaceSessionWithCards 覆盖操作台，并根据 editMode 设置默认编辑态
+  // 覆盖操作台
   store.replaceSessionWithCards(
-    // 转回 replaceSessionWithCards 期待的结构
     snap.cards.map(c => ({
       id: c.id,
       data: {

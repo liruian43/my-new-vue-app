@@ -260,6 +260,13 @@
 import { ref, watch, computed } from 'vue'
 import * as IdSvc from './Data/services/id.js'
 import { useCardStore } from './Data/store.js'
+// 新增导入（保留原有导入不动）
+import {
+  loadRootEnvFullSnapshotWithSerialization,
+  writeTargetEnvFullSnapshotWithSerialization,
+  maskEnvBySyncOnly,
+  extractExcelIdsFromSnapshot
+} from './PermissionValve.helper.js'
 
 // Props
 defineProps({
@@ -320,8 +327,8 @@ const loadCurrentExcelIds = async () => {
     console.log(`目标版本: ${selectedVersion.value}`)
     console.log(`模式ID: ${IdSvc.ROOT_ADMIN_MODE_ID}`)
     
-    // 通过cardStore的getEnvFullSnapshot方法获取环境快照数据
-    const snapData = await cardStore.getEnvFullSnapshot(selectedVersion.value)
+    // 替换原先通过 cardStore.getEnvFullSnapshot(...) 的获取方式
+    const snapData = loadRootEnvFullSnapshotWithSerialization(cardStore, IdSvc, selectedVersion.value)
     
     if (!snapData) {
       console.warn(`[权限矩阵] 未找到版本 ${selectedVersion.value} 的快照数据`)
@@ -333,67 +340,10 @@ const loadCurrentExcelIds = async () => {
     console.log(`[权限矩阵] 快照数据类型: ${typeof snapData}`)
     console.log(`[权限矩阵] 快照数据包含的字段:`, Object.keys(snapData || {}))
     
-    // 从快照数据中提取ExcelID - 遵循CardSection.vue的成功做法
-    const env = snapData?.environment || { cards: {}, options: {} }
-    const envOptions = env.options || {}
-    
-    console.log(`[权限矩阵] environment.options:`, envOptions)
-    console.log(`[权限矩阵] environment.options类型: ${typeof envOptions}`)
-    
-    if (envOptions && typeof envOptions === 'object' && !Array.isArray(envOptions)) {
-      const excelIdKeys = Object.keys(envOptions)
-      console.log(`[权限矩阵] Object.keys(envOptions) 结果:`, excelIdKeys)
-      console.log(`[权限矩阵] environment.options包含 ${excelIdKeys.length} 个ExcelID`)
-      console.log(`[权限矩阵] 具体的ExcelID列表:`, excelIdKeys)
-      
-      if (excelIdKeys.length > 0) {
-        // 使用ID体系中的compareFullOptionIds进行排序
-        const sortedExcelIds = excelIdKeys.sort((a, b) => {
-          try {
-            if (IdSvc.compareFullOptionIds) {
-              return IdSvc.compareFullOptionIds(a, b)
-            }
-            // 备用排序：先按卡片ID，再按选项ID
-            const aMatch = a.match(/^([A-Z]+)(\d+)$/)
-            const bMatch = b.match(/^([A-Z]+)(\d+)$/)
-            if (aMatch && bMatch) {
-              const cardCompare = aMatch[1].localeCompare(bMatch[1])
-              if (cardCompare !== 0) return cardCompare
-              return parseInt(aMatch[2]) - parseInt(bMatch[2])
-            }
-            return a.localeCompare(b)
-          } catch (error) {
-            console.warn('[权限矩阵] 排序失败，使用默认排序:', error)
-            return a.localeCompare(b)
-          }
-        })
-        
-        console.log(`[权限矩阵] 排序后的ExcelID列表:`, sortedExcelIds)
-        console.log(`=== [权限矩阵] ExcelID 计算完成，共 ${sortedExcelIds.length} 个 ===\n`)
-        
-        currentExcelIds.value = sortedExcelIds
-        return
-      }
-    }
-    
-    // 如果environment.options为空，尝试从fullConfigs获取（备用方案）
-    console.warn(`[权限矩阵] environment.options为空，尝试从fullConfigs获取`)
-    const fullConfigs = snapData?.fullConfigs || {}
-    if (fullConfigs && typeof fullConfigs === 'object') {
-      const fullConfigIds = Object.keys(fullConfigs)
-      console.log(`[权限矩阵] 从fullConfigs提取到 ${fullConfigIds.length} 个ExcelID:`, fullConfigIds)
-      
-      if (fullConfigIds.length > 0) {
-        const sortedFullIds = fullConfigIds.sort(IdSvc.compareFullOptionIds || ((a, b) => a.localeCompare(b)))
-        console.log(`[权限矩阵] 备用方案成功，返回 ${sortedFullIds.length} 个ExcelID`)
-        currentExcelIds.value = sortedFullIds
-        return
-      }
-    }
-    
-    console.error(`[权限矩阵] 无法从任何路径提取ExcelID数据！`)
-    currentExcelIds.value = []
-    
+    // 用 helper 提取并排序 ExcelID（内部已按你的排序规则处理）
+    const sortedExcelIds = extractExcelIdsFromSnapshot(snapData, IdSvc)
+    currentExcelIds.value = sortedExcelIds
+    return
   } catch (error) {
     console.error('[权限矩阵] 通过store获取ExcelID列表失败:', error)
     currentExcelIds.value = []
@@ -854,164 +804,6 @@ const batchOperation = (action) => {
   hasUnsavedChanges.value = true
 }
 
-// 数据篡改逻辑 - 根据精细化权限配置克制数据（支持环境快照模式）
-const tamperDataWithPermissions = (originalData, excelId) => {
-  try {
-    const parsedData = JSON.parse(originalData)
-    
-    // 检查是否为环境快照数据
-    if (parsedData.fullConfigs && typeof parsedData.fullConfigs === 'object') {
-      // 环境快照模式：处理整个fullConfigs对象
-      console.log('[数据篡改] 检测到环境快照数据，进行批量处理')
-      
-      let modifiedData = JSON.parse(JSON.stringify(parsedData)) // 深拷贝
-      let tamperReport = []
-      
-      // 遍历所有fullConfigs中的ExcelID
-      Object.keys(parsedData.fullConfigs).forEach(currentExcelId => {
-        // const itemData = parsedData.fullConfigs[currentExcelId] // 暂不直接使用
-        
-        // 检查是否有该ExcelID的权限配置
-        if (fineGrainedPermissions.value[currentExcelId]) {
-          const permissions = fineGrainedPermissions.value[currentExcelId]
-          
-          // 对每个字段进行权限检查
-          fieldTypes.forEach(fieldType => {
-            const fieldPermission = permissions[fieldType]
-            const fieldLabel = fieldLabels[fieldType]
-            
-            // 根据字段类型确定对应的属性名
-            let propertyName
-            switch (fieldType) {
-              case 'name': 
-                propertyName = 'optionName'
-                break
-              case 'value': 
-                propertyName = 'optionValue'
-                break
-              case 'unit': 
-                propertyName = 'optionUnit'
-                break
-              default: 
-                return // 跳过未知字段类型
-            }
-            
-            if (!fieldPermission.sync) {
-              // 不同步：设为null
-              if (modifiedData.fullConfigs[currentExcelId][propertyName] !== undefined) {
-                modifiedData.fullConfigs[currentExcelId][propertyName] = null
-                tamperReport.push(`${currentExcelId}.${fieldLabel}: 克制为null (未同步)`)
-              }
-            } else {
-              // 同步但检查授权状态 (用于报告)
-              if (fieldPermission.auth) {
-                tamperReport.push(`${currentExcelId}.${fieldLabel}: 同步+可编辑`)
-              } else {
-                tamperReport.push(`${currentExcelId}.${fieldLabel}: 同步+只读`)
-              }
-            }
-          })
-        } else {
-          // 没有权限配置，默认全部不同步
-          fieldTypes.forEach(fieldType => {
-            let propertyName
-            switch (fieldType) {
-              case 'name': 
-                propertyName = 'optionName'
-                break
-              case 'value': 
-                propertyName = 'optionValue'
-                break
-              case 'unit': 
-                propertyName = 'optionUnit'
-                break
-              default: 
-                return // 跳过未知字段类型
-            }
-            
-            if (modifiedData.fullConfigs[currentExcelId][propertyName] !== undefined) {
-              modifiedData.fullConfigs[currentExcelId][propertyName] = null
-              tamperReport.push(`${currentExcelId}.${fieldLabels[fieldType]}: 克制为null (无权限配置)`)
-            }
-          })
-        }
-      })
-      
-      // 同时更新environment.options中的对应数据
-      if (modifiedData.environment && modifiedData.environment.options) {
-        Object.keys(modifiedData.environment.options).forEach(optionId => {
-          if (fineGrainedPermissions.value[optionId]) {
-            const permissions = fineGrainedPermissions.value[optionId]
-            const optionData = modifiedData.environment.options[optionId]
-            
-            fieldTypes.forEach(fieldType => {
-              const fieldPermission = permissions[fieldType]
-              
-              if (!fieldPermission.sync && optionData[fieldType] !== undefined) {
-                optionData[fieldType] = null
-              }
-            })
-          }
-        })
-      }
-      
-      return {
-        modifiedData: JSON.stringify(modifiedData),
-        tamperReport
-      }
-    } else {
-      // 单个ExcelID模式：原有逻辑
-      let modifiedData = { ...parsedData }
-      let tamperReport = []
-      
-      // 检查是否有该ExcelID的权限配置
-      if (fineGrainedPermissions.value[excelId]) {
-        const permissions = fineGrainedPermissions.value[excelId]
-        
-        // 对每个字段进行权限检查
-        fieldTypes.forEach(fieldType => {
-          const fieldPermission = permissions[fieldType]
-          const fieldLabel = fieldLabels[fieldType]
-          
-          if (!fieldPermission.sync) {
-            // 不同步：设为null
-            if (modifiedData[fieldType] !== undefined) {
-              modifiedData[fieldType] = null
-              tamperReport.push(`${fieldLabel}: 克制为null (未同步)`)
-            }
-          } else {
-            // 同步但检查授权状态 (用于报告)
-            if (fieldPermission.auth) {
-              tamperReport.push(`${fieldLabel}: 同步+可编辑`)
-            } else {
-              tamperReport.push(`${fieldLabel}: 同步+只读`)
-            }
-          }
-        })
-      } else {
-        // 没有权限配置，默认全部不同步
-        fieldTypes.forEach(fieldType => {
-          if (modifiedData[fieldType] !== undefined) {
-            modifiedData[fieldType] = null
-            tamperReport.push(`${fieldLabels[fieldType]}: 克制为null (无权限配置)`)
-          }
-        })
-      }
-      
-      return {
-        modifiedData: JSON.stringify(modifiedData),
-        tamperReport
-      }
-    }
-  } catch (error) {
-    console.warn('数据篡改失败，使用原始数据:', error)
-    return {
-      modifiedData: originalData,
-      tamperReport: ['数据解析失败，未进行篡改']
-    }
-  }
-}
-
 // 执行推送 - 确保目标模式ID下最多只有一条全量区内容
 const executePush = async () => {
   if (!selectedTargetMode.value || !selectedVersion.value) {
@@ -1025,17 +817,13 @@ const executePush = async () => {
     console.log(`[推送] 开始精细化推送: ${selectedVersion.value} -> ${selectedTargetMode.value}`)
     console.log(`[推送] 使用权限配置:`, fineGrainedPermissions.value)
     
-    // 1. 检查目标模式类型，主模式不受唯一性限制
+    // 1. 唯一性控制（保留原逻辑或沿用 helper.ensureEnvFullUniqueness）
     const isTargetRootAdmin = selectedTargetMode.value === IdSvc.ROOT_ADMIN_MODE_ID
     console.log(`[推送] 目标模式: ${selectedTargetMode.value}, 是否为主模式: ${isTargetRootAdmin}`)
     
     let deletedCount = 0
     
-    if (isTargetRootAdmin) {
-      // 主模式：无限制，允许多条全量区内容
-      console.log(`[推送] 目标为主模式 ${selectedTargetMode.value}，跳过唯一性控制`)
-      console.log(`[推送] 主模式允许任意数量的全量区内容，版本间独立存储`)
-    } else {
+    if (!isTargetRootAdmin) {
       // 其他模式：严格唯一性控制
       console.log(`[推送] 目标为其他模式 ${selectedTargetMode.value}，执行唯一性控制`)
       
@@ -1056,64 +844,30 @@ const executePush = async () => {
         type: 'envFull'
       })
       console.log(`[推送] 清理其他模式下所有全量区内容: ${deletedCount} 条`)
+    } else {
+      // 主模式：无限制，允许多条全量区内容
+      console.log(`[推送] 目标为主模式 ${selectedTargetMode.value}，跳过唯一性控制`)
+      console.log(`[推送] 主模式允许任意数量的全量区内容，版本间独立存储`)
     }
     
-    // 2. 获取源数据（环境快照）
-    const sourceKeys = IdSvc.batchKeyOperation('export', {
-      modeId: IdSvc.ROOT_ADMIN_MODE_ID,
-      version: selectedVersion.value,
-      type: 'envFull',
-      excelId: 'A0'  // 环境快照统一存储在A0下
-    })
-    console.log(`[推送] 源数据: ${sourceKeys.length} 条`)
+    // 2. 读取源快照（root_admin + 版本 + envFull:A0）
+    const sourceSnap = loadRootEnvFullSnapshotWithSerialization(cardStore, IdSvc, selectedVersion.value)
+    if (!sourceSnap) throw new Error('没有可推送的数据')
     
-    if (sourceKeys.length === 0) {
-      throw new Error('没有可推送的数据')
-    }
+    // 3. 仅按“同步”勾选克制（授权不影响数据层）
+    const maskedSnap = maskEnvBySyncOnly(sourceSnap, fineGrainedPermissions.value)
     
-    if (sourceKeys.length > 1) {
-      console.warn(`[推送] ⚠️ 源数据异常：发现 ${sourceKeys.length} 条全量区数据`)
-    }
+    // 4. 写入目标模式：一条 A0（serialization.js 负责序列化写入）
+    writeTargetEnvFullSnapshotWithSerialization(
+      cardStore,
+      selectedTargetMode.value,
+      selectedVersion.value,
+      maskedSnap
+    )
+    const copiedCount = 1
+    const tamperReports = [] // 如需展示详细克制项，可在 maskEnvBySyncOnly 内累积返回
     
-    // 3. 处理环境快照数据并推送（只推送一条）
-    let copiedCount = 0
-    let tamperReports = []
-    
-    // 只处理第一条数据，确保目标模式下只有一条全量区内容
-    const sourceData = sourceKeys[0]
-    if (sourceData) {
-      try {
-        console.log(`[推送] 处理唯一环境快照: ${sourceData.key}`)
-        
-        // 数据篡改 (根据精细化权限配置)
-        const { modifiedData, tamperReport } = tamperDataWithPermissions(sourceData.data, sourceData.fields.excelId)
-        
-        // 构建目标Key（使用相同版本确保一致性）
-        const targetKey = IdSvc.buildKey({
-          prefix: sourceData.fields.prefix,
-          modeId: selectedTargetMode.value,
-          version: sourceData.fields.version, // 保持源版本一致性
-          type: sourceData.fields.type,
-          excelId: sourceData.fields.excelId
-        })
-        
-        // 存储到目标位置（现在目标模式下确保只有这一条）
-        localStorage.setItem(targetKey, modifiedData)
-        copiedCount++
-        
-        if (tamperReport.length > 0) {
-          tamperReports.push(`环境快照: ${tamperReport.join(', ')}`)
-        }
-        
-        console.log(`[推送] 唯一全量区内容推送完成: ${sourceData.key} -> ${targetKey}`)
-        console.log(`[推送] 目标模式 ${selectedTargetMode.value} 现在有且仅有 1 条全量区内容`)
-        console.log(`[推送] 篡改报告:`, tamperReport)
-      } catch (error) {
-        console.error(`[推送] 处理失败:`, sourceData.key, error)
-      }
-    }
-    
-    // 4. 推送权限配置信息（使用store统一接口）
+    // 5. 推送权限配置信息（使用store统一接口）
     const permissionSaveSuccess = cardStore.savePermissionConfig(
       selectedTargetMode.value,
       selectedVersion.value,
@@ -1133,7 +887,7 @@ const executePush = async () => {
       console.warn(`[推送] 权限配置推送失败`)
     }
     
-    // 5. 最终验证：根据模式类型进行相应验证
+    // 6. 最终验证：根据模式类型进行相应验证
     const finalCheck = IdSvc.batchKeyOperation('export', {
       modeId: selectedTargetMode.value,
       type: 'envFull'
@@ -1168,7 +922,7 @@ const executePush = async () => {
       }
     }
     
-    // 6. 构建推送报告
+    // 7. 构建推送报告
     const report = {
       targetMode: selectedTargetMode.value,
       version: selectedVersion.value,
@@ -1180,7 +934,7 @@ const executePush = async () => {
       uniquenessValidation
     }
     
-    // 7. 成功回调
+    // 8. 成功回调
     emit('push-success', report)
     
     // 显示成功信息

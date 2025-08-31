@@ -204,6 +204,8 @@
             optionActions: true,
             optionCheckbox: card.editableFields.optionCheckbox || card.isPresetEditing
           }"
+          :editDefaults="computeEditDefaults(card)"
+          :editState="computeEditState(card)"
           :class="{ selected: selectedCardId === card.id }"
           :style="{}"
         />
@@ -546,6 +548,22 @@ const handleDeleteSelectOption = (cardId, optionId) => {
 
 const setShowDropdown = (cardId, value) => {
   cardStore.setShowDropdown(cardId, value)
+}
+
+// 适配新版 UniversalCard：将旧 editableFields 的三项开关映射到 editDefaults
+function computeEditDefaults(card) {
+  const ef = (card && card.editableFields) ? card.editableFields : {}
+  const inPreset = !!card?.isPresetEditing
+  return {
+    name: !!ef.optionName && !inPreset,
+    value: !!ef.optionValue && !inPreset,
+    unit: !!ef.optionUnit && !inPreset
+  }
+}
+
+// 目前未提供“单个选项独立触发”的 UI 控件，保持空对象；将来若 store 支持细化，可在此按需下发
+function computeEditState(card) {
+  return {}
 }
 
 // 本地：仅开复选框，其它编辑关闭（若 store 未注入对应方法时兜底）

@@ -259,8 +259,13 @@ export function buildKey({ modeId, version, type, excelId, prefix }) {
   const t = normalizeType(type);
   debugValidate('type', isValidType, t, '类型无效（应为 questionBank / envFull / answers / @meta，或其别名/中文）');
 
-  // excelId 可以是 null/undefined，但经过 normalizeExcelId 应该抛错或成为有效格式
-  const e = normalizeExcelId(excelId); // 内部会校验或抛错
+  // 关键修改：@meta 跳过 ExcelID 校验，允许任意非空 name
+  let e;
+  if (t === TYPES.META) {
+    e = normalizeMetaName(excelId);
+  } else {
+    e = normalizeExcelId(excelId);
+  }
 
   return `${enc(p)}:${enc(m)}:${enc(v)}:${enc(t)}:${enc(e)}`;
 }
@@ -268,7 +273,6 @@ export function buildKey({ modeId, version, type, excelId, prefix }) {
 export function parseKey(key) {
   const s = String(key || '');
   const parts = s.split(':');
-  // 长度现在是 5 段
   if (parts.length !== 5) return { valid: false, error: 'Key 格式错误：分段数量不匹配' };
 
   const [p, m, v, t, e] = parts;
@@ -276,20 +280,53 @@ export function parseKey(key) {
   const modeId = dec(m);
   const version = dec(v);
   const typeRaw = dec(t);
-  const type = normalizeType(typeRaw); // 保持规范化，兼容旧的 TYP_ALIASES
+  const type = normalizeType(typeRaw);
   const excelId = dec(e);
-  const kind = excelIdKind(excelId);
 
-  const valid =
+  const baseValid =
     !!prefix &&
-    isValidModeId(modeId) && // 增加模式ID校验
+    isValidModeId(modeId) &&
     isValidVersionLabel(version) &&
-    isValidType(type) &&
+    isValidType(type);
+
+  if (type === TYPES.META) {
+    // 关键修改：@meta 不做 ExcelID 校验，只要求 name 非空
+    const metaNameValid = String(excelId ?? '').trim().length > 0;
+
+    if (!(baseValid && metaNameValid)) {
+      return {
+        valid: false,
+        error: 'Key 内容校验失败',
+        debug: {
+          prefixValid: !!prefix,
+          modeIdValid: isValidModeId(modeId),
+          versionValid: isValidVersionLabel(version),
+          typeValid: isValidType(type),
+          metaNameValid
+        },
+        rawParts: { p_raw: p, m_raw: m, v_raw: v, t_raw: t, e_raw: e },
+        parsed: { prefix, modeId, version, type, excelId, kind: 'meta' }
+      };
+    }
+
+    return {
+      valid: true,
+      prefix,
+      modeId,
+      version,
+      type,
+      excelId,
+      excelIdKind: 'meta'
+    };
+  }
+
+  // 非 @meta 仍按 ExcelID 校验
+  const kind = excelIdKind(excelId);
+  const valid =
+    baseValid &&
     !!kind &&
-    // 确保 excelId 也是有效的，防止解析出奇怪内容
     isValidExcelId(excelId);
 
-  // 返回时增加 error 字段，便于调用方调试
   if (!valid) {
     return {
       valid: false,
@@ -310,7 +347,7 @@ export function parseKey(key) {
   return {
     valid: true,
     prefix,
-    modeId,        // 新增 Mode ID
+    modeId,
     version,
     type,
     excelId,
@@ -330,12 +367,13 @@ export function normalizeMetaName(name) {
 }
 
 export function buildMetaKey({ modeId, version, name, prefix }) {
+  const n = normalizeMetaName(name);
   return buildKey({
     prefix,
     modeId,
     version,
-    type: '@meta',
-    excelId: name
+    type: TYPES.META,
+    excelId: n
   });
 }
 
