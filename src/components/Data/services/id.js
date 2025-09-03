@@ -238,6 +238,66 @@ export function splitExcelId(excelId) {
   return { kind: 'option', cardId, optionId }
 }
 
+// 题库 ExcelID 工具：支持 A1 或 A1.2/A1.3/...
+export function isValidQuestionBankExcelId(excelId) {
+  try {
+    normalizeQuestionBankExcelId(excelId)
+    return true
+  } catch {
+    return false
+  }
+}
+
+export function normalizeQuestionBankExcelId(excelId) {
+  const raw = String(excelId ?? '').trim().toUpperCase().replace(/\s+/g, '')
+  // 允许格式：A1 或 A1.2 或 A1.2.3 ...
+  const m = raw.match(/^([A-Z]+)(\d+)(?:\.(\d+(?:\.\d+)*))?$/)
+  if (!m) {
+    throw new Error(`无效题库 ExcelID: ${excelId}（应为 A1 或 A1.2 形式）`)
+  }
+  const letters = m[1]
+  const baseNum = String(parseInt(m[2], 10))
+  const rest = m[3] || ''
+  const parts = rest ? rest.split('.').map(n => String(parseInt(n, 10))) : []
+  const normalized = letters + baseNum + (parts.length ? '.' + parts.join('.') : '')
+  // 基础卡/选项部分也必须是有效 ExcelID（A 或 A1）
+  // 题库要求至少到选项级（A1）
+  if (!/^[A-Z]+\d+$/.test(letters + baseNum)) {
+    throw new Error(`无效题库 ExcelID: ${excelId}`)
+  }
+  return normalized
+}
+
+export function extractFirstExcelIdFromExpression(expr) {
+  const s = String(expr ?? '')
+  const re = /([A-Za-z]+[0-9]+(?:\.[0-9]+)*)/g
+  let m
+  while ((m = re.exec(s)) !== null) {
+    try {
+      return normalizeQuestionBankExcelId(m[1])
+    } catch { /* ignore and continue */ }
+  }
+  return null
+}
+
+// 根据需要生成题库 ExcelID：
+// - op === 'next'：对现有 ID 进行小版本递增（A1 -> A1.1, A1.2 -> A1.3）
+// - 其他：返回规范化形式
+export function generateQuestionBankExcelId(baseId, op = 'next') {
+  const norm = normalizeQuestionBankExcelId(baseId)
+  if (op === 'next') {
+    const segs = norm.split('.')
+    // 规则更新：如果没有小版本段，首个重复应为 .2（将 .1 视为首个的隐式标记）
+    if (segs.length === 1) {
+      return `${norm}.2`
+    }
+    const last = parseInt(segs[segs.length - 1], 10)
+    segs[segs.length - 1] = String(last + 1)
+    return segs.join('.')
+  }
+  return norm
+}
+
 // -----------------------------
 // Key 组合/解析（固定五段）
 // Key = prefix:modeId:version:type:excelId
@@ -290,6 +350,51 @@ export function buildKey({ modeId, version, type, excelId, prefix }) {
   return `${enc(p)}:${enc(m)}:${enc(v)}:${enc(t)}:${enc(e)}`;
 }
 
+// 基于存储确保“绝对唯一”的五段Key生成：
+// - 若候选Key未被占用，直接返回
+// - 若已存在：
+//   * questionBank：自动对 excelId 进行小版本递增（A1 -> A1.2 -> A1.3 ...），直到找到未占用Key
+//   * envFull/answers：其第五段固定为 'main'，不可调整，抛出冲突错误
+//   * @meta：name 语义上应唯一，冲突时抛错，交由上层改名
+export function buildKeyUnique({ modeId, version, type, excelId, prefix, storage = (typeof localStorage !== 'undefined' ? localStorage : undefined) }) {
+  const t = normalizeType(type)
+  if (!storage) {
+    // 为保证“绝对唯一性”，在缺失可用存储介质时拒绝生成
+    throw new Error('无法保证五段Key的绝对唯一性：未提供可用的存储介质（storage）。')
+  }
+
+  // 先构造候选Key
+  let currentExcelId = excelId
+  let candidate = buildKey({ modeId, version, type: t, excelId: currentExcelId, prefix })
+
+  // 若未被占用，直接返回
+  if (!storage.getItem(candidate)) return candidate
+
+  // 冲突处理：根据类型采取策略
+  if (t === TYPES.QUESTION_BANK) {
+    // 规范化基础 ID（确保从 A1 或 A1.x 形态起步）
+    let base = normalizeQuestionBankExcelId(currentExcelId)
+    // 如已存在，递增直到找到空位
+    while (true) {
+      base = generateQuestionBankExcelId(base, 'next')
+      candidate = buildKey({ modeId, version, type: t, excelId: base, prefix })
+      if (!storage.getItem(candidate)) return candidate
+    }
+  }
+
+  if (t === TYPES.ENV_FULL || t === TYPES.ANSWERS) {
+    // 第五段固定 'main'，不可自动修改，直接报错防止“完全相同”的重复写入
+    throw new Error(`Key 冲突：已存在 ${t} 的主对象（prefix/mode/version/type/excelId 完全相同）。请先清理或更换 version/modeId。`)
+  }
+
+  if (t === TYPES.META) {
+    // @meta 视为语义唯一，冲突交由上层改名，避免产生“完全相同”的Key
+    throw new Error(`Key 冲突：元数据 '@meta' 名称已存在（${excelId}）。请更换 name。`)
+  }
+
+  // 其他类型：理论上不覆盖，仍抛冲突
+  throw new Error('Key 冲突：五段式 Key 已存在且无法自动规避。')
+}
 export function parseKey(key) {
   const s = String(key || '');
   const parts = s.split(':');
@@ -734,6 +839,7 @@ export const ID = Object.freeze({
 
   // Key（固定五段）
   buildKey,
+  buildKeyUnique,
   parseKey,
 
   // Meta Key

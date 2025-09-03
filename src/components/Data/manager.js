@@ -118,62 +118,42 @@ export default class DataManager {
     } else {
         // 使用id.js方法设置默认版本，确保符合规范
         const defaultVersion = IdSvc.normalizeVersionLabel('v1.0.0')
-        this.setVersionLabel(defaultVersion) // 这会调用id.js的验证和存储
-        console.log(`[DataManager] 设置默认版本标签: ${this.versionLabel}`)
+        this.versionLabel = defaultVersion
+        this.longTermStorage.setItem(this.storageKeys.globalCurrentVersion, this.versionLabel)
+        console.log(`[DataManager] 未找到版本标签，使用默认版本: ${this.versionLabel}`)
     }
-    
-    // 3. 不强制加载数据，只有实际使用时才校验
-    return true
   }
 
-  // ========== 当前模式管理 ==========
   getCurrentModeId() {
     return this.currentModeId
   }
 
   async setCurrentMode(modeId) {
-    if (!IdSvc.isValidModeId(modeId)) {
-        console.error(`[DataManager] 尝试切换到无效模式ID: ${modeId}`);
-        return;
+    const normalized = IdSvc.normalizeModeId(modeId)
+    if (!IdSvc.isValidModeId(normalized)) {
+      throw new Error(`无效的模式ID: ${modeId}`)
     }
-    if (modeId === this.currentModeId) {
-        console.log(`[DataManager] 模式已经是 ${modeId}，不进行切换。`);
-        return;
-    }
-
-    this.currentModeId = modeId;
-    console.log(`[DataManager] 切换模式至: ${this.currentModeId}`);
-    this.longTermStorage.setItem(this.storageKeys.globalCurrentMode, this.currentModeId);
-
-    // 模式切换后，重新加载该模式下的数据
-    await this.loadQuestionBank()
-    await this.loadEnvFullSnapshots()
+    this.currentModeId = normalized
+    this.longTermStorage.setItem(this.storageKeys.globalCurrentMode, this.currentModeId)
+    console.log(`[DataManager] 当前模式切换为: ${this.currentModeId}`)
   }
 
-  // ========== 版本标签管理（会影响 Key 的 'version' 段） ==========
   setVersionLabel(label) {
     const v = IdSvc.normalizeVersionLabel(label)
     if (!IdSvc.isValidVersionLabel(v)) {
-      throw new Error('版本号必须是非空字符串')
+      throw new Error('版本号不能为空')
     }
     this.versionLabel = v
-    this.longTermStorage.setItem(this.storageKeys.globalCurrentVersion, v)
-    console.log(`[DataManager] 版本号设置为: ${v}`)
-    return v
+    this.longTermStorage.setItem(this.storageKeys.globalCurrentVersion, this.versionLabel)
+    console.log(`[DataManager] 版本标签设置为: ${this.versionLabel}`)
   }
 
   getVersionLabel() {
-    if (!this.versionLabel) {
-      throw new Error('版本号未设置，请先调用setVersionLabel')
-    }
     return this.versionLabel
   }
 
-  // ========== 系统前缀管理（直接转发到 IdSvc） ==========
   setSystemPrefix(prefix) {
     IdSvc.setSystemPrefix(prefix)
-    console.log(`[DataManager] 系统前缀设置为: ${IdSvc.getSystemPrefix()}`)
-    return IdSvc.getSystemPrefix()
   }
 
   getSystemPrefix() {
@@ -255,61 +235,200 @@ export default class DataManager {
     return this.longTermStorage.setItem(key, null) // 兜底
   }
 
-  // ========== 题库（核心功能，现在使用 Meta Key 实现模式隔离） ==========
+  // ========== 题库（核心功能，现在使用 固定五段Key 单条存储） ==========
   async loadQuestionBank() {
     // 如果没有设置versionLabel，返回空题库
     if (!this.versionLabel) {
       console.warn('[DataManager] 版本号未设置，返回空题库')
       return { questions: [], categories: [], lastUpdated: null }
     }
-    const key = this.buildMetaKey({
-      name: 'questionBank',
-      version: this.versionLabel
-    });
-    
-    const bank = this.longTermStorage.getItem(key) || {
-      questions: [],
-      categories: [],
-      lastUpdated: null
-    };
 
-    console.log(`[DataManager] 加载题库 - Key: '${key}'`, { data: bank });
-    return bank;
+    // 读取题库元信息（分类/更新时间）
+    const metaKey = this.buildMetaKey({ name: 'questionBank', version: this.versionLabel })
+    const meta = this.longTermStorage.getItem(metaKey) || { categories: [], lastUpdated: null }
+
+    // 枚举 localStorage，收集本版本下的题库项
+    const questions = []
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i)
+        if (!k) continue
+        const parsed = IdSvc.parseKey(k)
+        if (!parsed.valid) continue
+        // 仅收集：当前系统前缀 + root_admin + 当前版本 + questionBank
+        if (
+          parsed.prefix === IdSvc.getSystemPrefix() &&
+          parsed.type === IdSvc.TYPES.QUESTION_BANK &&
+          parsed.version === this.versionLabel &&
+          parsed.modeId === IdSvc.ROOT_ADMIN_MODE_ID
+        ) {
+          const value = this.longTermStorage.getItem(k)
+          if (typeof value !== 'string') continue // 题库值为字符串表达式
+
+          const raw = String(value || '').trim()
+          const up = raw.replace(/\s+/g, '')
+          const [leftPart, rightPart] = up.split('→')
+          const leftTokens = (leftPart || '')
+            .toUpperCase()
+            .split('+')
+            .filter(Boolean)
+            .filter(t => IdSvc.isOptionExcelId(t))
+            .map(t => IdSvc.normalizeExcelId(t))
+          // 去重 + 排序
+          const unique = Array.from(new Set(leftTokens))
+          unique.sort(IdSvc.compareFullOptionIds)
+          const left = unique.join('+')
+          const content = rightPart || ''
+
+          questions.push({
+            id: `q_${Date.now()}_${i}`,
+            modeId: parsed.modeId,
+            version: parsed.version,
+            expression: `${left}→${content}`,
+            content,
+            left,
+            key: `${parsed.modeId}|${parsed.version}|${left}`,
+            hash: undefined,
+            createdAt: undefined,
+            updatedAt: undefined
+          })
+        }
+      }
+    } catch (e) {
+      console.error('[DataManager] 枚举题库项失败:', e)
+    }
+
+    console.log(`[DataManager] 加载题库（按条存储） - version: ${this.versionLabel}`, { count: questions.length })
+    return {
+      questions,
+      categories: meta.categories || [],
+      lastUpdated: meta.lastUpdated || null
+    }
   }
 
   async saveQuestionBank(bankData) {
     if (!this.versionLabel) {
       throw new Error('保存题库前必须调用setVersionLabel设置版本号')
     }
-    const key = this.buildMetaKey({
-      name: 'questionBank',
-      version: this.versionLabel
-    });
 
+    // 1) 清理当前版本下旧的题库条目
+    const toRemove = []
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i)
+      if (!k) continue
+      const parsed = IdSvc.parseKey(k)
+      if (parsed.valid &&
+          parsed.prefix === IdSvc.getSystemPrefix() &&
+          parsed.type === IdSvc.TYPES.QUESTION_BANK &&
+          parsed.version === this.versionLabel &&
+          parsed.modeId === IdSvc.ROOT_ADMIN_MODE_ID) {
+        toRemove.push(k)
+      }
+    }
+    toRemove.forEach(k => this.longTermStorage.removeItem(k))
+
+    // 2) 逐条写入：Key 使用“排序后首个 ExcelID”，若重复则追加 .1/.2...
+    const usedExcelIds = new Set()
+    const questions = Array.isArray(bankData?.questions) ? bankData.questions : []
+
+    for (let idx = 0; idx < questions.length; idx++) {
+      const q = questions[idx] || {}
+      // 确定原始表达式（优先 q.expression，否则用 q.left + q.content 拼）
+      let rawExpr = ''
+      if (typeof q.expression === 'string' && q.expression.includes('→')) {
+        rawExpr = q.expression
+      } else {
+        const left0 = String(q.left || '').trim()
+        const content0 = String(q.content || '').trim()
+        rawExpr = left0 ? `${left0}→${content0}` : content0
+      }
+
+      const raw = String(rawExpr || '').trim()
+      if (!raw) continue
+
+      const [rawLeft, right] = raw.replace(/\s+/g, '').split('→')
+      // 规范化左侧（去空格/转大写/过滤非法/去重/排序）
+      const leftTokens = (rawLeft || '')
+        .toUpperCase()
+        .split('+')
+        .filter(Boolean)
+        .filter(t => IdSvc.isOptionExcelId(t))
+        .map(t => IdSvc.normalizeExcelId(t))
+      const unique = Array.from(new Set(leftTokens))
+      unique.sort(IdSvc.compareFullOptionIds)
+      const left = unique.join('+')
+      if (!left) continue // 没有有效选项则跳过
+
+      // 计算“首个 ExcelID”，若重复则生成 A1.1/A1.2...
+      let excelId = unique[0]
+      while (usedExcelIds.has(excelId)) {
+        excelId = IdSvc.generateQuestionBankExcelId(excelId, 'next')
+      }
+      usedExcelIds.add(excelId)
+
+      // 构建五段 Key（题库强制 root_admin 模式）
+      const key = this.buildKey({
+        type: IdSvc.TYPES.QUESTION_BANK,
+        excelId,
+        modeId: IdSvc.ROOT_ADMIN_MODE_ID,
+        version: this.versionLabel
+      })
+
+      // 存储值 = 标准化表达式：左侧标准顺序 + → + 右侧原文
+      const expression = `${left}→${right || ''}`
+      this.longTermStorage.setItem(key, expression)
+    }
+
+    // 3) 保存题库元信息（分类、最后更新时间）
+    const metaKey = this.buildMetaKey({ name: 'questionBank', version: this.versionLabel })
     const dataToSave = {
-      ...bankData,
+      categories: Array.isArray(bankData?.categories) ? bankData.categories : [],
       lastUpdated: new Date().toISOString()
-    };
-
-    console.log(`[DataManager] 保存题库 - Key: '${key}'`, { data: dataToSave });
-    return this.longTermStorage.setItem(key, dataToSave);
+    }
+    console.log(`[DataManager] 保存题库（按条存储） - 写入 ${usedExcelIds.size} 条`, { meta: dataToSave })
+    return this.longTermStorage.setItem(metaKey, dataToSave)
   }
 
+  // 生成“规范化题库条目”用于立即更新前端状态（保存时仍以五段Key逐条写入）
   normalizeQuestion(questionData) {
+    const modeId = this.currentModeId || IdSvc.ROOT_ADMIN_MODE_ID
+    const version = String(questionData?.version || '').trim()
+    const rawExpression = String(questionData?.expression || '').trim()
+    const contentIn = String(questionData?.content || '').trim()
+
+    // 组装表达式
+    let expression = rawExpression
+    if (!expression.includes('→') || expression.endsWith('→')) {
+      expression = expression.replace(/→?$/, '→') + contentIn
+    }
+    const up = expression.replace(/\s+/g, '')
+    const [leftPart, rightPart] = up.split('→')
+
+    // 规范化左侧
+    const tokens = (leftPart || '')
+      .toUpperCase()
+      .split('+')
+      .filter(Boolean)
+      .filter(t => IdSvc.isOptionExcelId(t))
+      .map(t => IdSvc.normalizeExcelId(t))
+    const unique = Array.from(new Set(tokens))
+    unique.sort(IdSvc.compareFullOptionIds)
+    const left = unique.join('+')
+
+    const content = rightPart || contentIn || ''
+    const normExpr = `${left}→${content}`
+
     return {
-      id: questionData.id || `q_${Date.now()}`, 
-      content: Normalize.normalizeNullValue(questionData.content),
-      explanation: Normalize.normalizeNullValue(questionData.explanation),
-      categories: questionData.categories || [],
-      difficulty: questionData.difficulty || 'medium',
-      options: questionData.options || [],
-      correctAnswer: Normalize.normalizeNullValue(questionData.correctAnswer),
-      environmentConfig: questionData.environmentConfig || {
-        uiConfig: {},
-        scoringRules: [],
-        timeLimit: null
-      },
-      createdAt: questionData.createdAt || new Date().toISOString(),
+      id: `q_${Date.now()}`,
+      modeId,
+      version,
+      expression: normExpr,
+      content,
+      left,
+      key: `${modeId}|${version}|${left}`,
+      hash: undefined,
+      difficulty: questionData?.difficulty,
+      createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     }
   }
@@ -342,40 +461,30 @@ export default class DataManager {
 
   async saveEnvFullSnapshots(snaps) {
     if (!this.versionLabel) {
-      throw new Error('保存快照前必须调用setVersionLabel设置版本号')
+      throw new Error('保存环境快照前必须调用setVersionLabel设置版本号')
     }
     const key = this.buildKey({
       type: IdSvc.TYPES.ENV_FULL,
       excelId: IdSvc.PLACEHOLDER_MAIN,
       version: this.versionLabel
-    });
+    })
 
-    const validated = snaps.map(snap => ({
+    // 规范化结构
+    const dataToSave = (Array.isArray(snaps) ? snaps : []).map(snap => ({
       version: snap.version || '',
       timestamp: snap.timestamp || Date.now(),
       hash: snap.hash || '',
       environment: snap.environment || {},
       fullConfigs: snap.fullConfigs || {}
-    }));
+    }))
 
-    console.log(`[DataManager] 保存环境快照 - Key: '${key}'`, { data: validated });
-    return this.longTermStorage.setItem(key, validated);
+    console.log(`[DataManager] 保存环境快照 - Key: '${key}'`, { data: dataToSave })
+    return this.longTermStorage.setItem(key, dataToSave)
   }
 
-  // ========== 清理某个模式的所有数据 ==========
+  // ========== 清理某模式下所有数据（危险操作） ==========
   async clearModeSpecificData(modeIdToClear) {
-      if (modeIdToClear === this.rootAdminId) {
-          console.error(`[DataManager] 拒绝清除根管理员模式 (${this.rootAdminId}) 的数据。`);
-          return false;
-      }
-      if (!IdSvc.isValidModeId(modeIdToClear)) {
-          console.error(`[DataManager] 未提供或提供了无效的模式ID (${modeIdToClear}) 来清除数据。`);
-          return false;
-      }
-
-      console.log(`[DataManager] 尝试清除模式 '${modeIdToClear}' 的所有数据...`);
-      const removedCount = this.longTermStorage.clearAllModeSpecificData(modeIdToClear);
-      console.log(`[DataManager] 成功清除了模式 '${modeIdToClear}' 下的 ${removedCount} 条数据。`);
-      return true;
+    const normalized = IdSvc.normalizeModeId(modeIdToClear)
+    return this.longTermStorage.clearAllModeSpecificData(normalized)
   }
 }

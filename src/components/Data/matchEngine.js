@@ -1,6 +1,52 @@
 // src/components/Data/matchEngine.js
 import { ID } from './services/id.js'
 
+// 新增：五段式 Key 比对工具（仅用于“数据比对过程”，不属于 id.js 的职责）
+// 规则：
+// - 原始五段顺序严格保持：prefix, modeId, version, type, excelId
+// - 前四段一律严格校验（不可跳过或变更顺序）
+// - 若任意一方的第五段为占位符 'main'，则跳过第五段的校验（不参与相等性判断）
+// 返回结构包含每段的对比详情与 overallEqual 标记，便于上层做差异化处理
+export function compareFiveSegmentKeys(keyA, keyB) {
+  const parsedA = ID.parseKey(keyA)
+  const parsedB = ID.parseKey(keyB)
+
+  if (!parsedA.valid || !parsedB.valid) {
+    return {
+      valid: false,
+      error: '存在无效的五段式 Key',
+      a: parsedA,
+      b: parsedB
+    }
+  }
+
+  const names = ['prefix', 'modeId', 'version', 'type', 'excelId']
+  const segsA = [parsedA.prefix, parsedA.modeId, parsedA.version, parsedA.type, parsedA.excelId]
+  const segsB = [parsedB.prefix, parsedB.modeId, parsedB.version, parsedB.type, parsedB.excelId]
+
+  const skipFifth = ID.isMainPlaceholder(parsedA.excelId) || ID.isMainPlaceholder(parsedB.excelId)
+  const segments = []
+
+  for (let i = 0; i < 5; i++) {
+    if (i === 4 && skipFifth) {
+      // 第五段：若任一为 main 占位符，则跳过校验（保持顺序，不改变任何段的相对位置）
+      segments.push({ index: i + 1, name: names[i], a: segsA[i], b: segsB[i], compared: false, equal: true })
+    } else {
+      segments.push({ index: i + 1, name: names[i], a: segsA[i], b: segsB[i], compared: true, equal: segsA[i] === segsB[i] })
+    }
+  }
+
+  // overallEqual：仅以“被比较的段”是否全部相等为准
+  const overallEqual = segments.every(s => (s.compared ? s.equal : true))
+
+  return {
+    valid: true,
+    overallEqual,
+    excelIdCompared: !skipFifth,
+    segments
+  }
+}
+
 // 匹配策略接口
 class MatchStrategy {
   match(userSelections, questionBank, envConfigs) {
