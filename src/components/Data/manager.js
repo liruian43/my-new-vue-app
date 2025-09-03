@@ -237,17 +237,17 @@ export default class DataManager {
 
   // ========== 按 ExcelID 的便捷存取（卡片级数据，模式隔离） ==========
   getByExcelKey({ type, excelId }) {
-    const key = this.buildKey({ type, excelId }); // 隐式使用 currentModeId 和 versionLabel
+    const key = this.buildKey({ type, excelId, version: this.versionLabel }); // 显式使用 current version
     return this.longTermStorage.getItem(key);
   }
 
   setByExcelKey({ type, excelId }, data) {
-    const key = this.buildKey({ type, excelId }); // 隐式使用 currentModeId 和 versionLabel
+    const key = this.buildKey({ type, excelId, version: this.versionLabel }); // 显式使用 current version
     return this.longTermStorage.setItem(key, data);
   }
 
   deleteByExcelKey({ type, excelId }) {
-    const key = this.buildKey({ type, excelId }); // 隐式使用 currentModeId 和 versionLabel
+    const key = this.buildKey({ type, excelId, version: this.versionLabel }); // 显式使用 current version
     if (typeof this.longTermStorage.removeItem === 'function') {
       return this.longTermStorage.removeItem(key)
     }
@@ -262,9 +262,8 @@ export default class DataManager {
       console.warn('[DataManager] 版本号未设置，返回空题库')
       return { questions: [], categories: [], lastUpdated: null }
     }
-    const key = this.buildKey({
-      type: IdSvc.TYPES.QUESTION_BANK,
-      excelId: 'main',
+    const key = this.buildMetaKey({
+      name: 'questionBank',
       version: this.versionLabel
     });
     
@@ -282,9 +281,8 @@ export default class DataManager {
     if (!this.versionLabel) {
       throw new Error('保存题库前必须调用setVersionLabel设置版本号')
     }
-    const key = this.buildKey({
-      type: IdSvc.TYPES.QUESTION_BANK,
-      excelId: 'main',
+    const key = this.buildMetaKey({
+      name: 'questionBank',
       version: this.versionLabel
     });
 
@@ -325,7 +323,7 @@ export default class DataManager {
     }
     const key = this.buildKey({
       type: IdSvc.TYPES.ENV_FULL,
-      excelId: 'snapshots',
+      excelId: IdSvc.PLACEHOLDER_MAIN,
       version: this.versionLabel
     });
 
@@ -348,7 +346,7 @@ export default class DataManager {
     }
     const key = this.buildKey({
       type: IdSvc.TYPES.ENV_FULL,
-      excelId: 'snapshots',
+      excelId: IdSvc.PLACEHOLDER_MAIN,
       version: this.versionLabel
     });
 

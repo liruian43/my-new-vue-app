@@ -67,7 +67,7 @@ export function isValidVersionLabel(label) {
 
 // -----------------------------
 // 类型（题库/全量区）规范化与校验
-// 统一输出：questionBank / envFull
+// 统一输出：questionBank / envFull / answers / @meta
 // 支持多种别名（含中文/QB/ENV等）输入
 // -----------------------------
 export const TYPES = Object.freeze({
@@ -101,6 +101,13 @@ const TYPE_ALIASES = Object.freeze({
   '回答': TYPES.ANSWERS,
   '答案': TYPES.ANSWERS
 })
+
+// 新增：第五段主对象占位符（适用于 envFull / answers 的聚合主对象）
+export const PLACEHOLDER_MAIN = 'main'
+export function isMainPlaceholder(x) {
+  const s = String(x ?? '').trim()
+  return s.toLowerCase() === PLACEHOLDER_MAIN
+}
 
 export function normalizeType(type) {
   const t = String(type || '').trim()
@@ -259,11 +266,24 @@ export function buildKey({ modeId, version, type, excelId, prefix }) {
   const t = normalizeType(type);
   debugValidate('type', isValidType, t, '类型无效（应为 questionBank / envFull / answers / @meta，或其别名/中文）');
 
-  // 关键修改：@meta 跳过 ExcelID 校验，允许任意非空 name
   let e;
   if (t === TYPES.META) {
+    // @meta：第五段为任意非空 name
     e = normalizeMetaName(excelId);
+  } else if (t === TYPES.QUESTION_BANK) {
+    // 题库：仅允许 root_admin 模式；第五段允许 A1 或 A1.2/A1.3 …
+    if (m !== ROOT_ADMIN_MODE_ID) {
+      throw new Error(`题库仅允许在 ${ROOT_ADMIN_MODE_ID} 模式下创建（当前: ${m}）`)
+    }
+    e = normalizeQuestionBankExcelId(excelId)
+  } else if (t === TYPES.ENV_FULL || t === TYPES.ANSWERS) {
+    // envFull / answers：强制使用 main 占位符
+    if (!isMainPlaceholder(excelId)) {
+      throw new Error(`envFull/answers 的 ExcelID 必须为 '${PLACEHOLDER_MAIN}' 占位符`)
+    }
+    e = PLACEHOLDER_MAIN
   } else {
+    // 其他情况：严格按 ExcelID 校验
     e = normalizeExcelId(excelId);
   }
 
@@ -289,8 +309,8 @@ export function parseKey(key) {
     isValidVersionLabel(version) &&
     isValidType(type);
 
+  // @meta：仅要求 name 非空
   if (type === TYPES.META) {
-    // 关键修改：@meta 不做 ExcelID 校验，只要求 name 非空
     const metaNameValid = String(excelId ?? '').trim().length > 0;
 
     if (!(baseValid && metaNameValid)) {
@@ -320,7 +340,66 @@ export function parseKey(key) {
     };
   }
 
-  // 非 @meta 仍按 ExcelID 校验
+  // questionBank：root_admin 且 ExcelID 允许 A1 或 A1.2/A1.3 …
+  if (type === TYPES.QUESTION_BANK) {
+    const qbValid = baseValid && (modeId === ROOT_ADMIN_MODE_ID) && isValidQuestionBankExcelId(excelId)
+    if (!qbValid) {
+      return {
+        valid: false,
+        error: 'Key 内容校验失败（题库需 root_admin 且 ExcelID 形如 A1 或 A1.2）',
+        debug: {
+          prefixValid: !!prefix,
+          modeIdValid: isValidModeId(modeId),
+          modeIdIsRootAdmin: modeId === ROOT_ADMIN_MODE_ID,
+          versionValid: isValidVersionLabel(version),
+          typeValid: isValidType(type),
+          qbExcelIdValid: isValidQuestionBankExcelId(excelId)
+        },
+        rawParts: { p_raw: p, m_raw: m, v_raw: v, t_raw: t, e_raw: e },
+        parsed: { prefix, modeId, version, type, excelId, kind: 'questionBank' }
+      }
+    }
+    return {
+      valid: true,
+      prefix,
+      modeId,
+      version,
+      type,
+      excelId,
+      excelIdKind: 'questionBank'
+    }
+  }
+
+  // envFull / answers：必须为 main 占位符
+  if (type === TYPES.ENV_FULL || type === TYPES.ANSWERS) {
+    const valid = baseValid && isMainPlaceholder(excelId)
+    if (!valid) {
+      return {
+        valid: false,
+        error: `Key 内容校验失败（${type} 的 ExcelID 必须为 '${PLACEHOLDER_MAIN}'）`,
+        debug: {
+          prefixValid: !!prefix,
+          modeIdValid: isValidModeId(modeId),
+          versionValid: isValidVersionLabel(version),
+          typeValid: isValidType(type),
+          excelIdIsMain: isMainPlaceholder(excelId)
+        },
+        rawParts: { p_raw: p, m_raw: m, v_raw: v, t_raw: t, e_raw: e },
+        parsed: { prefix, modeId, version, type, excelId, kind: 'main' }
+      }
+    }
+    return {
+      valid: true,
+      prefix,
+      modeId,
+      version,
+      type,
+      excelId,
+      excelIdKind: 'main'
+    }
+  }
+
+  // 其他类型/情况：仍按 ExcelID 校验
   const kind = excelIdKind(excelId);
   const valid =
     baseValid &&
@@ -623,6 +702,8 @@ export const ID = Object.freeze({
   TYPES,
   normalizeType,
   isValidType,
+  PLACEHOLDER_MAIN,
+  isMainPlaceholder,
 
   // ExcelID（卡片/选项）
   isValidCardId,
@@ -644,6 +725,12 @@ export const ID = Object.freeze({
   normalizeExcelId,
   buildExcelId,
   splitExcelId,
+
+  // 题库 ExcelID 工具
+  isValidQuestionBankExcelId,
+  normalizeQuestionBankExcelId,
+  extractFirstExcelIdFromExpression,
+  generateQuestionBankExcelId,
 
   // Key（固定五段）
   buildKey,

@@ -147,7 +147,8 @@ function storageKeyForEnv(ctx) {
     modeId,
     version,
     type: ID.TYPES.ENV_FULL,
-    excelId: 'A0' // 合法且不会与真实业务冲突（选项 0 不会被生成）
+    // 新规范：envFull 的 excelId 必须为 'main'
+    excelId: ID.PLACEHOLDER_MAIN
   });
 }
 
@@ -616,7 +617,8 @@ export async function listEnvFullSnapshots(store) {
           modeId: store.currentModeId || ID.ROOT_ADMIN_MODE_ID,
           version: version,
           type: ID.TYPES.ENV_FULL,
-          excelId: 'A0' // 与 storageKeyForEnv 保持一致
+          // 新规范：envFull 的 excelId 必须为 'main'
+          excelId: ID.PLACEHOLDER_MAIN
         });
         
         const storage = resolveStorage(store);
