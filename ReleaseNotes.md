@@ -1,55 +1,66 @@
-# 五段 Key 机制——本次完善说明
+# Answer Submission Change Log
 
-本说明仅总结“在原有五段 Key 机制之上”的新增与调整，非推翻重做。
+> 本文记录“答案提交”改造的技术变更与验证要点，方便后续维护与回溯。
 
-一、背景与定位
-- 五段 Key 已长期存在，布局未变：prefix:modeId:version:type:excelId（各段做 URL 安全编码）
-- 本次工作聚焦于：规则细化、职责边界、唯一性保障与比对规则落位
-- 约束继续生效：localStorage 落盘必须使用五段 Key；内存中可自由使用任意单段或组合，落盘前再组装五段 Key
+## 版本与日期
+- 版本：1.0
+- 日期：2025-09-03
 
-二、职责划分
-- id.js：
-  - 只负责格式规范化、五段 Key 的构建/解析、以及“带占用校验的唯一生成”
-  - 不承担跨 Key 的语义比对（比较逻辑放在匹配引擎）
-- matchEngine.js：
-  - 提供 compareFiveSegmentKeys：严格比对前四段；若任一 Key 的第五段为占位符 main，则跳过第五段的相等性判断
-- manager.js：
-  - 负责读写编排、状态同步；可选地将所有写入统一切换为使用 buildKeyUnique 以自动保障唯一
+## 背景
+- 现有答案提交在子模式中直接以 localStorage 自行写入，Key 结构不统一，难以追踪与回放。
+- 本次改造将答案提交统一聚合到五段式 Key（answers:main）下，便于追加历史、统一查询与迁移。
 
-三、规则细化（类型与第五段）
-- questionBank：
-  - 仅允许在 root_admin 模式下写入
-  - 第五段为 ExcelID：允许基础形态 A1，也允许小版本 A1.2、A1.3 …
-  - 重复编号从 .2 开始（A1 → A1.2 → A1.3），.1 视为首个实例的隐含版本
-- envFull / answers：
-  - 第五段固定为占位符 main；若同一 (prefix, modeId, version, type) 再次写入则视为冲突
-- @meta：
-  - 第五段为非空的 name，需在同一 (prefix, modeId, version) 下唯一
+## 改造目标
+- 统一“答案提交”的数据模型与存储位置。
+- 保持 UI 行为不变（按钮、交互），对外 API 尽量最小侵入式。
+- 提供可回放的提交历史（同一 modeId+version 多次提交，按时间顺序追加）。
 
-四、新增/调整点（在既有机制上完善）
-- buildKeyUnique（id.js）：
-  - 在给定存储（默认 localStorage）上检查占用，生成“绝对唯一”的五段 Key
-  - 冲突策略：
-    - questionBank：自动对 ExcelID 递增小版本（A1 → A1.2 → A1.3 …）直至找到空位
-    - envFull/answers：第五段固定 main，冲突直接抛错，避免生成完全相同 Key
-    - @meta：name 语义唯一，冲突抛错，交由上层改名
-  - 未提供可用 storage 时，为保证“绝对唯一”，直接抛错
-- generateQuestionBankExcelId：明确首次重复从 .2 开始
-- 比对逻辑外移：compareFiveSegmentKeys（matchEngine.js）负责五段 Key 的对比准则：
-  - 严格顺序与严格校验前四段（prefix、modeId、version、type）
-  - 若任一第五段为 main，则跳过第五段的相等性判断
+## 变更摘要
+1. DataManager 新增 answers 聚合 API：
+   - 新增方法：getAnswersKey、listAnswerSubmissions、appendAnswerSubmission。
+   - 统一五段式 Key：`{系统前缀}:{模式ID}:{版号}:answers:main`（type=answers，excelId 固定为 main）。
+   - 追加模型：每次提交生成 entry（含 id、modeId、version、submittedAt 与业务 payload），按数组 submissions 形式存储。
 
-五、使用建议
-- 只需“规范化构建”时用：buildKey
-- 需要“保证唯一并落盘”时用：buildKeyUnique（浏览器默认用 localStorage；非浏览器请显式传入 storage）
-- 核心写入路径（题库/全量区/回答/@meta）建议在 manager.js 统一切换到 buildKeyUnique，减少一致性成本
+2. 新增统一提交模块 `src/components/Othermodes/answerSubmitter.js`：
+   - `buildSubmissionPayload`：从 UI 数据组装规范化 payload（modeId、modeName、version、timestamp、cards[]）。
+   - `submitAnswersAggregate`：计算有效版本（未传则回落至 DataManager 当前版本或标准化 `v1.0.0`），调用 DataManager 进行聚合追加。
 
-六、验证清单（建议冒烟）
-- 连续写入 3 条首个 ExcelID 相同的题库规则：应得到 A1、A1.2、A1.3
-- 对相同 (modeId, version) 的 envFull 或 answers 二次写入：第二次应抛错（main 冲突）
-- parseKey 能正确解析合法 Key；非法类型/ExcelID 时返回明确错误信息
+3. 子模式组件 `SubMode.vue` 提交流程改造：
+   - 引入并使用 `submitAnswersAggregate`，移除直接 `localStorage.setItem` 的旧逻辑。
+   - 提交按钮文案由“回答完毕”调整为“提交答案”（加载时显示“提交中...”）。
+   - 清理了残留的 diff 标记导致的构建错误（确保 `<script setup>` 可正确解析）。
 
-七、关键文件
-- src/components/Data/services/id.js：五段 Key 构建/解析、唯一生成（buildKey/buildKeyUnique/parseKey 等）
-- src/components/Data/matchEngine.js：compareFiveSegmentKeys（前四段严格，若含 main 则跳过第五段）
-- src/components/Data/manager.js：读写编排，可统一改造为落盘时使用 buildKeyUnique
+4. 构建验证：
+   - 已通过 `npm run build`，构建成功。
+
+## 关键设计与数据模型
+- 五段式 Key 规则：`{系统前缀}:{模式ID}:{版号}:{类型}:{ExcelID}`。
+  - 本次答案聚合固定：`类型=answers`、`ExcelID=main`（与 `id.js` 的 `PLACEHOLDER_MAIN` 保持一致）。
+- 存储形态：`answers:main` 对应的值为数组 `submissions[]`，每个元素结构：
+
+## 影响范围
+- 本次仅改造 `SubMode.vue` 的提交流程，替换为统一提交模块；题库与环境快照的读写逻辑不变。
+- 其它页面若有自定义的“答案提交”实现，后续可逐步迁移至统一模块。
+
+## 验证步骤（建议）
+1. 启动开发环境或打开构建产物，进入任一子模式页面。
+2. 编辑若干可编辑项（选项值、单位或选择等）。
+3. 点击“提交答案”，观察界面提示与控制台日志（应提示成功）。
+4. 打开浏览器开发者工具 → Application/本地存储，定位五段式 Key：
+   - 形如：`{prefix}:{modeId}:{version}:answers:main`
+   - 其值为 `submissions[]` 数组；确认末尾已追加本次提交（包含 `submittedAt` 与 `cards` 快照）。
+
+## 回滚方案
+- 如需回滚，可将 `SubMode.vue` 的 `submitAnswers` 恢复为旧实现（直接写 localStorage），删除 `answerSubmitter.js` 的引用与文件；
+- 同时可保留 `DataManager` 新增方法（不影响旧流程），或按需移除。
+
+## 已知限制
+- 当前仅支持“追加”提交记录，不提供直接删除/编辑历史提交的能力；
+- 版本号缺失时的回退保存至 `v1.0.0`，请在正式使用前确保版本标签已正确初始化；
+- 聚合仅按 `{modeId, version}` 维度；不同版本或模式会分别聚合。
+
+## 后续工作建议
+- 新增“提交历史”查看面板（按时间倒序展示 `submissions[]`）。
+- 与匹配引擎耦合的前/后置校验（例如 cards 的必要字段校验、单位一致性、表达式合法性提示）。
+- 对其它模式/页面的回答提交统一迁移至 `answerSubmitter.js`。
+- 增加导出/导入提交记录的能力（CSV/JSON）。

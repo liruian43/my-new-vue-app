@@ -88,7 +88,7 @@
         @click="submitAnswers"
         :disabled="submittingAnswers"
       >
-        {{ submittingAnswers ? '提交中...' : '回答完毕' }}
+        {{ submittingAnswers ? '提交中...' : '提交答案' }}
       </button>
     </div>
 
@@ -135,6 +135,7 @@ import modeManager from '../Data/modeManager.js'
 import { useCardStore } from '../Data/store.js'
 import * as idService from '../Data/services/id.js'
 import { Serialization } from '../Data/store-parts/serialization.js'
+import { submitAnswersOverwrite } from './answerSubmitter.js'
 
 // 使用全局store
 const cardStore = useCardStore()
@@ -694,52 +695,72 @@ const setShowDropdown = (cardId, value) => {
 }
 
 // 提交答案到LocalStorage
-const submitAnswers = async () => {
-  submittingAnswers.value = true
-  
-  try {
-    // 收集当前模式的答案数据
-    const answerData = {
-      modeId: modeId.value,
-      modeName: modeInfo.value.name,
-      version: currentVersion.value,
-      timestamp: new Date().toISOString(),
-      cards: cards.value.map(card => ({
-        id: card.id,
-        title: card.data.title,
-        selectedValue: card.data.selectedValue,
-        options: card.data.options?.map(option => ({
-          id: option.id,
-          name: option.name,
-          value: option.value,
-          unit: option.unit,
-          checked: option.checked
-        })) || []
-      }))
-    }
-    
-    // 使用id.js系统构建存储Key
-    const storageKey = idService.buildKey({
-      prefix: idService.getSystemPrefix(),
-      modeId: modeId.value,
-      version: currentVersion.value || 'default',
-      type: idService.TYPES.ANSWERS, // 使用id.js系统的答案类型
-      excelId: 'user_submission'
-    })
-    
-    // 存储到LocalStorage
-    localStorage.setItem(storageKey, JSON.stringify(answerData))
-    
-    console.log(`模式 ${modeId.value} 的答案已提交，存储Key: ${storageKey}`)
-    alert('答案提交成功！')
-    
-  } catch (error) {
-    console.error('提交答案失败:', error)
-    alert('提交答案失败: ' + error.message)
-  } finally {
-    submittingAnswers.value = false
-  }
-}
+// const submitAnswers = async () => {
+//   submittingAnswers.value = true
+//   
+//   try {
+//     // 收集当前模式的答案数据
+//     const answerData = {
+//       modeId: modeId.value,
+//       modeName: modeInfo.value.name,
+//       version: currentVersion.value,
+//       timestamp: new Date().toISOString(),
+//       cards: cards.value.map(card => ({
+//         id: card.id,
+//         title: card.data.title,
+//         selectedValue: card.data.selectedValue,
+//         options: card.data.options?.map(option => ({
+//           id: option.id,
+//           name: option.name,
+//           value: option.value,
+//           unit: option.unit,
+//           checked: option.checked
+//         })) || []
+//       }))
+//     }
+//     
+//     // 使用id.js系统构建存储Key
+//     const storageKey = idService.buildKey({
+//       prefix: idService.getSystemPrefix(),
+//       modeId: modeId.value,
+//       version: currentVersion.value || 'default',
+//       type: idService.TYPES.ANSWERS, // 使用id.js系统的答案类型
+//       excelId: 'user_submission'
+//     })
+//     
+//     // 存储到LocalStorage
+//     localStorage.setItem(storageKey, JSON.stringify(answerData))
+//     
+//     console.log(`模式 ${modeId.value} 的答案已提交，存储Key: ${storageKey}`)
+//     alert('答案提交成功！')
+//     
+//   } catch (error) {
+//     console.error('提交答案失败:', error)
+//     alert('提交答案失败: ' + error.message)
+//   } finally {
+//     submittingAnswers.value = false
+//   }
+// }
+// 提交答案（覆盖式保存到五段Key answers:main）
+ const submitAnswers = async () => {
+   submittingAnswers.value = true
+   try {
+     if (!currentVersion.value) throw new Error('当前版本号缺失，无法提交')
+     await submitAnswersOverwrite({
+       modeId: modeId.value,
+       modeName: modeInfo.value.name,
+       version: currentVersion.value,
+       cards: cards.value
+     })
+     console.log('[SubMode] 答案提交成功（覆盖至 answers:main）')
+     alert('答案提交成功！')
+   } catch (error) {
+     console.error('提交答案失败:', error)
+     alert('提交答案失败: ' + (error?.message || String(error)))
+   } finally {
+     submittingAnswers.value = false
+   }
+ }
 
 // 匹配处理
 const handleGenerateMatch = async () => {

@@ -482,6 +482,61 @@ export default class DataManager {
     return this.longTermStorage.setItem(key, dataToSave)
   }
 
+  // ========== 答案提交（按模式+版本聚合到 answers:main） ==========
+  getAnswersKey({ modeId, version } = {}) {
+    const m = modeId != null ? IdSvc.normalizeModeId(modeId) : this.currentModeId
+    const v = version != null ? IdSvc.normalizeVersionLabel(version) : this.versionLabel
+    if (!v) throw new Error('生成答案存储Key前必须提供版本号')
+    return this.buildKey({
+      type: IdSvc.TYPES.ANSWERS,
+      excelId: IdSvc.PLACEHOLDER_MAIN,
+      modeId: m,
+      version: v
+    })
+  }
+
+  async listAnswerSubmissions({ modeId, version } = {}) {
+    const key = this.getAnswersKey({ modeId, version })
+    const arr = this.longTermStorage.getItem(key)
+    const list = Array.isArray(arr) ? arr : []
+    console.log(`[DataManager] 加载答案列表 - Key: '${key}', Count: ${list.length}`)
+    return list
+  }
+
+  async appendAnswerSubmission(submission, { modeId, version } = {}) {
+    const key = this.getAnswersKey({ modeId, version })
+    // 读取现有
+    const current = await this.listAnswerSubmissions({ modeId, version })
+
+    // 规范化提交条目
+    const entry = {
+      id: `ans_${Date.now()}`,
+      modeId: (modeId != null ? IdSvc.normalizeModeId(modeId) : this.currentModeId),
+      version: (version != null ? IdSvc.normalizeVersionLabel(version) : this.versionLabel),
+      submittedAt: new Date().toISOString(),
+      // 原样存放业务数据（cards等），避免丢失字段
+      ...submission
+    }
+
+    const next = [...current, entry]
+    console.log(`[DataManager] 追加答案提交 - Key: '${key}', NewCount: ${next.length}`, { entry })
+    return this.longTermStorage.setItem(key, next)
+  }
+
+  // —— 覆盖式保存答案（每个五段Key仅保留一份最新提交） ——
+  async getAnswerSubmission({ modeId, version } = {}) {
+    const key = this.getAnswersKey({ modeId, version })
+    const value = this.longTermStorage.getItem(key)
+    console.log(`[DataManager] 读取答案（覆盖式）- Key: '${key}', Has: ${value != null}`)
+    return value ?? null
+  }
+
+  async setAnswerSubmission(value, { modeId, version } = {}) {
+    const key = this.getAnswersKey({ modeId, version })
+    console.log(`[DataManager] 保存答案（覆盖式）- Key: '${key}'`)
+    return this.longTermStorage.setItem(key, value)
+  }
+
   // ========== 清理某模式下所有数据（危险操作） ==========
   async clearModeSpecificData(modeIdToClear) {
     const normalized = IdSvc.normalizeModeId(modeIdToClear)
