@@ -418,10 +418,8 @@ export async function saveEnvFullSnapshot(store, versionLabel) {
 
   console.log('[序列化] 保存版本:', version);
 
-  // 确保dataManager已设置versionLabel
-  if (store.dataManager && typeof store.dataManager.setVersionLabel === 'function') {
-    store.dataManager.setVersionLabel(version);
-  }
+  // 注释：移除setVersionLabel调用，避免重复存储global_current_version_label
+  // 版本信息已经包含在五段key中，无需额外存储
 
   // 检查是否已存在该版本
   const existingSnapshots = await listEnvFullSnapshots(store);

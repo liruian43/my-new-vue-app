@@ -88,40 +88,25 @@ export default class DataManager {
     this.rootAdminId = IdSvc.ROOT_ADMIN_MODE_ID // 从 IdSvc 获取常量
     this.currentModeId = this.rootAdminId // 默认当前模式ID
 
-    // 全局存储键名（非模式隔离，直接使用常量）
-    this.storageKeys = {
-      globalCurrentMode: 'global_current_mode', 
-      globalCurrentVersion: 'global_current_version_label' 
-    }
-
+    // 注释：移除全局存储键，改为基于五段key的动态管理
+    // 不再维护全局状态，所有信息从五段key中提取
+    
     // 版本标签必须显式传递，不再提供默认值
     this.versionLabel = null
   }
 
   // ========== 初始化 ==========
   async initialize() {
-    // 1. 初始化当前模式 ID (从全局存储加载)
-    const savedMode = this.longTermStorage.getItem(this.storageKeys.globalCurrentMode)
-    if (savedMode && IdSvc.isValidModeId(savedMode)) {
-        this.currentModeId = savedMode
-    } else {
-        this.currentModeId = this.rootAdminId; // 默认 root_admin
-        this.longTermStorage.setItem(this.storageKeys.globalCurrentMode, this.currentModeId);
-    }
+    // 注释：移除全局存储依赖，改为基于五段key的动态管理
+    // 当前模式和版本信息不再持久化存储，由应用逻辑动态确定
+    
+    // 1. 默认设置为root_admin模式
+    this.currentModeId = this.rootAdminId
     console.log(`[DataManager] 初始化 - 当前模式设置为: ${this.currentModeId}`)
     
-    // 2. 初始化版本标签（使用id.js规范化，确保五段Key系统正常工作）
-    const savedVersion = this.longTermStorage.getItem(this.storageKeys.globalCurrentVersion)
-    if (savedVersion && IdSvc.isValidVersionLabel(savedVersion)) {
-        this.versionLabel = IdSvc.normalizeVersionLabel(savedVersion)
-        console.log(`[DataManager] 从存储加载版本标签: ${this.versionLabel}`)
-    } else {
-        // 使用id.js方法设置默认版本，确保符合规范
-        const defaultVersion = IdSvc.normalizeVersionLabel('v1.0.0')
-        this.versionLabel = defaultVersion
-        this.longTermStorage.setItem(this.storageKeys.globalCurrentVersion, this.versionLabel)
-        console.log(`[DataManager] 未找到版本标签，使用默认版本: ${this.versionLabel}`)
-    }
+    // 2. 版本标签由外部显式设置，不再从存储加载
+    // 这样确保每次操作都明确指定版本，避免隐式依赖
+    console.log(`[DataManager] 版本标签将由外部显式设置，不再从存储自动加载`)
   }
 
   getCurrentModeId() {
@@ -134,7 +119,7 @@ export default class DataManager {
       throw new Error(`无效的模式ID: ${modeId}`)
     }
     this.currentModeId = normalized
-    this.longTermStorage.setItem(this.storageKeys.globalCurrentMode, this.currentModeId)
+    // 注释：移除全局存储，模式切换仅影响内存状态
     console.log(`[DataManager] 当前模式切换为: ${this.currentModeId}`)
   }
 
@@ -144,7 +129,7 @@ export default class DataManager {
       throw new Error('版本号不能为空')
     }
     this.versionLabel = v
-    this.longTermStorage.setItem(this.storageKeys.globalCurrentVersion, this.versionLabel)
+    // 注释：移除全局存储，版本标签仅影响内存状态
     console.log(`[DataManager] 版本标签设置为: ${this.versionLabel}`)
   }
 
@@ -243,9 +228,8 @@ export default class DataManager {
       return { questions: [], categories: [], lastUpdated: null }
     }
 
-    // 读取题库元信息（分类/更新时间）
-    const metaKey = this.buildMetaKey({ name: 'questionBank', version: this.versionLabel })
-    const meta = this.longTermStorage.getItem(metaKey) || { categories: [], lastUpdated: null }
+    // 注释：移除元信息依赖，直接基于五段key扫描
+    // 不再需要单独的元数据存储
 
     // 枚举 localStorage，收集本版本下的题库项
     const questions = []
@@ -300,10 +284,10 @@ export default class DataManager {
 
     console.log(`[DataManager] 加载题库（按条存储） - version: ${this.versionLabel}`, { count: questions.length })
     return {
-      questions,
-      categories: meta.categories || [],
-      lastUpdated: meta.lastUpdated || null
-    }
+       questions,
+       categories: [], // 不再维护分类信息，如需要可从题库数据中动态提取
+       lastUpdated: null // 不再维护更新时间，五段key本身就是版本标识
+     }
   }
 
   async saveQuestionBank(bankData) {
@@ -379,14 +363,10 @@ export default class DataManager {
       this.longTermStorage.setItem(key, expression)
     }
 
-    // 3) 保存题库元信息（分类、最后更新时间）
-    const metaKey = this.buildMetaKey({ name: 'questionBank', version: this.versionLabel })
-    const dataToSave = {
-      categories: Array.isArray(bankData?.categories) ? bankData.categories : [],
-      lastUpdated: new Date().toISOString()
-    }
-    console.log(`[DataManager] 保存题库（按条存储） - 写入 ${usedExcelIds.size} 条`, { meta: dataToSave })
-    return this.longTermStorage.setItem(metaKey, dataToSave)
+    // 注释：移除题库元信息存储，避免重复存储
+    // 题库信息已经通过五段key完整表达，无需额外的元数据
+    console.log(`[DataManager] 保存题库（按条存储） - 写入 ${usedExcelIds.size} 条`)
+    return true // 直接返回成功，因为实际数据已经保存完毕
   }
 
   // 生成“规范化题库条目”用于立即更新前端状态（保存时仍以五段Key逐条写入）
