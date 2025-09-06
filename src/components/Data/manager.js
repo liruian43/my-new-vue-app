@@ -221,12 +221,14 @@ export default class DataManager {
   }
 
   // ========== 题库（核心功能，现在使用 固定五段Key 单条存储） ==========
-  async loadQuestionBank() {
-    // 如果没有设置versionLabel，返回空题库
-    if (!this.versionLabel) {
-      console.warn('[DataManager] 版本号未设置，返回空题库')
+  async loadQuestionBank(version) {
+    // 版本号直接从参数获取，来自全量区版本
+    if (!version) {
+      console.warn('[DataManager] 版本号未提供，返回空题库')
       return { questions: [], categories: [], lastUpdated: null }
     }
+    
+    const versionLabel = IdSvc.normalizeVersionLabel(version)
 
     // 注释：移除元信息依赖，直接基于五段key扫描
     // 不再需要单独的元数据存储
@@ -243,7 +245,7 @@ export default class DataManager {
         if (
           parsed.prefix === IdSvc.getSystemPrefix() &&
           parsed.type === IdSvc.TYPES.QUESTION_BANK &&
-          parsed.version === this.versionLabel &&
+          parsed.version === versionLabel &&
           parsed.modeId === IdSvc.ROOT_ADMIN_MODE_ID
         ) {
           const value = this.longTermStorage.getItem(k)
@@ -282,7 +284,7 @@ export default class DataManager {
       console.error('[DataManager] 枚举题库项失败:', e)
     }
 
-    console.log(`[DataManager] 加载题库（按条存储） - version: ${this.versionLabel}`, { count: questions.length })
+    console.log(`[DataManager] 加载题库（按条存储） - version: ${versionLabel}`, { count: questions.length })
     return {
        questions,
        categories: [], // 不再维护分类信息，如需要可从题库数据中动态提取
@@ -290,9 +292,11 @@ export default class DataManager {
      }
   }
 
-  async saveQuestionBank(bankData) {
-    if (!this.versionLabel) {
-      throw new Error('保存题库前必须调用setVersionLabel设置版本号')
+  async saveQuestionBank(bankData, version) {
+    // 版本号直接从参数获取，来自全量区版本
+    const versionLabel = IdSvc.normalizeVersionLabel(version)
+    if (!IdSvc.isValidVersionLabel(versionLabel)) {
+      throw new Error('版本号不能为空，必须基于已存在的全量区版本')
     }
 
     // 1) 清理当前版本下旧的题库条目
@@ -304,7 +308,7 @@ export default class DataManager {
       if (parsed.valid &&
           parsed.prefix === IdSvc.getSystemPrefix() &&
           parsed.type === IdSvc.TYPES.QUESTION_BANK &&
-          parsed.version === this.versionLabel &&
+          parsed.version === versionLabel &&
           parsed.modeId === IdSvc.ROOT_ADMIN_MODE_ID) {
         toRemove.push(k)
       }
@@ -355,7 +359,7 @@ export default class DataManager {
         type: IdSvc.TYPES.QUESTION_BANK,
         excelId,
         modeId: IdSvc.ROOT_ADMIN_MODE_ID,
-        version: this.versionLabel
+        version: versionLabel
       })
 
       // 存储值 = 标准化表达式：左侧标准顺序 + → + 右侧原文

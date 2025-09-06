@@ -450,23 +450,47 @@ export const useCardStore = defineStore('data', {
     },
 
     // 题库
-    async loadQuestionBank() {
-      const bank = await this.dataManager.loadQuestionBank()
+    async loadQuestionBank(version = null) {
+      // 如果没有提供版本，尝试从最新的全量区版本获取
+      let targetVersion = version
+      if (!targetVersion) {
+        const snapshots = await this.listEnvFullSnapshots()
+        if (snapshots.length > 0) {
+          targetVersion = snapshots[0].version // 取最新版本
+        }
+      }
+      
+      const bank = await this.dataManager.loadQuestionBank(targetVersion)
       this.questionBank = bank
       return bank
     },
     async addQuestionToBank(payload) {
+      // 版本号直接来自全量区版本，不需要设置DataManager状态
+      const version = payload.version
+      if (!version) {
+        throw new Error('必须指定版本号，版本号来自已存在的全量区版本')
+      }
+      
       const normalizedQuestion = this.dataManager.normalizeQuestion(payload)
-      const bank = await this.dataManager.loadQuestionBank()
+      const bank = await this.dataManager.loadQuestionBank(version)
       bank.questions.push(normalizedQuestion)
-      await this.dataManager.saveQuestionBank(bank)
+      await this.dataManager.saveQuestionBank(bank, version)
       this.questionBank = bank
       return normalizedQuestion
     },
-    async removeQuestionFromBank(id) {
-      const bank = await this.dataManager.loadQuestionBank()
+    async removeQuestionFromBank(id, version = null) {
+      // 如果没有提供版本，尝试从最新的全量区版本获取
+      let targetVersion = version
+      if (!targetVersion) {
+        const snapshots = await this.listEnvFullSnapshots()
+        if (snapshots.length > 0) {
+          targetVersion = snapshots[0].version // 取最新版本
+        }
+      }
+      
+      const bank = await this.dataManager.loadQuestionBank(targetVersion)
       bank.questions = bank.questions.filter(q => q.id !== id)
-      await this.dataManager.saveQuestionBank(bank)
+      await this.dataManager.saveQuestionBank(bank, targetVersion)
       this.questionBank = bank
       return true
     },

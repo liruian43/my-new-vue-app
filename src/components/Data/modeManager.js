@@ -48,7 +48,7 @@ class ModeManager {
 
     const newMode = {
       id: modeId,
-      name: modeName,
+      name: modeId, // 模式名称等于模式ID
       createdAt: new Date().toISOString(),
       lastSync: null,
       syncStatus: '未同步'
@@ -119,47 +119,24 @@ class ModeManager {
     }
   }
 
-  // 注释：移除模式列表存储，改为基于五段key扫描的虚拟模式管理
-  // 模式信息可以通过扫描localStorage中的五段key动态获取
+  // 保存模式列表到本地存储
   saveModesToStorage() {
-    // 不再需要单独存储模式列表
-    console.log('[ModeManager] 模式列表现在基于五段key动态管理，无需单独存储')
+    try {
+      localStorage.setItem('app_modes', JSON.stringify(this.modes))
+      console.log('[ModeManager] 模式列表已保存到LocalStorage')
+    } catch (error) {
+      console.error('保存模式列表失败:', error)
+    }
   }
 
-  // 从五段key扫描动态获取模式列表
+  // 从本地存储加载模式列表（不包含root_admin）
   loadModesFromStorage() {
     try {
-      // 使用ID服务扫描localStorage获取所有模式
-      const modeIds = ID.extractKeysFields('modeId', {}, localStorage, true)
-      const modes = modeIds.map(modeId => ({
-        id: modeId,
-        name: modeId === ID.ROOT_ADMIN_MODE_ID ? '主控模式' : modeId,
-        createdAt: new Date().toISOString(), // 虚拟时间戳
-        lastSync: null,
-        syncStatus: modeId === ID.ROOT_ADMIN_MODE_ID ? 'N/A' : '未同步'
-      }))
-      
-      // 确保至少包含root_admin模式
-      if (!modes.some(m => m.id === ID.ROOT_ADMIN_MODE_ID)) {
-        modes.unshift({
-          id: ID.ROOT_ADMIN_MODE_ID,
-          name: '主控模式',
-          createdAt: new Date().toISOString(),
-          lastSync: null,
-          syncStatus: 'N/A'
-        })
-      }
-      
-      return modes
+      const modes = localStorage.getItem('app_modes')
+      return modes ? JSON.parse(modes) : []
     } catch (error) {
-      console.error('扫描模式列表失败:', error)
-      return [{
-        id: ID.ROOT_ADMIN_MODE_ID,
-        name: '主控模式',
-        createdAt: new Date().toISOString(),
-        lastSync: null,
-        syncStatus: 'N/A'
-      }]
+      console.error('加载模式列表失败:', error)
+      return []
     }
   }
 }

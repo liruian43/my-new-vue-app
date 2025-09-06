@@ -58,8 +58,8 @@
           </div>
           <!-- 模式名称 -->
           <div class="mode-name">
-            {{ mode.name }} ({{ mode.id }})
-            <span class="sync-status" v-if="mode.id !== 'root_admin'">
+            {{ mode.id }}
+            <span class="sync-status">
               [{{ mode.syncStatus }}]
             </span>
           </div>
